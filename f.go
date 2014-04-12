@@ -144,6 +144,12 @@ func main() {
 	dst := From(src1).Where(func(v interface{}) bool {
 		i := v.(int)
 		return i%2 == 0
+	}).Results()
+	fmt.Println("where return", dst, "\n")
+
+	dst = From(src1).Where(func(v interface{}) bool {
+		i := v.(int)
+		return i%2 == 0
 	}).Select(func(v interface{}) interface{} {
 		i := v.(int)
 		return "item" + strconv.Itoa(i)
