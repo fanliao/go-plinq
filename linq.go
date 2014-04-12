@@ -40,7 +40,7 @@ const (
 type dataSource interface {
 	Typ() int //block or chan?
 	ToSlice(bool) []interface{}
-	ToChan() chan interface{}
+	//ToChan() chan interface{}
 }
 
 type listSource struct {
@@ -87,16 +87,16 @@ func (this listSource) ToSlice(keepOrder bool) []interface{} {
 	return nil
 }
 
-func (this listSource) ToChan() chan interface{} {
-	out := make(chan interface{})
-	go func() {
-		for _, v := range this.ToSlice(true) {
-			out <- v
-		}
-		close(out)
-	}()
-	return out
-}
+//func (this listSource) ToChan() chan interface{} {
+//	out := make(chan interface{})
+//	go func() {
+//		for _, v := range this.ToSlice(true) {
+//			out <- v
+//		}
+//		close(out)
+//	}()
+//	return out
+//}
 
 type chanSource struct {
 	data chan *chunk
@@ -110,6 +110,7 @@ func (this chanSource) Itr() func() (*chunk, bool) {
 	ch := this.data
 	return func() (*chunk, bool) {
 		c, ok := <-ch
+		//fmt.Println("chanSource receive", c)
 		return c, ok
 	}
 }
@@ -118,25 +119,46 @@ func (this chanSource) Close() {
 	close(this.data)
 }
 
+//receive all chunks from chan and return a slice includes all items
 func (this chanSource) ToSlice(keepOrder bool) []interface{} {
 	chunks := make([]interface{}, 0, 2)
+	avl := newChunkAvlTree()
+
+	//fmt.Println("ToSlice start receive chunk")
 	for c := range this.data {
-		chunks = appendSlice(chunks, c)
+		//fmt.Println("ToSlice receive a chunk", *c)
+		//if use the buffer channel, then must receive a nil as end flag
+		if reflect.ValueOf(c).IsNil() {
+			this.Close()
+			//fmt.Println("ToSlice receive a nil")
+			break
+		}
+
+		if keepOrder {
+			avl.Insert(c)
+		} else {
+			chunks = appendSlice(chunks, c)
+		}
+		//fmt.Println("ToSlice end receive a chunk")
 	}
-	return expandChunks(chunks, keepOrder)
+	if keepOrder {
+		chunks = avl.ToSlice()
+	}
+
+	return expandChunks(chunks, false)
 }
 
-func (this chanSource) ToChan() chan interface{} {
-	out := make(chan interface{})
-	go func() {
-		for c := range this.data {
-			for _, v := range c.data {
-				out <- v
-			}
-		}
-	}()
-	return out
-}
+//func (this chanSource) ToChan() chan interface{} {
+//	out := make(chan interface{})
+//	go func() {
+//		for c := range this.data {
+//			for _, v := range c.data {
+//				out <- v
+//			}
+//		}
+//	}()
+//	return out
+//}
 
 type KeyValue struct {
 	key   interface{}
@@ -148,11 +170,6 @@ type HKeyValue struct {
 	key     interface{}
 	value   interface{}
 }
-
-//type hKeyValue struct {
-//	keyHash uint64
-//	KeyValue
-//}
 
 //the queryable struct-------------------------------------------------------------------------
 type Queryable struct {
@@ -182,14 +199,6 @@ func From(src interface{}) (q Queryable) {
 		panic(ErrUnsupportSource)
 	}
 	return
-}
-
-func (this Queryable) get() dataSource {
-	data := this.data
-	for _, step := range this.steps {
-		data, this.keepOrder, _ = step.stepAction()(data, this.keepOrder)
-	}
-	return data
 }
 
 func (this Queryable) Results() []interface{} {
@@ -278,7 +287,29 @@ func (this Queryable) KeepOrder(keep bool) Queryable {
 	return this
 }
 
-//the struct and functions of step-------------------------------------------------------------------------
+func (this Queryable) get() dataSource {
+	data := this.data
+	for _, step := range this.steps {
+		data, this.keepOrder, _ = step.stepAction()(data, this.keepOrder)
+	}
+	return data
+}
+
+//the struct and functions of each operation-------------------------------------------------------------------------
+const (
+	ACT_SELECT int = iota
+	ACT_WHERE
+	ACT_GROUPBY
+	ACT_HGROUPBY
+	ACT_ORDERBY
+	ACT_DISTINCT
+	ACT_JOIN
+	ACT_GROUPJOIN
+	ACT_UNION
+	ACT_CONCAT
+	ACT_INTERSECT
+)
+
 type stepAction func(dataSource, bool) (dataSource, bool, error)
 type step interface {
 	stepAction() stepAction
@@ -297,20 +328,6 @@ type joinStep struct {
 	resultSelector   interface{}
 	isLeftJoin       bool
 }
-
-const (
-	ACT_SELECT int = iota
-	ACT_WHERE
-	ACT_GROUPBY
-	ACT_HGROUPBY
-	ACT_ORDERBY
-	ACT_DISTINCT
-	ACT_JOIN
-	ACT_GROUPJOIN
-	ACT_UNION
-	ACT_CONCAT
-	ACT_INTERSECT
-)
 
 func (this commonStep) stepAction() (act stepAction) {
 	switch this.typ {
@@ -350,39 +367,57 @@ func (this joinStep) stepAction() (act stepAction) {
 
 func getWhere(sure func(interface{}) bool, degree int) stepAction {
 	return stepAction(func(src dataSource, keepOrder bool) (dst dataSource, keep bool, e error) {
-		var f *promise.Future
-		mapChunk := func(c *chunk) *chunk {
-			return filterChunk(c, sure)
-			//fmt.Println("src=", c, "result=", result)
+		//var f *promise.Future
+		//mapChunk := func(c *chunk) *chunk {
+		//	return filterChunk(c, sure)
+		//}
+
+		//switch s := src.(type) {
+		//case *listSource:
+		//	f = parallelMapList(s, mapChunk, degree)
+		//case *chanSource:
+		//	reduceSrc := make(chan *chunk)
+
+		//	f = parallelMapChan(s, reduceSrc, mapChunk, degree)
+
+		//	results := make([]interface{}, 0, 1)
+		//	if keepOrder {
+		//		avl := newChunkAvlTree()
+		//		reduceChan(f.GetChan(), reduceSrc, func(v *chunk) { avl.Insert(v) })
+		//		results = avl.ToSlice()
+		//		keepOrder = false
+		//	} else {
+		//		reduceChan(f.GetChan(), reduceSrc, func(v *chunk) { results = appendSlice(results, v) })
+		//	}
+
+		//	f = promise.Wrap(results)
+		//}
+
+		//dst, e = getFutureResult(f, func(results []interface{}) dataSource {
+		//	result := expandChunks(results, false)
+		//	return &listSource{result}
+		//})
+		//keep = keepOrder
+		//return
+
+		reduceSrc := make(chan *chunk, 1)
+		mapChunk := func(c *chunk) (r *chunk) {
+			r = filterChunk(c, sure)
+			//fmt.Println("send a chunk", *r)
+			reduceSrc <- r
+			return
 		}
 
+		var f *promise.Future
 		switch s := src.(type) {
 		case *listSource:
 			f = parallelMapList(s, mapChunk, degree)
 		case *chanSource:
-			reduceSrc := make(chan *chunk)
-
-			f = parallelMapChan(s, reduceSrc, mapChunk, degree)
-
-			results := make([]interface{}, 0, 1)
-			if keepOrder {
-				avl := newChunkAvlTree()
-				reduceChan(f.GetChan(), reduceSrc, func(v *chunk) { avl.Insert(v) })
-				results = avl.ToSlice()
-				keepOrder = false
-			} else {
-				reduceChan(f.GetChan(), reduceSrc, func(v *chunk) { results = appendSlice(results, v) })
-			}
-
-			f = promise.Wrap(results)
+			f = parallelMapChan(s, nil, mapChunk, degree)
 		}
+		f.Done(func(...interface{}) { reduceSrc <- nil }) //fmt.Println("where send a nil------------") })
 
-		dst, e = getFutureResult(f, func(results []interface{}) dataSource {
-			result := expandChunks(results, false)
-			return &listSource{result}
-		})
-		keep = keepOrder
-		return
+		return &chanSource{reduceSrc}, keepOrder, nil
 	})
 }
 
@@ -409,12 +444,18 @@ func getSelect(selectFunc func(interface{}) interface{}, degree int) stepAction 
 			out := make(chan *chunk)
 
 			_ = parallelMapChan(s, out, func(c *chunk) *chunk {
-				result := make([]interface{}, 0, len(c.data)) //c.end-c.start+2)
+				defer func() {
+					if e := recover(); e != nil {
+						fmt.Println(e)
+					}
+				}()
+				result := make([]interface{}, len(c.data)) //c.end-c.start+2)
 				mapSlice(c.data, selectFunc, &result)
 				return &chunk{result, c.order}
 			}, degree)
 
 			//todo: how to handle error in promise?
+			//fmt.Println("select return out chan")
 			dst, e = &chanSource{out}, nil
 			return
 		}
@@ -807,16 +848,22 @@ func parallelMapChan(src *chanSource, out chan *chunk, task func(*chunk) *chunk,
 	for i := 0; i < degree; i++ {
 		f := promise.Start(func() []interface{} {
 			for {
+				//fmt.Println("begin select receive")
 				if c, ok := itr(); ok {
+					//fmt.Println("select receive", c)
 					if reflect.ValueOf(c).IsNil() {
 						src.Close()
+						//fmt.Println("select receive a nil-----------------")
 						break
 					}
+					//fmt.Println("select receive", *c)
 					d := task(c)
 					if out != nil {
 						out <- d
+						//fmt.Println("end select send", *d)
 					}
 				} else {
+					//fmt.Println("end receive--------------")
 					break
 				}
 			}
@@ -825,7 +872,14 @@ func parallelMapChan(src *chanSource, out chan *chunk, task func(*chunk) *chunk,
 		})
 		fs[i] = f
 	}
-	f := promise.WhenAll(fs...)
+	f := promise.WhenAll(fs...).Always(func(results ...interface{}) {
+		if out != nil {
+			close(out)
+		}
+		//fmt.Println("close parallelMapChan out---------")
+		//close(out)
+		//fmt.Println("close parallelMapChan out---------")
+	})
 
 	return f
 }
@@ -993,7 +1047,7 @@ func ceilSplitSize(a int, b int) int {
 
 func getKeyValues(c *chunk, keyFunc func(v interface{}) interface{}, KeyValues *[]interface{}) []interface{} {
 	if KeyValues == nil {
-		list := (make([]interface{}, len(c.data), len(c.data)))
+		list := (make([]interface{}, len(c.data)))
 		KeyValues = &list
 	}
 	mapSlice(c.data, func(v interface{}) interface{} {

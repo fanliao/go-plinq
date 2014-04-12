@@ -141,60 +141,60 @@ func main() {
 	}
 	//}()
 
-	dst := From(src1).Where(func(v interface{}) bool {
-		i := v.(int)
-		return i%2 == 0
-	}).Select(func(v interface{}) interface{} {
-		i := v.(int)
-		return "item" + strconv.Itoa(i)
-	}).Results()
-	fmt.Println("where select return", dst, "\n")
+	//dst := From(src1).Where(func(v interface{}) bool {
+	//	i := v.(int)
+	//	return i%2 == 0
+	//}).Select(func(v interface{}) interface{} {
+	//	i := v.(int)
+	//	return "item" + strconv.Itoa(i)
+	//}).Results()
+	//fmt.Println("where select return", dst, "\n")
 
-	dst = From(arrInts).Where(func(v interface{}) bool {
-		i := v.(int)
-		return i%2 == 0
-	}).Select(func(v interface{}) interface{} {
-		i := v.(int)
-		return "item" + strconv.Itoa(i)
-	}).Results()
-	fmt.Println("Int slice where select return", dst, "\n")
+	//dst = From(arrInts).Where(func(v interface{}) bool {
+	//	i := v.(int)
+	//	return i%2 == 0
+	//}).Select(func(v interface{}) interface{} {
+	//	i := v.(int)
+	//	return "item" + strconv.Itoa(i)
+	//}).Results()
+	//fmt.Println("Int slice where select return", dst, "\n")
 
-	dst = From(src1).GroupBy(func(v interface{}) interface{} {
-		return v.(int) / 10
-	}).Results()
-	for _, o := range dst {
-		kv := o.(*KeyValue)
-		fmt.Println("group get k=", kv.key, ";v=", kv.value, " ")
-	}
-	fmt.Println("")
+	//dst = From(src1).GroupBy(func(v interface{}) interface{} {
+	//	return v.(int) / 10
+	//}).Results()
+	//for _, o := range dst {
+	//	kv := o.(*KeyValue)
+	//	fmt.Println("group get k=", kv.key, ";v=", kv.value, " ")
+	//}
+	//fmt.Println("")
 
-	dst = From(src1).LeftJoin(pow1,
-		func(o interface{}) interface{} { return o },
-		func(i interface{}) interface{} { return i.(power).i },
-		func(o interface{}, i interface{}) interface{} {
-			if i == nil {
-				return strconv.Itoa(o.(int))
-			} else {
-				o1, i1 := o.(int), i.(power)
-				return strconv.Itoa(o1) + ";" + strconv.Itoa(i1.p)
-			}
-		}).Results()
-	fmt.Println("join ", src1)
-	fmt.Println("with", pow1)
-	fmt.Println("return", dst, "\n")
+	//dst = From(src1).LeftJoin(pow1,
+	//	func(o interface{}) interface{} { return o },
+	//	func(i interface{}) interface{} { return i.(power).i },
+	//	func(o interface{}, i interface{}) interface{} {
+	//		if i == nil {
+	//			return strconv.Itoa(o.(int))
+	//		} else {
+	//			o1, i1 := o.(int), i.(power)
+	//			return strconv.Itoa(o1) + ";" + strconv.Itoa(i1.p)
+	//		}
+	//	}).Results()
+	//fmt.Println("join ", src1)
+	//fmt.Println("with", pow1)
+	//fmt.Println("return", dst, "\n")
 
-	dst = From(src1).LeftGroupJoin(pow1,
-		func(o interface{}) interface{} { return o },
-		func(i interface{}) interface{} { return i.(power).i },
-		func(o interface{}, is []interface{}) interface{} {
-			return KeyValue{o, is}
-		}).Results()
-	fmt.Println("groupjoin ", src1)
-	fmt.Println("with", pow1)
-	fmt.Println("return", dst, "\n")
+	//dst = From(src1).LeftGroupJoin(pow1,
+	//	func(o interface{}) interface{} { return o },
+	//	func(i interface{}) interface{} { return i.(power).i },
+	//	func(o interface{}, is []interface{}) interface{} {
+	//		return KeyValue{o, is}
+	//	}).Results()
+	//fmt.Println("groupjoin ", src1)
+	//fmt.Println("with", pow1)
+	//fmt.Println("return", dst, "\n")
 
-	dst = From(src1).Union(src2).Results()
-	fmt.Println("union return ", dst)
+	//dst = From(src1).Union(src2).Results()
+	//fmt.Println("union return ", dst)
 
 	size := count / 4
 	chSrc := make(chan *chunk)
@@ -204,14 +204,14 @@ func main() {
 		chSrc <- &chunk{src1[2*size : 3*size], 2 * size}
 		chSrc <- &chunk{src1[3*size : 4*size], 3 * size}
 		chSrc <- nil
-		fmt.Println("close src", chSrc)
+		fmt.Println("close src------------------", chSrc)
 	}()
 
 	//for v := range chSrc {
 	//	fmt.Println(v)
 	//}
 
-	dst = From(chSrc).Where(func(v interface{}) bool {
+	dst := From(chSrc).Where(func(v interface{}) bool {
 		i := v.(int)
 		return i%2 == 0
 	}).Select(func(v interface{}) interface{} {
