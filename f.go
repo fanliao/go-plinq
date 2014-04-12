@@ -202,6 +202,11 @@ func main() {
 	dst = From(src1).Union(src2).Results()
 	fmt.Println("union return ", dst)
 
+	dst = From(src1).Intersect(src2).Results()
+	fmt.Println("src1 ", src1)
+	fmt.Println("Intersect src2 ", src2)
+	fmt.Println("return ", dst)
+
 	size := count / 4
 	chSrc := make(chan *chunk)
 	go func() {

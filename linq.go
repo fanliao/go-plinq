@@ -757,10 +757,15 @@ func getIntersect(source2 interface{}, degree int) stepAction {
 					kv := v.(*HKeyValue)
 					if _, ok := distKvs[kv.keyHash]; !ok {
 						distKvs[kv.keyHash] = true
+						//fmt.Println("add", kv.value, "to distKvs")
 					}
 				}
-
+				//fmt.Println("receive", len(c.data))
+				//fmt.Println("len(distKvs)", len(distKvs))
 			})
+			//if len(distKvs) != 100 {
+			//	fmt.Println("get distKvs end---------")
+			//}
 			return nil
 		})
 
@@ -770,6 +775,10 @@ func getIntersect(source2 interface{}, degree int) stepAction {
 
 		_, _ = f1.Get()
 
+		//if len(distKvs) != 100 {
+		//	fmt.Println("f1 end", len(distKvs), "-----")
+		//	fmt.Println("dataSource2", len(dataSource2), "-----")
+		//}
 		resultKVs := make(map[uint64]interface{}, len(distKvs))
 		for _, v := range dataSource2 {
 			kv := v.(*KeyValue)
@@ -813,7 +822,7 @@ func parallelMapToChan(src dataSource, reduceSrcChan chan *chunk, mapChunk func(
 func parallelMapChanToChan(src *chanSource, out chan *chunk, task func(*chunk) *chunk, degree int) (*promise.Future, chan *chunk) {
 	var createOutChan bool
 	if out == nil {
-		out = make(chan *chunk)
+		out = make(chan *chunk, 2)
 		createOutChan = true
 	}
 
@@ -857,7 +866,7 @@ func parallelMapChanToChan(src *chanSource, out chan *chunk, task func(*chunk) *
 func parallelMapListToChan(src dataSource, out chan *chunk, task func(*chunk) *chunk, degree int) (*promise.Future, chan *chunk) {
 	var createOutChan bool
 	if out == nil {
-		out = make(chan *chunk)
+		out = make(chan *chunk, 2)
 		createOutChan = true
 	}
 
@@ -866,6 +875,7 @@ func parallelMapListToChan(src dataSource, out chan *chunk, task func(*chunk) *c
 			r := task(c)
 			if out != nil {
 				out <- r
+				//fmt.Println("send", len(r.data))
 			}
 			return nil
 		}
@@ -882,6 +892,7 @@ func addCloseChanCallback(f *promise.Future, out chan *chunk) {
 			if cap(out) == 0 {
 				close(out)
 			} else {
+				//fmt.Println("send nil")
 				out <- nil
 			}
 		}
@@ -920,16 +931,34 @@ func parallelMapList(src dataSource, getAction func(*chunk) func() []interface{}
 }
 
 func reduceChan(chEndFlag chan *promise.PromiseResult, src chan *chunk, reduce func(*chunk)) {
-	for {
-		select {
-		case <-chEndFlag:
-			return
-		case v, ok := <-src:
-			if ok {
-				reduce(v)
+	if cap(src) == 0 {
+		for {
+			select {
+			case <-chEndFlag:
+				//fmt.Println("return reduceChan")
+				return
+			case v, ok := <-src:
+				if ok && v != nil {
+					reduce(v)
+				}
+			}
+		}
+	} else {
+		for {
+			select {
+			case v, ok := <-src:
+				if ok {
+					if v != nil {
+						reduce(v)
+					} else {
+						close(src)
+						return
+					}
+				}
 			}
 		}
 	}
+
 }
 
 func getFutureResult(f *promise.Future, dataSourceFunc func([]interface{}) dataSource) (dataSource, error) {
