@@ -385,9 +385,9 @@ func getSelect(selectFunc func(interface{}) interface{}, degree int) stepAction 
 			})
 			return
 		case *chanSource:
-			out := make(chan *chunk)
+			//out := make(chan *chunk)
 
-			_ = parallelMapChan(s, out, func(c *chunk) *chunk {
+			_, out := parallelMapChanToChan(s, nil, func(c *chunk) *chunk {
 				defer func() {
 					if e := recover(); e != nil {
 						fmt.Println(e)
@@ -398,6 +398,7 @@ func getSelect(selectFunc func(interface{}) interface{}, degree int) stepAction 
 				return &chunk{result, c.order}
 			}, degree)
 
+			//_ = f
 			//todo: how to handle error in promise?
 			//fmt.Println("select return out chan")
 			dst, e = &chanSource{out}, nil
@@ -419,7 +420,7 @@ func getOrder(compare func(interface{}, interface{}) int) stepAction {
 			return &listSource{sorteds}, true, nil
 		case *chanSource:
 			avl := NewAvlTree(compare)
-			f := parallelMapChan(s, nil, func(c *chunk) *chunk {
+			f, _ := parallelMapChanToChan(s, nil, func(c *chunk) *chunk {
 				for _, v := range c.data {
 					avl.Insert(v)
 				}
@@ -438,19 +439,20 @@ func getOrder(compare func(interface{}, interface{}) int) stepAction {
 
 func getWhere(sure func(interface{}) bool, degree int) stepAction {
 	return stepAction(func(src dataSource, keepOrder bool) (dst dataSource, keep bool, e error) {
-		reduceSrc := make(chan *chunk, 1)
 		mapChunk := func(c *chunk) (r *chunk) {
 			r = filterChunk(c, sure)
 			return
 		}
 
-		var f *promise.Future
-		switch s := src.(type) {
-		case *listSource:
-			f = parallelMapListToChan(s, reduceSrc, mapChunk, degree)
-		case *chanSource:
-			f = parallelMapChan(s, reduceSrc, mapChunk, degree)
-		}
+		//reduceSrc := make(chan *chunk, 1)
+		//var f *promise.Future
+		//switch s := src.(type) {
+		//case *listSource:
+		//	f = parallelMapListToChan(s, reduceSrc, mapChunk, degree)
+		//case *chanSource:
+		//	f = parallelMapChan(s, reduceSrc, mapChunk, degree)
+		//}
+		f, reduceSrc := parallelMapToChan(src, nil, mapChunk, degree)
 		f.Done(func(...interface{}) { reduceSrc <- nil }) //fmt.Println("where send a nil------------") })
 
 		return &chanSource{reduceSrc}, keepOrder, nil
@@ -459,20 +461,21 @@ func getWhere(sure func(interface{}) bool, degree int) stepAction {
 
 func getDistinct(distinctFunc func(interface{}) interface{}, degree int) stepAction {
 	return stepAction(func(src dataSource, keepOrder bool) (dataSource, bool, error) {
-		reduceSrc := make(chan *chunk)
 		mapChunk := func(c *chunk) (r *chunk) {
 			r = &chunk{getKeyValues(c, distinctFunc, nil), c.order}
 			return
 		}
 
-		//get all values and keys
-		var f *promise.Future
-		switch s := src.(type) {
-		case *listSource:
-			f = parallelMapListToChan(s, reduceSrc, mapChunk, degree)
-		case *chanSource:
-			f = parallelMapChan(s, reduceSrc, mapChunk, degree)
-		}
+		//reduceSrc := make(chan *chunk)
+		////get all values and keys
+		//var f *promise.Future
+		//switch s := src.(type) {
+		//case *listSource:
+		//	f = parallelMapListToChan(s, reduceSrc, mapChunk, degree)
+		//case *chanSource:
+		//	f = parallelMapChan(s, reduceSrc, mapChunk, degree)
+		//}
+		f, reduceSrc := parallelMapToChan(src, nil, mapChunk, degree)
 
 		//get distinct values
 		distKvs := make(map[uint64]int)
@@ -485,7 +488,6 @@ func getDistinct(distinctFunc func(interface{}) interface{}, degree int) stepAct
 				kv := v.(*HKeyValue)
 				if _, ok := distKvs[kv.keyHash]; !ok {
 					distKvs[kv.keyHash] = 1
-					//result = appendSlice(result, kv.value)
 					result[i] = kv.value
 					i++
 				}
@@ -502,20 +504,21 @@ func getDistinct(distinctFunc func(interface{}) interface{}, degree int) stepAct
 //note the groupby cannot keep order because the map cannot keep order
 func getGroupBy(groupFunc func(interface{}) interface{}, hashAsKey bool, degree int) stepAction {
 	return stepAction(func(src dataSource, keepOrder bool) (dataSource, bool, error) {
-		reduceSrc := make(chan *chunk)
 		mapChunk := func(c *chunk) (r *chunk) {
 			r = &chunk{getKeyValues(c, groupFunc, nil), c.order}
 			return
 		}
 
-		//get all values and keys
-		var f *promise.Future
-		switch s := src.(type) {
-		case *listSource:
-			f = parallelMapListToChan(s, reduceSrc, mapChunk, degree)
-		case *chanSource:
-			f = parallelMapChan(s, reduceSrc, mapChunk, degree)
-		}
+		//reduceSrc := make(chan *chunk)
+		////get all values and keys
+		//var f *promise.Future
+		//switch s := src.(type) {
+		//case *listSource:
+		//	f = parallelMapListToChan(s, reduceSrc, mapChunk, degree)
+		//case *chanSource:
+		//	f = parallelMapChan(s, reduceSrc, mapChunk, degree)
+		//}
+		f, reduceSrc := parallelMapToChan(src, nil, mapChunk, degree)
 
 		groupKvs := make(map[interface{}]interface{})
 		groupKv := func(v interface{}) {
@@ -618,8 +621,8 @@ func getJoinImpl(inner interface{},
 			})
 			return
 		case *chanSource:
-			out := make(chan *chunk)
-			_ = parallelMapChan(s, out, mapChunk, degree)
+			//out := make(chan *chunk)
+			_, out := parallelMapChanToChan(s, nil, mapChunk, degree)
 			dst, e = &chanSource{out}, nil
 			return
 		}
@@ -636,44 +639,43 @@ func getUnion(source2 interface{}, degree int) stepAction {
 			return
 		}
 
-		//get all values and keys
-		var f *promise.Future
-		switch s := src.(type) {
-		case *listSource:
-			f = parallelMapListToChan(s, reduceSrc, mapChunk, degree)
-		case *chanSource:
-			f = parallelMapChan(s, reduceSrc, mapChunk, degree)
-		}
+		////get all values and keys
+		//var f *promise.Future
+		//switch s := src.(type) {
+		//case *listSource:
+		//	f = parallelMapListToChan(s, reduceSrc, mapChunk, degree)
+		//case *chanSource:
+		//	f = parallelMapChan(s, reduceSrc, mapChunk, degree)
+		//}
+		f1, reduceSrc := parallelMapToChan(src, reduceSrc, mapChunk, degree)
 
-		dataSource2 := From(source2).data
-		var f1 *promise.Future
-		switch s := dataSource2.(type) {
-		case *listSource:
-			f1 = parallelMapListToChan(s, reduceSrc, mapChunk, degree)
-		case *chanSource:
-			f1 = parallelMapChan(s, reduceSrc, mapChunk, degree)
-		}
+		//dataSource2 := From(source2).data
+		//var f1 *promise.Future
+		//switch s := dataSource2.(type) {
+		//case *listSource:
+		//	f1 = parallelMapListToChan(s, reduceSrc, mapChunk, degree)
+		//case *chanSource:
+		//	f1 = parallelMapChan(s, reduceSrc, mapChunk, degree)
+		//}
+		f2, reduceSrc := parallelMapToChan(From(source2).data, reduceSrc, mapChunk, degree)
 
-		f2 := promise.WhenAll(f, f1)
+		reduceFuture := promise.WhenAll(f1, f2)
 
 		//get distinct values
-		distKvs := make(map[uint64]bool)
+		distKvs := make(map[uint64]int)
 		chunks := make([]interface{}, 0, 2*degree)
-		//result := make([]interface{}, 100000, 100000)
-		//i := 0
-		reduceChan(f2.GetChan(), reduceSrc, func(c *chunk) {
+		reduceChan(reduceFuture.GetChan(), reduceSrc, func(c *chunk) {
 			chunks = appendSlice(chunks, c)
-			result := make([]interface{}, len(c.data), len(c.data))
+			result := make([]interface{}, len(c.data))
 			i := 0
 			for _, v := range c.data {
 				kv := v.(*HKeyValue)
 				if _, ok := distKvs[kv.keyHash]; !ok {
-					distKvs[kv.keyHash] = true
+					distKvs[kv.keyHash] = 1
 					result[i] = kv.value
 					i++
 				}
 			}
-			//fmt.Println("union", len(result))
 			c.data = result[0:i]
 		})
 
@@ -738,15 +740,16 @@ func getIntersect(source2 interface{}, degree int) stepAction {
 				r = &chunk{getKeyValues(c, func(v interface{}) interface{} { return v }, nil), c.order}
 				return
 			}
-			reduceSrc := make(chan *chunk)
-			//get all values and keys
-			var f *promise.Future
-			switch s := src.(type) {
-			case *listSource:
-				f = parallelMapListToChan(s, reduceSrc, mapChunk, degree)
-			case *chanSource:
-				f = parallelMapChan(s, reduceSrc, mapChunk, degree)
-			}
+			//reduceSrc := make(chan *chunk)
+			////get all values and keys
+			//var f *promise.Future
+			//switch s := src.(type) {
+			//case *listSource:
+			//	f = parallelMapListToChan(s, reduceSrc, mapChunk, degree)
+			//case *chanSource:
+			//	f = parallelMapChan(s, reduceSrc, mapChunk, degree)
+			//}
+			f, reduceSrc := parallelMapToChan(src, nil, mapChunk, degree)
 			//get distinct values of src1
 			reduceChan(f.GetChan(), reduceSrc, func(c *chunk) {
 				for _, v := range c.data {
@@ -791,7 +794,26 @@ func getIntersect(source2 interface{}, degree int) stepAction {
 }
 
 //util funcs------------------------------------------
-func parallelMapChan(src *chanSource, out chan *chunk, task func(*chunk) *chunk, degree int) *promise.Future {
+func parallelMapToChan(src dataSource, reduceSrcChan chan *chunk, mapChunk func(c *chunk) (r *chunk), degree int) (f *promise.Future, ch chan *chunk) {
+	//get all values and keys
+	//var f *promise.Future
+	switch s := src.(type) {
+	case *listSource:
+		return parallelMapListToChan(s, reduceSrcChan, mapChunk, degree)
+	case *chanSource:
+		return parallelMapChanToChan(s, reduceSrcChan, mapChunk, degree)
+	default:
+		panic(ErrUnsupportSource)
+	}
+	//return f, reduceSrcChan
+
+}
+
+func parallelMapChanToChan(src *chanSource, out chan *chunk, task func(*chunk) *chunk, degree int) (*promise.Future, chan *chunk) {
+	if out == nil {
+		out = make(chan *chunk)
+	}
+
 	itr := src.Itr()
 	fs := make([]*promise.Future, degree, degree)
 	for i := 0; i < degree; i++ {
@@ -807,7 +829,7 @@ func parallelMapChan(src *chanSource, out chan *chunk, task func(*chunk) *chunk,
 					}
 					//fmt.Println("select receive", *c)
 					d := task(c)
-					if out != nil {
+					if out != nil && d != nil {
 						out <- d
 						//fmt.Println("end select send", *d)
 					}
@@ -827,10 +849,13 @@ func parallelMapChan(src *chanSource, out chan *chunk, task func(*chunk) *chunk,
 		}
 	})
 
-	return f
+	return f, out
 }
 
-func parallelMapListToChan(src dataSource, out chan *chunk, task func(*chunk) *chunk, degree int) *promise.Future {
+func parallelMapListToChan(src dataSource, out chan *chunk, task func(*chunk) *chunk, degree int) (*promise.Future, chan *chunk) {
+	if out == nil {
+		out = make(chan *chunk)
+	}
 	return parallelMapList(src, func(c *chunk) func() []interface{} {
 		return func() []interface{} {
 			r := task(c)
@@ -839,7 +864,7 @@ func parallelMapListToChan(src dataSource, out chan *chunk, task func(*chunk) *c
 			}
 			return nil
 		}
-	}, degree)
+	}, degree), out
 }
 
 func parallelMapListToList(src dataSource, task func(*chunk) *chunk, degree int) *promise.Future {
