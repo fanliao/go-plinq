@@ -126,7 +126,6 @@ func (this chanSource) ToSlice(keepOrder bool) []interface{} {
 
 	//fmt.Println("ToSlice start receive chunk")
 	for c := range this.data {
-		//fmt.Println("ToSlice receive a chunk", *c)
 		//if use the buffer channel, then must receive a nil as end flag
 		if reflect.ValueOf(c).IsNil() {
 			//fmt.Println("ToSlice receive a nil")
@@ -135,6 +134,7 @@ func (this chanSource) ToSlice(keepOrder bool) []interface{} {
 			break
 		}
 
+		//fmt.Println("ToSlice receive a chunk", *c)
 		if keepOrder {
 			avl.Insert(c)
 		} else {
@@ -453,9 +453,11 @@ func getWhere(sure func(interface{}) bool, degree int) stepAction {
 		//case *chanSource:
 		//	f = parallelMapChan(s, reduceSrc, mapChunk, degree)
 		//}
+		//fmt.Println("start where-----------------------------------------------")
 		_, reduceSrc := parallelMapToChan(src, nil, mapChunk, degree)
 		//f.Done(func(...interface{}) { reduceSrc <- nil }) //fmt.Println("where send a nil------------") })
 
+		//fmt.Println("return where")
 		return &chanSource{reduceSrc}, keepOrder, nil
 	})
 }
@@ -822,12 +824,12 @@ func parallelMapToChan(src dataSource, reduceSrcChan chan *chunk, mapChunk func(
 func parallelMapChanToChan(src *chanSource, out chan *chunk, task func(*chunk) *chunk, degree int) (*promise.Future, chan *chunk) {
 	var createOutChan bool
 	if out == nil {
-		out = make(chan *chunk, 2)
+		out = make(chan *chunk, degree)
 		createOutChan = true
 	}
 
 	itr := src.Itr()
-	fs := make([]*promise.Future, degree, degree)
+	fs := make([]*promise.Future, degree)
 	for i := 0; i < degree; i++ {
 		f := promise.Start(func() []interface{} {
 			for {
@@ -864,9 +866,14 @@ func parallelMapChanToChan(src *chanSource, out chan *chunk, task func(*chunk) *
 }
 
 func parallelMapListToChan(src dataSource, out chan *chunk, task func(*chunk) *chunk, degree int) (*promise.Future, chan *chunk) {
+	defer func() {
+		if e := recover(); e != nil {
+			fmt.Println(e)
+		}
+	}()
 	var createOutChan bool
 	if out == nil {
-		out = make(chan *chunk, 2)
+		out = make(chan *chunk, degree)
 		createOutChan = true
 	}
 
@@ -883,20 +890,29 @@ func parallelMapListToChan(src dataSource, out chan *chunk, task func(*chunk) *c
 	if createOutChan {
 		addCloseChanCallback(f, out)
 	}
+	//fmt.Println("return f")
 	return f, out
 }
 
 func addCloseChanCallback(f *promise.Future, out chan *chunk) {
+	//fmt.Println("addCloseChanCallback")
 	f.Always(func(results ...interface{}) {
-		if out != nil {
-			if cap(out) == 0 {
-				close(out)
-			} else {
-				//fmt.Println("send nil")
-				out <- nil
+		//must use gorouter, else may deadlock when out is buffer chan
+		//because it maybe called before the chan receiver be started.
+		//if the buffer is full, out <- nil will be holder then deadlock
+		go func() {
+			if out != nil {
+				if cap(out) == 0 {
+					close(out)
+				} else {
+					//fmt.Println("begin send nil")
+					out <- nil
+					//fmt.Println("send nil")
+				}
 			}
-		}
+		}()
 	})
+	//fmt.Println("addCloseChanCallback done")
 }
 
 func parallelMapListToList(src dataSource, task func(*chunk) *chunk, degree int) *promise.Future {
@@ -925,7 +941,9 @@ func parallelMapList(src dataSource, getAction func(*chunk) func() []interface{}
 		fs[i] = f
 		j++
 	}
+	//fmt.Println("begin when all")
 	f := promise.WhenAll(fs[0:j]...)
+	//fmt.Println("when all")
 
 	return f
 }
