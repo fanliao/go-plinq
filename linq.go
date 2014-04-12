@@ -538,17 +538,17 @@ func getDistinct(distinctFunc func(interface{}) interface{}, degree int) stepAct
 //note the groupby cannot keep order because the map cannot keep order
 func getGroupBy(groupFunc func(interface{}) interface{}, hashAsKey bool, degree int) stepAction {
 	return stepAction(func(src dataSource, keepOrder bool) (dataSource, bool, error) {
-		var getKey func(*HKeyValue) interface{}
-		if hashAsKey {
-			getKey = func(kv *HKeyValue) interface{} { return kv.keyHash }
-		} else {
-			getKey = func(kv *HKeyValue) interface{} { return kv.key }
-		}
+		//var getKey func(*HKeyValue) interface{}
+		//if hashAsKey {
+		//	getKey = func(kv *HKeyValue) interface{} { return kv.keyHash }
+		//} else {
+		//	getKey = func(kv *HKeyValue) interface{} { return kv.key }
+		//}
 
 		groupKvs := make(map[interface{}]interface{})
 		groupKv := func(v interface{}) {
 			kv := v.(*HKeyValue)
-			k := getKey(kv)
+			k := iif(hashAsKey, kv.keyHash, kv.key)
 			if v, ok := groupKvs[k]; !ok {
 				groupKvs[k] = []interface{}{kv.value}
 			} else {
@@ -877,39 +877,12 @@ func parallelMapChan(src *chanSource, out chan *chunk, task func(*chunk) *chunk,
 		if out != nil {
 			close(out)
 		}
-		//fmt.Println("close parallelMapChan out---------")
-		//close(out)
-		//fmt.Println("close parallelMapChan out---------")
 	})
 
 	return f
 }
 
 func parallelMapListToChan(src dataSource, out chan *chunk, task func(*chunk) *chunk, degree int) *promise.Future {
-	//fs := make([]*promise.Future, degree, degree)
-	//data := src.ToSlice(false)
-	//len := len(data)
-	//size := ceilSplitSize(len, degree)
-	//j := 0
-	//for i := 0; i < degree && i*size < len; i++ {
-	//	end := (i + 1) * size
-	//	if end >= len {
-	//		end = len
-	//	}
-	//	c := &chunk{data[i*size : end], i * size} //, end}
-
-	//	f := promise.Start(func() []interface{} {
-	//		r := task(c)
-	//		if out != nil {
-	//			out <- d
-	//		}
-	//		return nil
-	//	})
-	//	fs[i] = f
-	//	j++
-	//}
-	//f := promise.WhenAll(fs[0:j]...)
-
 	return parallelMapList1(src, func(c *chunk) func() []interface{} {
 		return func() []interface{} {
 			r := task(c)
@@ -922,27 +895,6 @@ func parallelMapListToChan(src dataSource, out chan *chunk, task func(*chunk) *c
 }
 
 func parallelMapListToList(src dataSource, task func(*chunk) *chunk, degree int) *promise.Future {
-	//fs := make([]*promise.Future, degree, degree)
-	//data := src.ToSlice(false)
-	//len := len(data)
-	//size := ceilSplitSize(len, degree)
-	//j := 0
-	//for i := 0; i < degree && i*size < len; i++ {
-	//	end := (i + 1) * size
-	//	if end >= len {
-	//		end = len
-	//	}
-	//	c := &chunk{data[i*size : end], i * size} //, end}
-
-	//	f := promise.Start(func() []interface{} {
-	//		r := task(c)
-	//		return []interface{}{r, true}
-	//	})
-	//	fs[i] = f
-	//	j++
-	//}
-	//f := promise.WhenAll(fs[0:j]...)
-
 	return parallelMapList1(src, func(c *chunk) func() []interface{} {
 		return func() []interface{} {
 			r := task(c)
@@ -1119,4 +1071,12 @@ func getKeyValues(c *chunk, keyFunc func(v interface{}) interface{}, KeyValues *
 		return &HKeyValue{tHash(k), k, v}
 	}, KeyValues)
 	return *KeyValues
+}
+
+func iif(sure bool, trueVal interface{}, falseVal interface{}) interface{} {
+	if sure {
+		return trueVal
+	} else {
+		return falseVal
+	}
 }
