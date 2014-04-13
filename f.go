@@ -129,7 +129,6 @@ func main() {
 	src1 := make([]interface{}, 0, 20)
 	src2 := make([]interface{}, 0, 20)
 	pow1 := make([]interface{}, 0, 20)
-	//go func() {
 	for i := 0; i < count; i++ {
 		arrInts = append(arrInts, i)
 		src1 = append(src1, i)
@@ -139,101 +138,154 @@ func main() {
 		pow1 = append(pow1, power{i, i * i})
 		pow1 = append(pow1, power{i, i * 100})
 	}
-	//}()
+	var getChanSrc = func(src []interface{}) chan interface{} {
+		chanSrc := make(chan interface{})
+		go func() {
+			for _, v := range src {
+				chanSrc <- v
+			}
+			close(chanSrc)
+		}()
+		return chanSrc
+	}
+	var getIntChanSrc = func(src []int) chan int {
+		chanSrc := make(chan int)
+		go func() {
+			for _, v := range src {
+				chanSrc <- v
+			}
+			close(chanSrc)
+		}()
+		return chanSrc
+	}
 
-	dst := From(src1).Where(func(v interface{}) bool {
+	var whereFunc = func(v interface{}) bool {
 		i := v.(int)
 		return i%2 == 0
-	}).Results()
+	}
+	var selectFunc = func(v interface{}) interface{} {
+		i := v.(int)
+		return "item" + strconv.Itoa(i)
+	}
+	var groupKeyFunc = func(v interface{}) interface{} {
+		return v.(int) / 10
+	}
+
+	var joinResultSelector = func(o interface{}, i interface{}) interface{} {
+		if i == nil {
+			return strconv.Itoa(o.(int))
+		} else {
+			o1, i1 := o.(int), i.(power)
+			return strconv.Itoa(o1) + ";" + strconv.Itoa(i1.p)
+		}
+	}
+
+	var groupJoinResultSelector = func(o interface{}, is []interface{}) interface{} {
+		return KeyValue{o, is}
+	}
+
+	dst := From(src1).Where(whereFunc).Results()
 	fmt.Println("where return", dst, "\n")
 
-	dst = From(src1).Where(func(v interface{}) bool {
-		i := v.(int)
-		return i%2 == 0
-	}).Select(func(v interface{}) interface{} {
-		i := v.(int)
-		return "item" + strconv.Itoa(i)
-	}).Results()
+	//test where and select
+	dst = From(src1).Where(whereFunc).Select(selectFunc).Results()
 	fmt.Println("where select return", dst, "\n")
 
-	dst = From(arrInts).Where(func(v interface{}) bool {
-		i := v.(int)
-		return i%2 == 0
-	}).Select(func(v interface{}) interface{} {
-		i := v.(int)
-		return "item" + strconv.Itoa(i)
-	}).Results()
+	dst = From(getChanSrc(src1)).Where(whereFunc).Select(selectFunc).KeepOrder(true).Results()
+	fmt.Println("chansource where select return", dst)
+	fmt.Println()
+
+	//test where and select with int slice
+	dst = From(arrInts).Where(whereFunc).Select(selectFunc).Results()
 	fmt.Println("Int slice where select return", dst, "\n")
 
-	dst = From(src1).GroupBy(func(v interface{}) interface{} {
-		return v.(int) / 10
-	}).Results()
+	dst = From(getIntChanSrc(arrInts)).Where(whereFunc).Select(selectFunc).Results()
+	fmt.Println("Int chan where select return", dst, "\n")
+
+	//test group
+	dst = From(src1).GroupBy(groupKeyFunc).Results()
 	for _, o := range dst {
 		kv := o.(*KeyValue)
 		fmt.Println("group get k=", kv.key, ";v=", kv.value, " ")
 	}
 	fmt.Println("")
 
+	dst = From(getChanSrc(src1)).GroupBy(groupKeyFunc).Results()
+	for _, o := range dst {
+		kv := o.(*KeyValue)
+		fmt.Println("chan source group get k=", kv.key, ";v=", kv.value, " ")
+	}
+	fmt.Println("")
+
+	//test left join
 	dst = From(src1).LeftJoin(pow1,
 		func(o interface{}) interface{} { return o },
 		func(i interface{}) interface{} { return i.(power).i },
-		func(o interface{}, i interface{}) interface{} {
-			if i == nil {
-				return strconv.Itoa(o.(int))
-			} else {
-				o1, i1 := o.(int), i.(power)
-				return strconv.Itoa(o1) + ";" + strconv.Itoa(i1.p)
-			}
-		}).Results()
+		joinResultSelector).Results()
 	fmt.Println("join ", src1)
+	fmt.Println("joinResultSelectorith", pow1)
+	fmt.Println("return", dst, "\n")
+
+	dst = From(getChanSrc(src1)).LeftJoin(pow1,
+		func(o interface{}) interface{} { return o },
+		func(i interface{}) interface{} { return i.(power).i },
+		joinResultSelector).Results()
+	fmt.Println("chan source join ", src1)
 	fmt.Println("with", pow1)
 	fmt.Println("return", dst, "\n")
 
+	//test left group join
 	dst = From(src1).LeftGroupJoin(pow1,
 		func(o interface{}) interface{} { return o },
 		func(i interface{}) interface{} { return i.(power).i },
-		func(o interface{}, is []interface{}) interface{} {
-			return KeyValue{o, is}
-		}).Results()
+		groupJoinResultSelector).Results()
 	fmt.Println("groupjoin ", src1)
 	fmt.Println("with", pow1)
 	fmt.Println("return", dst, "\n")
 
-	dst = From(src1).Union(src2).Results()
-	fmt.Println("union return ", dst)
+	dst = From(getChanSrc(src1)).LeftGroupJoin(pow1,
+		func(o interface{}) interface{} { return o },
+		func(i interface{}) interface{} { return i.(power).i },
+		groupJoinResultSelector).Results()
+	fmt.Println("chan source groupjoin ", src1)
+	fmt.Println("with", pow1)
+	fmt.Println("return", dst, "\n")
 
+	//test union
+	dst = From(src1).Union(src2).Results()
+	fmt.Println("union return ", dst, "\n")
+
+	dst = From(getChanSrc(src1)).Union(getChanSrc(src2)).Results()
+	fmt.Println("chan source union return ", dst, "\n")
+
+	//test intersect
 	dst = From(src1).Intersect(src2).Results()
 	fmt.Println("src1 ", src1)
 	fmt.Println("Intersect src2 ", src2)
-	fmt.Println("return ", dst)
+	fmt.Println("return ", dst, "\n")
+
+	dst = From(getChanSrc(src1)).Intersect(getChanSrc(src2)).Results()
+	fmt.Println("can source src1 ", src1)
+	fmt.Println("Intersect src2 ", src2)
+	fmt.Println("return ", dst, "\n")
 
 	size := count / 4
-	chSrc := make(chan *chunk)
+	chunkSrc := make(chan *chunk)
 	go func() {
-		chSrc <- &chunk{src1[0:size], 0}
-		chSrc <- &chunk{src1[size : 2*size], size}
-		chSrc <- &chunk{src1[2*size : 3*size], 2 * size}
-		chSrc <- &chunk{src1[3*size : 4*size], 3 * size}
-		chSrc <- nil
-		fmt.Println("close src------------------", chSrc)
+		chunkSrc <- &chunk{src1[0:size], 0}
+		chunkSrc <- &chunk{src1[size : 2*size], size}
+		chunkSrc <- &chunk{src1[2*size : 3*size], 2 * size}
+		chunkSrc <- &chunk{src1[3*size : 4*size], 3 * size}
+		chunkSrc <- nil
+		fmt.Println("close src------------------", chunkSrc)
 	}()
-
-	//for v := range chSrc {
-	//	fmt.Println(v)
-	//}
-
-	dst = From(chSrc).Where(func(v interface{}) bool {
-		i := v.(int)
-		return i%2 == 0
-	}).Select(func(v interface{}) interface{} {
-		i := v.(int)
-		return "item" + strconv.Itoa(i)
-	}).KeepOrder(true).Results()
-	fmt.Println("chansource where select return", dst)
+	dst = From(chunkSrc).Where(whereFunc).Select(selectFunc).KeepOrder(true).Results()
+	fmt.Println("chunkchansource where select return", dst)
 	fmt.Println()
 
-	//fmt.Println("s" + strconv.Itoa(100000))
+}
 
+func testAVL() {
 	a := []interface{}{3, 2, 1, 4, 5, 6, 7, 10, 9, 8, 7, 6}
 	avl := NewAvlTree(func(a interface{}, b interface{}) int {
 		a1, b1 := a.(int), b.(int)
@@ -254,30 +306,30 @@ func main() {
 	result := avl.ToSlice()
 	fmt.Println("avl result=", result, "count=", avl.count)
 
-	testHash("user1" + strconv.Itoa(10))
-	testHash("user" + strconv.Itoa(110))
-	testHash("user" + strconv.Itoa(0))
-	testHash("user" + strconv.Itoa(0))
-	testHash(nil)
-	testHash(nil)
-	testHash(111.11)
-	testHash(111.11)
-	testHash([]int{1, 2, 0})
-	testHash([]int{1, 2, 0})
-	testHash(0)
-	testHash(0)
-	testHash([]interface{}{1, "user" + strconv.Itoa(2), 0})
-	testHash([]interface{}{1, "user" + strconv.Itoa(2), 0})
-	slice := []interface{}{5, "user" + strconv.Itoa(5)}
-	testHash(slice)
-	testHash(slice)
-	testHash(power{1, 1})
-	testHash(power{1, 1})
-
-	var i64 int64 = 1
-	fmt.Println("convert to int32", int32(i64))
 }
 
-func testHash(data interface{}) {
+func testHash() {
+	printHash("user1" + strconv.Itoa(10))
+	printHash("user" + strconv.Itoa(110))
+	printHash("user" + strconv.Itoa(0))
+	printHash("user" + strconv.Itoa(0))
+	printHash(nil)
+	printHash(nil)
+	printHash(111.11)
+	printHash(111.11)
+	printHash([]int{1, 2, 0})
+	printHash([]int{1, 2, 0})
+	printHash(0)
+	printHash(0)
+	printHash([]interface{}{1, "user" + strconv.Itoa(2), 0})
+	printHash([]interface{}{1, "user" + strconv.Itoa(2), 0})
+	slice := []interface{}{5, "user" + strconv.Itoa(5)}
+	printHash(slice)
+	printHash(slice)
+	printHash(power{1, 1})
+	printHash(power{1, 1})
+}
+
+func printHash(data interface{}) {
 	fmt.Println("hash", data, tHash(data))
 }

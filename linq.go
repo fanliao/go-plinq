@@ -7,13 +7,15 @@ import (
 	"github.com/fanliao/go-promise"
 	"reflect"
 	"runtime"
+	"sync"
 	"unsafe"
 )
 
 const (
-	ptrSize        = unsafe.Sizeof((*byte)(nil))
-	kindMask       = 0x7f
-	kindNoPointers = 0x80
+	ptrSize          = unsafe.Sizeof((*byte)(nil))
+	kindMask         = 0x7f
+	kindNoPointers   = 0x80
+	DEFAULTCHUNKSIZE = 100
 )
 
 var (
@@ -99,15 +101,53 @@ func (this listSource) ToSlice(keepOrder bool) []interface{} {
 //}
 
 type chanSource struct {
-	data chan *chunk
+	//data1 chan *chunk
+	once      *sync.Once
+	data1     interface{}
+	chunkChan chan *chunk
+	chunkSize int
 }
 
 func (this chanSource) Typ() int {
 	return SOURCE_CHUNK
 }
 
-func (this chanSource) Itr() func() (*chunk, bool) {
-	ch := this.data
+func (this *chanSource) makeChunkChanSure() {
+	if this.chunkChan == nil {
+		this.once.Do(func() {
+			if this.chunkChan != nil {
+				return
+			}
+			srcChan := reflect.ValueOf(this.data1)
+			//chunkChan := make(chan *chunk)
+			this.chunkChan = make(chan *chunk)
+			go func() {
+				chunkData := make([]interface{}, 0, this.chunkSize)
+				i := 0
+				for {
+					if v, ok := srcChan.Recv(); ok {
+						chunkData = append(chunkData, v.Interface())
+						if len(chunkData) == cap(chunkData) {
+							this.chunkChan <- &chunk{chunkData, i}
+							i++
+							chunkData = make([]interface{}, 0, this.chunkSize)
+						}
+					} else {
+						break
+					}
+				}
+				if len(chunkData) > 0 {
+					this.chunkChan <- &chunk{chunkData, i}
+				}
+				this.chunkChan <- nil
+			}()
+		})
+	}
+}
+
+func (this *chanSource) Itr() func() (*chunk, bool) {
+	this.makeChunkChanSure()
+	ch := this.chunkChan
 	return func() (*chunk, bool) {
 		c, ok := <-ch
 		//fmt.Println("chanSource receive", c)
@@ -116,37 +156,63 @@ func (this chanSource) Itr() func() (*chunk, bool) {
 }
 
 func (this chanSource) Close() {
-	close(this.data)
+	if this.chunkChan != nil {
+		close(this.chunkChan)
+	}
+	//if chunkChan, ok := this.data1.(chan *chunk); ok {
+	//} else {
+	//	srcChan := reflect.ValueOf(this.data1)
+	//	if srcChan.Kind() != reflect.Chan {
+	//		panic(ErrUnsupportSource)
+	//	}
+	//	srcChan.Close()
+	//}
 }
 
 //receive all chunks from chan and return a slice includes all items
 func (this chanSource) ToSlice(keepOrder bool) []interface{} {
-	chunks := make([]interface{}, 0, 2)
-	avl := newChunkAvlTree()
+	if this.chunkChan != nil {
+		chunks := make([]interface{}, 0, 2)
+		avl := newChunkAvlTree()
 
-	//fmt.Println("ToSlice start receive chunk")
-	for c := range this.data {
-		//if use the buffer channel, then must receive a nil as end flag
-		if reflect.ValueOf(c).IsNil() {
-			//fmt.Println("ToSlice receive a nil")
-			this.Close()
-			//fmt.Println("close chan")
-			break
+		//fmt.Println("ToSlice start receive chunk")
+		for c := range this.chunkChan {
+			//if use the buffer channel, then must receive a nil as end flag
+			if reflect.ValueOf(c).IsNil() {
+				//fmt.Println("ToSlice receive a nil")
+				this.Close()
+				//fmt.Println("close chan")
+				break
+			}
+
+			//fmt.Println("ToSlice receive a chunk", *c)
+			if keepOrder {
+				avl.Insert(c)
+			} else {
+				chunks = appendSlice(chunks, c)
+			}
+			//fmt.Println("ToSlice end receive a chunk")
 		}
-
-		//fmt.Println("ToSlice receive a chunk", *c)
 		if keepOrder {
-			avl.Insert(c)
-		} else {
-			chunks = appendSlice(chunks, c)
+			chunks = avl.ToSlice()
 		}
-		//fmt.Println("ToSlice end receive a chunk")
-	}
-	if keepOrder {
-		chunks = avl.ToSlice()
-	}
 
-	return expandChunks(chunks, false)
+		return expandChunks(chunks, false)
+	} else {
+		srcChan := reflect.ValueOf(this.data1)
+		if srcChan.Kind() != reflect.Chan {
+			panic(ErrUnsupportSource)
+		}
+		result := make([]interface{}, 2)
+		for {
+			if v, ok := srcChan.Recv(); ok {
+				result = append(result, v)
+			} else {
+				break
+			}
+		}
+		return result
+	}
 }
 
 //func (this chanSource) ToChan() chan interface{} {
@@ -187,10 +253,10 @@ func From(src interface{}) (q Queryable) {
 	if k := reflect.ValueOf(src).Kind(); k == reflect.Slice || k == reflect.Map {
 		q.data = &listSource{data: src}
 	} else if s, ok := src.(chan *chunk); ok {
-		q.data = &chanSource{data: s}
-	} else if k == reflect.Chan{
-        //todo
-    } else {
+		q.data = &chanSource{chunkChan: s}
+	} else if k == reflect.Chan {
+		q.data = &chanSource{new(sync.Once), src, nil, DEFAULTCHUNKSIZE}
+	} else {
 		typ := reflect.TypeOf(src)
 		switch typ.Kind() {
 		case reflect.Slice:
@@ -404,7 +470,7 @@ func getSelect(selectFunc func(interface{}) interface{}, degree int) stepAction 
 			//_ = f
 			//todo: how to handle error in promise?
 			//fmt.Println("select return out chan")
-			dst, e = &chanSource{out}, nil
+			dst, e = &chanSource{chunkChan: out}, nil
 			return
 		}
 
@@ -450,7 +516,7 @@ func getWhere(sure func(interface{}) bool, degree int) stepAction {
 		_, reduceSrc := parallelMapToChan(src, nil, mapChunk, degree)
 
 		//fmt.Println("return where")
-		return &chanSource{reduceSrc}, keepOrder, nil
+		return &chanSource{chunkChan: reduceSrc}, keepOrder, nil
 	})
 }
 
@@ -600,7 +666,7 @@ func getJoinImpl(inner interface{},
 		case *chanSource:
 			//out := make(chan *chunk)
 			_, out := parallelMapChanToChan(s, nil, mapChunk, degree)
-			dst, e = &chanSource{out}, nil
+			dst, e = &chanSource{chunkChan: out}, nil
 			return
 		}
 
