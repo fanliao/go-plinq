@@ -3,6 +3,7 @@ package main
 import (
 	//"time"
 	//"errors"
+	"fmt"
 	"reflect"
 	"sort"
 	"sync"
@@ -528,4 +529,26 @@ func newChunkAvlTree() *avlTree {
 			return 1
 		}
 	})
+}
+
+//errors--------------------
+// New returns an error that formats as the given text.
+func NewError(text string, innerErrs []interface{}) error {
+	return &errorLinq{text, innerErrs}
+}
+
+// errorLinq is a trivial implementation of error.
+type errorLinq struct {
+	s         string
+	innerErrs []interface{}
+}
+
+func (e *errorLinq) Error() string {
+	if e.innerErrs != nil {
+		return e.s
+	} else {
+		errs := append(e.innerErrs, e.s)
+		str := fmt.Sprintf("errors: %v", errs)
+		return str
+	}
 }

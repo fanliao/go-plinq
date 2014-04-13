@@ -167,8 +167,6 @@ func main() {
 		//		fmt.Println("where e", e)
 		//	}
 		//}()
-		var ss []int
-		fmt.Println(ss[1])
 		i := v.(int)
 		return i%2 == 0
 	}
@@ -198,7 +196,7 @@ func main() {
 	})
 
 	//test where and select
-	testLinqWithAllSource("Where and Select opretions", src1, func(q Queryable) Queryable {
+	testLinqWithAllSource("Where and Select opretions", src1, func(q *Queryable) *Queryable {
 		return q.Where(whereFunc).Select(selectFunc)
 	})
 
@@ -210,7 +208,7 @@ func main() {
 	fmt.Println("Int chan where select return", dst, "\n")
 
 	//test group
-	testLinqWithAllSource("Group opretions", src1, func(q Queryable) Queryable {
+	testLinqWithAllSource("Group opretions", src1, func(q *Queryable) *Queryable {
 		return q.GroupBy(groupKeyFunc)
 	}, func(dst []interface{}) {
 		fmt.Println()
@@ -221,7 +219,7 @@ func main() {
 	})
 
 	//test left join
-	testLinqWithAllSource("LeftJoin opretions", src1, func(q Queryable) Queryable {
+	testLinqWithAllSource("LeftJoin opretions", src1, func(q *Queryable) *Queryable {
 		return q.LeftJoin(pow1,
 			func(o interface{}) interface{} { return o },
 			func(i interface{}) interface{} { return i.(power).i },
@@ -229,7 +227,7 @@ func main() {
 	})
 
 	//test left group join
-	testLinqWithAllSource("LeftGroupJoin opretions", src1, func(q Queryable) Queryable {
+	testLinqWithAllSource("LeftGroupJoin opretions", src1, func(q *Queryable) *Queryable {
 		return q.LeftGroupJoin(pow1,
 			func(o interface{}) interface{} { return o },
 			func(i interface{}) interface{} { return i.(power).i },
@@ -237,12 +235,12 @@ func main() {
 	})
 
 	//test union
-	testLinqWithAllSource("Union opretions", src1, func(q Queryable) Queryable {
+	testLinqWithAllSource("Union opretions", src1, func(q *Queryable) *Queryable {
 		return q.Union(src2)
 	})
 
 	//test intersect
-	testLinqWithAllSource("Intersect opretions", src1, func(q Queryable) Queryable {
+	testLinqWithAllSource("Intersect opretions", src1, func(q *Queryable) *Queryable {
 		return q.Intersect(src2)
 	})
 
@@ -279,7 +277,7 @@ func testLinqOpr(title string, linqFunc func() ([]interface{}, error), rsHandler
 	}
 }
 
-func testLinqWithAllSource(title string, listSrc []interface{}, query func(Queryable) Queryable, rsHandlers ...func([]interface{})) {
+func testLinqWithAllSource(title string, listSrc []interface{}, query func(*Queryable) *Queryable, rsHandlers ...func([]interface{})) {
 	testLinqOpr(title, func() ([]interface{}, error) {
 		return query(From(listSrc)).Results()
 	}, rsHandlers...)
