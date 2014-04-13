@@ -19,8 +19,17 @@ const (
 )
 
 var (
-	numCPU             int
-	ErrUnsupportSource = errors.New("unsupport dataSource")
+	numCPU               int
+	ErrUnsupportSource   = errors.New("unsupport dataSource")
+	ErrNilSource         = errors.New("datasource cannot be nil")
+	ErrUnionNilSource    = errors.New("cannot union nil data source")
+	ErrConcatNilSource   = errors.New("cannot concat nil data source")
+	ErrInterestNilSource = errors.New("cannot interest nil data source")
+	ErrJoinNilSource     = errors.New("cannot join nil data source")
+	ErrNilAction         = errors.New("action cannot be nil")
+	ErrOuterKeySelector  = errors.New("outerKeySelector cannot be nil")
+	ErrInnerKeySelector  = errors.New("innerKeySelector cannot be nil")
+	ErrResultSelector    = errors.New("resultSelector cannot be nil")
 )
 
 func init() {
@@ -246,6 +255,10 @@ type Queryable struct {
 }
 
 func From(src interface{}) (q Queryable) {
+	if src == nil {
+		panic(ErrNilSource)
+	}
+
 	q = Queryable{}
 	q.keepOrder = true
 	q.steps = make([]step, 0, 4)
@@ -257,14 +270,6 @@ func From(src interface{}) (q Queryable) {
 	} else if k == reflect.Chan {
 		q.data = &chanSource{new(sync.Once), src, nil, DEFAULTCHUNKSIZE}
 	} else {
-		typ := reflect.TypeOf(src)
-		switch typ.Kind() {
-		case reflect.Slice:
-
-		case reflect.Chan:
-		case reflect.Map:
-		default:
-		}
 		panic(ErrUnsupportSource)
 	}
 	return
@@ -275,11 +280,17 @@ func (this Queryable) Results() []interface{} {
 }
 
 func (this Queryable) Where(sure func(interface{}) bool) Queryable {
+	if sure == nil {
+		panic(ErrNilAction)
+	}
 	this.steps = append(this.steps, commonStep{ACT_WHERE, sure, numCPU})
 	return this
 }
 
 func (this Queryable) Select(selectFunc func(interface{}) interface{}) Queryable {
+	if selectFunc == nil {
+		panic(ErrNilAction)
+	}
 	this.steps = append(this.steps, commonStep{ACT_SELECT, selectFunc, numCPU})
 	return this
 }
@@ -295,6 +306,9 @@ func (this Queryable) Order(compare func(interface{}, interface{}) int) Queryabl
 }
 
 func (this Queryable) GroupBy(keySelector func(interface{}) interface{}) Queryable {
+	if keySelector == nil {
+		panic(ErrNilAction)
+	}
 	this.steps = append(this.steps, commonStep{ACT_GROUPBY, keySelector, numCPU})
 	return this
 }
@@ -305,16 +319,25 @@ func (this Queryable) hGroupBy(keySelector func(interface{}) interface{}) Querya
 }
 
 func (this Queryable) Union(source2 interface{}) Queryable {
+	if source2 == nil {
+		panic(ErrUnionNilSource)
+	}
 	this.steps = append(this.steps, commonStep{ACT_UNION, source2, numCPU})
 	return this
 }
 
 func (this Queryable) Concat(source2 interface{}) Queryable {
+	if source2 == nil {
+		panic(ErrConcatNilSource)
+	}
 	this.steps = append(this.steps, commonStep{ACT_CONCAT, source2, numCPU})
 	return this
 }
 
 func (this Queryable) Intersect(source2 interface{}) Queryable {
+	if source2 == nil {
+		panic(ErrInterestNilSource)
+	}
 	this.steps = append(this.steps, commonStep{ACT_INTERSECT, source2, numCPU})
 	return this
 }
@@ -323,6 +346,18 @@ func (this Queryable) Join(inner interface{},
 	outerKeySelector func(interface{}) interface{},
 	innerKeySelector func(interface{}) interface{},
 	resultSelector func(interface{}, interface{}) interface{}) Queryable {
+	if inner == nil {
+		panic(ErrJoinNilSource)
+	}
+	if outerKeySelector == nil {
+		panic(ErrOuterKeySelector)
+	}
+	if innerKeySelector == nil {
+		panic(ErrInnerKeySelector)
+	}
+	if resultSelector == nil {
+		panic(ErrResultSelector)
+	}
 	this.steps = append(this.steps, joinStep{commonStep{ACT_JOIN, inner, numCPU}, outerKeySelector, innerKeySelector, resultSelector, false})
 	return this
 }
@@ -331,6 +366,18 @@ func (this Queryable) LeftJoin(inner interface{},
 	outerKeySelector func(interface{}) interface{},
 	innerKeySelector func(interface{}) interface{},
 	resultSelector func(interface{}, interface{}) interface{}) Queryable {
+	if inner == nil {
+		panic(ErrJoinNilSource)
+	}
+	if outerKeySelector == nil {
+		panic(ErrOuterKeySelector)
+	}
+	if innerKeySelector == nil {
+		panic(ErrInnerKeySelector)
+	}
+	if resultSelector == nil {
+		panic(ErrResultSelector)
+	}
 	this.steps = append(this.steps, joinStep{commonStep{ACT_JOIN, inner, numCPU}, outerKeySelector, innerKeySelector, resultSelector, true})
 	return this
 }
@@ -339,6 +386,18 @@ func (this Queryable) GroupJoin(inner interface{},
 	outerKeySelector func(interface{}) interface{},
 	innerKeySelector func(interface{}) interface{},
 	resultSelector func(interface{}, []interface{}) interface{}) Queryable {
+	if inner == nil {
+		panic(ErrJoinNilSource)
+	}
+	if outerKeySelector == nil {
+		panic(ErrOuterKeySelector)
+	}
+	if innerKeySelector == nil {
+		panic(ErrInnerKeySelector)
+	}
+	if resultSelector == nil {
+		panic(ErrResultSelector)
+	}
 	this.steps = append(this.steps, joinStep{commonStep{ACT_GROUPJOIN, inner, numCPU}, outerKeySelector, innerKeySelector, resultSelector, false})
 	return this
 }
@@ -347,6 +406,18 @@ func (this Queryable) LeftGroupJoin(inner interface{},
 	outerKeySelector func(interface{}) interface{},
 	innerKeySelector func(interface{}) interface{},
 	resultSelector func(interface{}, []interface{}) interface{}) Queryable {
+	if inner == nil {
+		panic(ErrJoinNilSource)
+	}
+	if outerKeySelector == nil {
+		panic(ErrOuterKeySelector)
+	}
+	if innerKeySelector == nil {
+		panic(ErrInnerKeySelector)
+	}
+	if resultSelector == nil {
+		panic(ErrResultSelector)
+	}
 	this.steps = append(this.steps, joinStep{commonStep{ACT_GROUPJOIN, inner, numCPU}, outerKeySelector, innerKeySelector, resultSelector, true})
 	return this
 }
