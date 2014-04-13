@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	count         int = 1000
-	distinctcount int = 1100
+	count         int = 100000
+	distinctcount int = 110000
 	MAXPROCS      int = 4
 )
 
@@ -114,18 +114,18 @@ func BenchmarkGoLinqWhere(b *testing.B) {
 	}
 }
 
-func BenchmarkGoLinqParallelWhere(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		dst, _ := linq.From(arrUser).AsParallel().Where(func(i linq.T) (bool, error) {
-			v := i.(user)
-			return v.id%2 == 0, nil
-		}).Results()
-		if len(dst) != count/2 {
-			b.Fail()
-			b.Error("size is ", len(dst))
-		}
-	}
-}
+//func BenchmarkGoLinqParallelWhere(b *testing.B) {
+//	for i := 0; i < b.N; i++ {
+//		dst, _ := linq.From(arrUser).AsParallel().Where(func(i linq.T) (bool, error) {
+//			v := i.(user)
+//			return v.id%2 == 0, nil
+//		}).Results()
+//		if len(dst) != count/2 {
+//			b.Fail()
+//			b.Error("size is ", len(dst))
+//		}
+//	}
+//}
 
 func BenchmarkBlockSourceSelectWhere(b *testing.B) {
 	for i := 0; i < b.N; i++ {
@@ -155,21 +155,21 @@ func BenchmarkGoLinqSelectWhere(b *testing.B) {
 	}
 }
 
-func BenchmarkGoLinqParallelSelectWhere(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		dst, _ := linq.From(arrUser).AsParallel().Where(func(i linq.T) (bool, error) {
-			v := i.(user)
-			return v.id%2 == 0, nil
-		}).Select(func(v linq.T) (linq.T, error) {
-			u := v.(user)
-			return strconv.Itoa(u.id) + "/" + u.name, nil
-		}).Results()
-		if len(dst) != count/2 {
-			b.Fail()
-			b.Error("size is ", len(dst))
-		}
-	}
-}
+//func BenchmarkGoLinqParallelSelectWhere(b *testing.B) {
+//	for i := 0; i < b.N; i++ {
+//		dst, _ := linq.From(arrUser).AsParallel().Where(func(i linq.T) (bool, error) {
+//			v := i.(user)
+//			return v.id%2 == 0, nil
+//		}).Select(func(v linq.T) (linq.T, error) {
+//			u := v.(user)
+//			return strconv.Itoa(u.id) + "/" + u.name, nil
+//		}).Results()
+//		if len(dst) != count/2 {
+//			b.Fail()
+//			b.Error("size is ", len(dst))
+//		}
+//	}
+//}
 
 func BenchmarkBlockSourceGroupBy(b *testing.B) {
 	for i := 0; i < b.N; i++ {
@@ -261,27 +261,6 @@ func BenchmarkBlockSourceOrder(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		dst := From(arrRepeatedUser).Order(orderUser).Results()
-		if len(dst) != len(arrRepeatedUser) || dst[0].(user).id != 0 || dst[10].(user).id != 5 {
-			b.Fail()
-			//b.Log("arr=", arr)
-			b.Error("size is ", len(dst))
-			b.Log("dst=", dst)
-		}
-	}
-}
-
-func BenchmarkGoLinqOrder(b *testing.B) {
-	b.StopTimer()
-	randoms := make([]interface{}, 0, len(arrRepeatedUser))
-	_ = copy(randoms, arrRepeatedUser)
-	randomList(randoms)
-	b.StartTimer()
-
-	for i := 0; i < b.N; i++ {
-		dst, _ := linq.From(arrRepeatedUser).OrderBy(func(a linq.T, b linq.T) bool {
-			v1, v2 := a.(user), b.(user)
-			return v1.id < v2.id
-		}).Results()
 		if len(dst) != len(arrRepeatedUser) || dst[0].(user).id != 0 || dst[10].(user).id != 5 {
 			b.Fail()
 			//b.Log("arr=", arr)
