@@ -281,7 +281,7 @@ func (this *Queryable) Results() (results []interface{}, err error) {
 	if ds, e := this.get(); e == nil {
 		results = ds.ToSlice(this.keepOrder)
 		if len(this.stepErrs) > 0 {
-			err = NewError("Aggregate errors", this.stepErrs)
+			err = NewLinqError("Aggregate errors", this.stepErrs)
 		}
 		return
 	} else {
@@ -445,7 +445,7 @@ func (this *Queryable) get() (data dataSource, err error) {
 		for e := range errChan {
 			this.stepErrs = appendSlice(this.stepErrs, e)
 		}
-		fmt.Println("end receive errors")
+		//fmt.Println("end receive errors")
 	}()
 
 	data = this.data
@@ -455,19 +455,16 @@ func (this *Queryable) get() (data dataSource, err error) {
 		if err != nil {
 			return nil, err
 		}
+
+		step1 := step
 		if f != nil {
 			f.Fail(func(results ...interface{}) {
-				//fmt.Println("fail")
-				fmt.Println(results...)
-				errChan <- &stepErr{step.getTyp(), results}
+				errChan <- NewStepError(step1.getTyp(), results)
 				//fmt.Println("end fail", stepErr{step.getTyp(), results})
 			})
 		}
 	}
 
-	//fmt.Println("start close errchan")
-	//close(errChan)
-	//fmt.Println("close errchan")
 	return data, nil
 }
 
@@ -566,11 +563,6 @@ func getSelect(selectFunc func(interface{}) interface{}, degree int) stepAction 
 			//out := make(chan *chunk)
 
 			f, out := parallelMapChanToChan(s, nil, func(c *chunk) *chunk {
-				defer func() {
-					if e := recover(); e != nil {
-						fmt.Println("select error:::", e)
-					}
-				}()
 				result := make([]interface{}, len(c.data)) //c.end-c.start+2)
 				mapSlice(c.data, selectFunc, &result)
 				return &chunk{result, c.order}
@@ -683,7 +675,7 @@ func getGroupBy(groupFunc func(interface{}) interface{}, hashAsKey bool, degree 
 		if errs == nil {
 			return &listSource{groupKvs}, nil, keepOrder, nil
 		} else {
-			return nil, nil, keepOrder, NewError("Group error", errs)
+			return nil, nil, keepOrder, NewLinqError("Group error", errs)
 		}
 
 	})
@@ -732,11 +724,6 @@ func getJoinImpl(inner interface{},
 		})
 
 		mapChunk := func(c *chunk) (r *chunk) {
-			defer func() {
-				if e := recover(); e != nil {
-					fmt.Println("join error:::", e)
-				}
-			}()
 			outerKvs := getKeyValues(c, outerKeySelector, nil)
 			results := make([]interface{}, 0, 10)
 
@@ -849,7 +836,7 @@ func getIntersect(source2 interface{}, degree int) stepAction {
 			if errs == nil {
 				return nil
 			} else {
-				return []interface{}{NewError("Group error", errs), false}
+				return []interface{}{NewLinqError("Group error", errs), false}
 			}
 		})
 
@@ -862,7 +849,7 @@ func getIntersect(source2 interface{}, degree int) stepAction {
 		}
 
 		if r, typ := f1.Get(); typ != promise.RESULT_SUCCESS {
-			return nil, nil, keepOrder, NewError("Intersect error", r)
+			return nil, nil, keepOrder, NewLinqError("Intersect error", r)
 		}
 
 		resultKVs := make(map[uint64]interface{}, len(distKvs))
@@ -911,7 +898,7 @@ func reduceDistinctVals(mapFuture *promise.Future, reduceSrcChan chan *chunk) ([
 	if errs == nil {
 		return chunks, nil
 	} else {
-		return nil, NewError("reduceDistinctVals error", errs)
+		return nil, NewLinqError("reduceDistinctVals error", errs)
 	}
 }
 
@@ -975,11 +962,6 @@ func parallelMapChanToChan(src *chanSource, out chan *chunk, task func(*chunk) *
 }
 
 func parallelMapListToChan(src dataSource, out chan *chunk, task func(*chunk) *chunk, degree int) (*promise.Future, chan *chunk) {
-	defer func() {
-		if e := recover(); e != nil {
-			fmt.Println("parallelMapListToChan error", e)
-		}
-	}()
 	var createOutChan bool
 	if out == nil {
 		out = make(chan *chunk, degree)

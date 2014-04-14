@@ -2,11 +2,15 @@ package main
 
 import (
 	//"time"
-	//"errors"
+	"bytes"
+	"errors"
 	"fmt"
+	"github.com/fanliao/go-promise"
 	"reflect"
+	"runtime"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"unsafe"
 )
@@ -532,9 +536,27 @@ func newChunkAvlTree() *avlTree {
 	})
 }
 
-//errors--------------------
-// New returns an error that formats as the given text.
-func NewError(text string, innerErrs []interface{}) error {
+//error handling functions------------------------------------
+type stringer interface {
+	String() string
+}
+
+func getError(i interface{}) (e error) {
+	if i != nil {
+		switch v := i.(type) {
+		case error:
+			e = v
+		case stringer:
+			e = errors.New(v.String())
+		default:
+			e = errors.New("unknow error")
+		}
+	}
+	return
+}
+
+// NewLinqError returns an error that formats as the given text and includes the given inner errors.
+func NewLinqError(text string, innerErrs []interface{}) error {
 	return &errorLinq{text, innerErrs}
 }
 
@@ -567,11 +589,87 @@ type stepErr struct {
 }
 
 func (e *stepErr) Error() string {
-	str := ""
-	str += "error appears in " + strconv.Itoa(e.stepTyp) + ":\n"
-	for _, err := range e.errs {
-		str += fmt.Sprintf("%v", err) + "\n"
-	}
-	return str
+	buf := bytes.NewBufferString("error appears in ")
+	buf.WriteString(stepTypToString(e.stepTyp))
+	buf.WriteString(":\n")
 
+	for _, err := range e.errs {
+		buf.WriteString(fmt.Sprintf("%v", err))
+		buf.WriteString("\n")
+	}
+	return buf.String()
+}
+
+func stepTypToString(typ int) string {
+	switch typ {
+	case ACT_SELECT:
+		return "SELECT opretion"
+	case ACT_WHERE:
+		return "WHERE opretion"
+	case ACT_GROUPBY:
+		return "GROUPBY opretion"
+	case ACT_HGROUPBY:
+		return "HGROUPBY opretion"
+	case ACT_ORDERBY:
+		return "ORDERBY opretion"
+	case ACT_DISTINCT:
+		return "DISTINCT opretion"
+	case ACT_JOIN:
+		return "JOIN opretion"
+	case ACT_GROUPJOIN:
+		return "GROUPJOIN opretion"
+	case ACT_UNION:
+		return "UNION opretion"
+	case ACT_CONCAT:
+		return "CONCAT opretion"
+	case ACT_INTERSECT:
+		return "INTERSECT opretion"
+	default:
+		return "unknown opretion"
+	}
+
+}
+
+// NewLinqError returns an error that formats as the given text and includes the given inner errors.
+func NewStepError(stepTyp int, innerErrs []interface{}) *stepErr {
+	rs := make([]interface{}, 0, len(innerErrs))
+	if len(innerErrs) > 0 {
+		if _, ok := innerErrs[0].(promise.PromiseResult); ok {
+			for i, r := range innerErrs {
+				pr := r.(promise.PromiseResult)
+				if pr.Typ != promise.RESULT_SUCCESS {
+					rs = append(rs,
+						strings.Join([]string{"error appears in Future ",
+							strconv.Itoa(i), ":",
+							fmt.Sprintf("%v", pr.Result)}, ""))
+				}
+			}
+		} else {
+			rs = innerErrs
+		}
+	}
+	return &stepErr{stepTyp, rs}
+}
+
+func newErrorWithStacks(i interface{}) (e error) {
+	err := getError(i)
+	buf := bytes.NewBufferString(err.Error())
+	buf.WriteString("\n")
+
+	pcs := make([]uintptr, 50)
+	num := runtime.Callers(2, pcs)
+	for _, v := range pcs[0:num] {
+		fun := runtime.FuncForPC(v)
+		file, line := fun.FileLine(v)
+		name := fun.Name()
+		//fmt.Println(name, file + ":", line)
+		writeStrings(buf, []string{name, " ", file, ":", strconv.Itoa(line), "\n"})
+	}
+	return errors.New(buf.String())
+}
+
+func writeStrings(buf *bytes.Buffer, strings []string) {
+	for _, s := range strings {
+		buf.WriteString(s)
+	}
 }

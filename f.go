@@ -256,9 +256,14 @@ func main() {
 		chunkSrc <- nil
 		fmt.Println("close src------------------", chunkSrc)
 	}()
-	dst, _ = From(chunkSrc).Where(whereFunc).Select(selectFunc).KeepOrder(true).Results()
-	fmt.Println("chunkchansource where select return", dst)
-	fmt.Println()
+	dst, err := From(chunkSrc).Where(whereFunc).Select(selectFunc).KeepOrder(true).Results()
+	if err == nil {
+		fmt.Println("chunkchansource where select return", dst)
+		fmt.Println()
+	} else {
+		fmt.Println("chunkchansource where select get error:", err)
+		fmt.Println()
+	}
 
 }
 
@@ -275,7 +280,7 @@ func testLinqOpr(title string, linqFunc func() ([]interface{}, error), rsHandler
 		rsHanlder(dst)
 		fmt.Println("\n")
 	} else {
-		fmt.Println("get error:", err, "\n")
+		fmt.Println("get error:\n", err, "\n")
 	}
 }
 
