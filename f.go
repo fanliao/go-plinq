@@ -162,6 +162,13 @@ func main() {
 	}
 
 	var whereFunc = func(v interface{}) bool {
+		//defer func() {
+		//	if e := recover(); e != nil {
+		//		fmt.Println("where e", e)
+		//	}
+		//}()
+		var ss []int
+		fmt.Println(ss[1])
 		i := v.(int)
 		return i%2 == 0
 	}

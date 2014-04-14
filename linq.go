@@ -608,22 +608,6 @@ func getDistinct(distinctFunc func(interface{}) interface{}, degree int) stepAct
 		f, reduceSrcChan := parallelMapToChan(src, nil, mapChunk, degree)
 
 		//get distinct values
-		//chunks := make([]interface{}, 0, degree)
-		//distKvs := make(map[uint64]int)
-		//reduceChan(f.GetChan(), reduceSrcChan, func(c *chunk) {
-		//	chunks = appendSlice(chunks, c)
-		//	result := make([]interface{}, len(c.data))
-		//	i := 0
-		//	for _, v := range c.data {
-		//		kv := v.(*HKeyValue)
-		//		if _, ok := distKvs[kv.keyHash]; !ok {
-		//			distKvs[kv.keyHash] = 1
-		//			result[i] = kv.value
-		//			i++
-		//		}
-		//	}
-		//	c.data = result[0:i]
-		//})
 		chunks := reduceDistinctVals(f, reduceSrcChan)
 		//get distinct values
 		result := expandChunks(chunks, false)
@@ -1035,13 +1019,17 @@ func parallelMapList(src dataSource, getAction func(*chunk) func() []interface{}
 	return f
 }
 
-func reduceChan(chEndFlag chan *promise.PromiseResult, src chan *chunk, reduce func(*chunk)) {
+func reduceChan(chEndFlag chan *promise.PromiseResult, src chan *chunk, reduce func(*chunk)) []interface{} {
 	if cap(src) == 0 {
 		for {
 			select {
-			case <-chEndFlag:
+			case r := <-chEndFlag:
 				//fmt.Println("return reduceChan")
-				return
+				if r.Typ != promise.RESULT_SUCCESS {
+					return r.Result
+				} else {
+					return nil
+				}
 			case v, ok := <-src:
 				if ok && v != nil {
 					reduce(v)
@@ -1051,13 +1039,18 @@ func reduceChan(chEndFlag chan *promise.PromiseResult, src chan *chunk, reduce f
 	} else {
 		for {
 			select {
+			case r := <-chEndFlag:
+				//fmt.Println("return reduceChan")
+				if r.Typ != promise.RESULT_SUCCESS {
+					return r.Result
+				}
 			case v, ok := <-src:
 				if ok {
 					if v != nil {
 						reduce(v)
 					} else {
 						close(src)
-						return
+						return nil
 					}
 				}
 			}
