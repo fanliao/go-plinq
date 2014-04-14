@@ -275,8 +275,12 @@ func From(src interface{}) (q Queryable) {
 	return
 }
 
-func (this Queryable) Results() []interface{} {
-	return this.get().ToSlice(this.keepOrder)
+func (this Queryable) Results() ([]interface{}, error) {
+	if ds, err := this.get(); err == nil {
+		return ds.ToSlice(this.keepOrder), nil
+	} else {
+		return nil, err
+	}
 }
 
 func (this Queryable) Where(sure func(interface{}) bool) Queryable {
@@ -427,12 +431,15 @@ func (this Queryable) KeepOrder(keep bool) Queryable {
 	return this
 }
 
-func (this Queryable) get() dataSource {
-	data := this.data
+func (this Queryable) get() (data dataSource, err error) {
+	data = this.data
 	for _, step := range this.steps {
-		data, this.keepOrder, _ = step.stepAction()(data, this.keepOrder)
+		data, this.keepOrder, err = step.stepAction()(data, this.keepOrder)
+		if err != nil {
+			return nil, err
+		}
 	}
-	return data
+	return data, nil
 }
 
 //the struct and functions of each operation-------------------------------------------------------------------------
@@ -530,7 +537,7 @@ func getSelect(selectFunc func(interface{}) interface{}, degree int) stepAction 
 			_, out := parallelMapChanToChan(s, nil, func(c *chunk) *chunk {
 				defer func() {
 					if e := recover(); e != nil {
-						fmt.Println(e)
+						fmt.Println("select error:::", e)
 					}
 				}()
 				result := make([]interface{}, len(c.data)) //c.end-c.start+2)
@@ -692,14 +699,17 @@ func getJoinImpl(inner interface{},
 	return stepAction(func(src dataSource, keepOrder bool) (dst dataSource, keep bool, e error) {
 		keep = keepOrder
 		innerKVtask := promise.Start(func() []interface{} {
-			innerKvs := From(inner).hGroupBy(innerKeySelector).get().(*listSource).data
-			return []interface{}{innerKvs, true}
+			if innerKvsDs, err := From(inner).hGroupBy(innerKeySelector).get(); err == nil {
+				return []interface{}{innerKvsDs.(*listSource).data, true}
+			} else {
+				return []interface{}{err, false}
+			}
 		})
 
 		mapChunk := func(c *chunk) (r *chunk) {
 			defer func() {
 				if e := recover(); e != nil {
-					fmt.Println(e)
+					fmt.Println("join error:::", e)
 				}
 			}()
 			outerKvs := getKeyValues(c, outerKeySelector, nil)
@@ -707,7 +717,7 @@ func getJoinImpl(inner interface{},
 
 			if r, ok := innerKVtask.Get(); ok != promise.RESULT_SUCCESS {
 				//todo:
-				fmt.Println("error", ok, r)
+				fmt.Println("innerKV get error", ok, r)
 			} else {
 				innerKvs := r[0].(map[interface{}]interface{})
 
@@ -787,7 +797,12 @@ func getUnion(source2 interface{}, degree int) stepAction {
 
 func getConcat(source2 interface{}, degree int) stepAction {
 	return stepAction(func(src dataSource, keepOrder bool) (dataSource, bool, error) {
-		slice1, slice2 := src.ToSlice(keepOrder), From(source2).KeepOrder(keepOrder).Results()
+		slice1 := src.ToSlice(keepOrder)
+		slice2, err2 := From(source2).KeepOrder(keepOrder).Results()
+
+		if err2 != nil {
+			return nil, keepOrder, err2
+		}
 
 		result := make([]interface{}, len(slice1)+len(slice2))
 		_ = copy(result[0:len(slice1)], slice1)
@@ -823,10 +838,13 @@ func getIntersect(source2 interface{}, degree int) stepAction {
 			return nil
 		})
 
-		dataSource2 := From(source2).Select(func(v interface{}) interface{} {
+		dataSource2, err := From(source2).Select(func(v interface{}) interface{} {
 			return &KeyValue{tHash(v), v}
 		}).Results()
 
+		if err != nil {
+			return nil, keepOrder, err
+		}
 		_, _ = f1.Get()
 
 		resultKVs := make(map[uint64]interface{}, len(distKvs))
@@ -937,7 +955,7 @@ func parallelMapChanToChan(src *chanSource, out chan *chunk, task func(*chunk) *
 func parallelMapListToChan(src dataSource, out chan *chunk, task func(*chunk) *chunk, degree int) (*promise.Future, chan *chunk) {
 	defer func() {
 		if e := recover(); e != nil {
-			fmt.Println(e)
+			fmt.Println("parallelMapListToChan error", e)
 		}
 	}()
 	var createOutChan bool

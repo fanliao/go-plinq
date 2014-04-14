@@ -121,6 +121,28 @@ type power struct {
 	p int
 }
 
+func getChanSrc(src []interface{}) chan interface{} {
+	chanSrc := make(chan interface{})
+	go func() {
+		for _, v := range src {
+			chanSrc <- v
+		}
+		close(chanSrc)
+	}()
+	return chanSrc
+}
+
+func getIntChanSrc(src []int) chan int {
+	chanSrc := make(chan int)
+	go func() {
+		for _, v := range src {
+			chanSrc <- v
+		}
+		close(chanSrc)
+	}()
+	return chanSrc
+}
+
 func main() {
 	time.Now()
 	count := 20
@@ -137,26 +159,6 @@ func main() {
 	for i := count / 4; i < count/2; i++ {
 		pow1 = append(pow1, power{i, i * i})
 		pow1 = append(pow1, power{i, i * 100})
-	}
-	var getChanSrc = func(src []interface{}) chan interface{} {
-		chanSrc := make(chan interface{})
-		go func() {
-			for _, v := range src {
-				chanSrc <- v
-			}
-			close(chanSrc)
-		}()
-		return chanSrc
-	}
-	var getIntChanSrc = func(src []int) chan int {
-		chanSrc := make(chan int)
-		go func() {
-			for _, v := range src {
-				chanSrc <- v
-			}
-			close(chanSrc)
-		}()
-		return chanSrc
 	}
 
 	var whereFunc = func(v interface{}) bool {
@@ -184,90 +186,58 @@ func main() {
 		return KeyValue{o, is}
 	}
 
-	dst := From(src1).Where(whereFunc).Results()
-	fmt.Println("where return", dst, "\n")
+	testLinqOpr("Where opretion", func() ([]interface{}, error) {
+		return From(src1).Where(whereFunc).Results()
+	})
 
 	//test where and select
-	dst = From(src1).Where(whereFunc).Select(selectFunc).Results()
-	fmt.Println("where select return", dst, "\n")
-
-	dst = From(getChanSrc(src1)).Where(whereFunc).Select(selectFunc).KeepOrder(true).Results()
-	fmt.Println("chansource where select return", dst)
-	fmt.Println()
+	testLinqWithAllSource("Where and Select opretions", src1, func(q Queryable) Queryable {
+		return q.Where(whereFunc).Select(selectFunc)
+	})
 
 	//test where and select with int slice
-	dst = From(arrInts).Where(whereFunc).Select(selectFunc).Results()
+	dst, _ := From(arrInts).Where(whereFunc).Select(selectFunc).Results()
 	fmt.Println("Int slice where select return", dst, "\n")
 
-	dst = From(getIntChanSrc(arrInts)).Where(whereFunc).Select(selectFunc).Results()
+	dst, _ = From(getIntChanSrc(arrInts)).Where(whereFunc).Select(selectFunc).Results()
 	fmt.Println("Int chan where select return", dst, "\n")
 
 	//test group
-	dst = From(src1).GroupBy(groupKeyFunc).Results()
-	for _, o := range dst {
-		kv := o.(*KeyValue)
-		fmt.Println("group get k=", kv.key, ";v=", kv.value, " ")
-	}
-	fmt.Println("")
-
-	dst = From(getChanSrc(src1)).GroupBy(groupKeyFunc).Results()
-	for _, o := range dst {
-		kv := o.(*KeyValue)
-		fmt.Println("chan source group get k=", kv.key, ";v=", kv.value, " ")
-	}
-	fmt.Println("")
+	testLinqWithAllSource("Group opretions", src1, func(q Queryable) Queryable {
+		return q.GroupBy(groupKeyFunc)
+	}, func(dst []interface{}) {
+		fmt.Println()
+		for _, o := range dst {
+			kv := o.(*KeyValue)
+			fmt.Println("group get k=", kv.key, ";v=", kv.value, " ")
+		}
+	})
 
 	//test left join
-	dst = From(src1).LeftJoin(pow1,
-		func(o interface{}) interface{} { return o },
-		func(i interface{}) interface{} { return i.(power).i },
-		joinResultSelector).Results()
-	fmt.Println("join ", src1)
-	fmt.Println("joinResultSelectorith", pow1)
-	fmt.Println("return", dst, "\n")
-
-	dst = From(getChanSrc(src1)).LeftJoin(pow1,
-		func(o interface{}) interface{} { return o },
-		func(i interface{}) interface{} { return i.(power).i },
-		joinResultSelector).Results()
-	fmt.Println("chan source join ", src1)
-	fmt.Println("with", pow1)
-	fmt.Println("return", dst, "\n")
+	testLinqWithAllSource("LeftJoin opretions", src1, func(q Queryable) Queryable {
+		return q.LeftJoin(pow1,
+			func(o interface{}) interface{} { return o },
+			func(i interface{}) interface{} { return i.(power).i },
+			joinResultSelector)
+	})
 
 	//test left group join
-	dst = From(src1).LeftGroupJoin(pow1,
-		func(o interface{}) interface{} { return o },
-		func(i interface{}) interface{} { return i.(power).i },
-		groupJoinResultSelector).Results()
-	fmt.Println("groupjoin ", src1)
-	fmt.Println("with", pow1)
-	fmt.Println("return", dst, "\n")
-
-	dst = From(getChanSrc(src1)).LeftGroupJoin(pow1,
-		func(o interface{}) interface{} { return o },
-		func(i interface{}) interface{} { return i.(power).i },
-		groupJoinResultSelector).Results()
-	fmt.Println("chan source groupjoin ", src1)
-	fmt.Println("with", pow1)
-	fmt.Println("return", dst, "\n")
+	testLinqWithAllSource("LeftGroupJoin opretions", src1, func(q Queryable) Queryable {
+		return q.LeftGroupJoin(pow1,
+			func(o interface{}) interface{} { return o },
+			func(i interface{}) interface{} { return i.(power).i },
+			groupJoinResultSelector)
+	})
 
 	//test union
-	dst = From(src1).Union(src2).Results()
-	fmt.Println("union return ", dst, "\n")
-
-	dst = From(getChanSrc(src1)).Union(getChanSrc(src2)).Results()
-	fmt.Println("chan source union return ", dst, "\n")
+	testLinqWithAllSource("Union opretions", src1, func(q Queryable) Queryable {
+		return q.Union(src2)
+	})
 
 	//test intersect
-	dst = From(src1).Intersect(src2).Results()
-	fmt.Println("src1 ", src1)
-	fmt.Println("Intersect src2 ", src2)
-	fmt.Println("return ", dst, "\n")
-
-	dst = From(getChanSrc(src1)).Intersect(getChanSrc(src2)).Results()
-	fmt.Println("can source src1 ", src1)
-	fmt.Println("Intersect src2 ", src2)
-	fmt.Println("return ", dst, "\n")
+	testLinqWithAllSource("Intersect opretions", src1, func(q Queryable) Queryable {
+		return q.Intersect(src2)
+	})
 
 	size := count / 4
 	chunkSrc := make(chan *chunk)
@@ -279,10 +249,36 @@ func main() {
 		chunkSrc <- nil
 		fmt.Println("close src------------------", chunkSrc)
 	}()
-	dst = From(chunkSrc).Where(whereFunc).Select(selectFunc).KeepOrder(true).Results()
+	dst, _ = From(chunkSrc).Where(whereFunc).Select(selectFunc).KeepOrder(true).Results()
 	fmt.Println("chunkchansource where select return", dst)
 	fmt.Println()
 
+}
+
+func testLinqOpr(title string, linqFunc func() ([]interface{}, error), rsHandlers ...func([]interface{})) {
+	fmt.Print(title, " ")
+	var rsHanlder func([]interface{})
+	if rsHandlers != nil && len(rsHandlers) > 0 {
+		rsHanlder = rsHandlers[0]
+	} else {
+		rsHanlder = func(dst []interface{}) { fmt.Print(dst) }
+	}
+	if dst, err := linqFunc(); err == nil {
+		fmt.Print("return:")
+		rsHanlder(dst)
+		fmt.Println("\n")
+	} else {
+		fmt.Println("get error:", err, "\n")
+	}
+}
+
+func testLinqWithAllSource(title string, listSrc []interface{}, query func(Queryable) Queryable, rsHandlers ...func([]interface{})) {
+	testLinqOpr(title, func() ([]interface{}, error) {
+		return query(From(listSrc)).Results()
+	}, rsHandlers...)
+	testLinqOpr("Chan source use "+title, func() ([]interface{}, error) {
+		return query(From(getChanSrc(listSrc))).Results()
+	}, rsHandlers...)
 }
 
 func testAVL() {

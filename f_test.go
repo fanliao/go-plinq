@@ -91,7 +91,7 @@ func BenchmarkSyncWhere(b *testing.B) {
 
 func BenchmarkBlockSourceWhere(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		dst := From(arrUser).Where(whereUser).Results()
+		dst, _ := From(arrUser).Where(whereUser).Results()
 		if len(dst) != count/2 {
 			b.Fail()
 			b.Log("arr=", arr)
@@ -129,7 +129,7 @@ func BenchmarkGoLinqWhere(b *testing.B) {
 
 func BenchmarkBlockSourceSelectWhere(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		dst := From(arrUser).Where(whereUser).Select(selectUser).Results()
+		dst, _ := From(arrUser).Where(whereUser).Select(selectUser).Results()
 		if len(dst) != count/2 {
 			b.Fail()
 			//b.Log("arr=", arr)
@@ -173,7 +173,7 @@ func BenchmarkGoLinqSelectWhere(b *testing.B) {
 
 func BenchmarkBlockSourceGroupBy(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		dst := From(arrUser).GroupBy(func(v interface{}) interface{} {
+		dst, _ := From(arrUser).GroupBy(func(v interface{}) interface{} {
 			return v.(user).id / 10
 		}).Results()
 		if len(dst) != count/10 {
@@ -190,7 +190,7 @@ func distinctUser(v interface{}) interface{} {
 }
 func BenchmarkBlockSourceDistinct(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		dst := From(arrRepeatedUser).Distinct(distinctUser).Results()
+		dst, _ := From(arrRepeatedUser).Distinct(distinctUser).Results()
 		if len(dst) != count {
 			b.Fail()
 			//b.Log("arr=", arr)
@@ -260,7 +260,7 @@ func BenchmarkBlockSourceOrder(b *testing.B) {
 	b.StartTimer()
 
 	for i := 0; i < b.N; i++ {
-		dst := From(arrRepeatedUser).Order(orderUser).Results()
+		dst, _ := From(arrRepeatedUser).Order(orderUser).Results()
 		if len(dst) != len(arrRepeatedUser) || dst[0].(user).id != 0 || dst[10].(user).id != 5 {
 			b.Fail()
 			//b.Log("arr=", arr)
@@ -284,7 +284,7 @@ func resultSelector(u interface{}, v interface{}) interface{} {
 
 func BenchmarkBlockSourceJoin(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		dst := From(arrUser).Join(arrRole, userSelector, roleSelector, resultSelector).Results()
+		dst, _ := From(arrUser).Join(arrRole, userSelector, roleSelector, resultSelector).Results()
 		if len(dst) != count {
 			b.Fail()
 			//b.Log("arr=", arr)
@@ -318,7 +318,7 @@ func BenchmarkGoLinqJoin(b *testing.B) {
 ////test union--------------------------------------------------------------------
 func BenchmarkBlockSourceUnion(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		dst := From(arrUser).Union(arrUser2).Results()
+		dst, _ := From(arrUser).Union(arrUser2).Results()
 		if len(dst) != count+count/2 {
 			b.Fail()
 			//b.Log("arr=", arr)
@@ -341,7 +341,7 @@ func BenchmarkGoLinqUnion(b *testing.B) {
 ////test concat--------------------------------------------------------------------
 func BenchmarkBlockSourceConcat(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		dst := From(arrUser).Concat(arrUser2).Results()
+		dst, _ := From(arrUser).Concat(arrUser2).Results()
 		if len(dst) != count+count {
 			b.Fail()
 			//b.Log("arr=", arr)
@@ -354,7 +354,7 @@ func BenchmarkBlockSourceConcat(b *testing.B) {
 ////test intersect--------------------------------------------------------------------
 func BenchmarkBlockSourceIntersect(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		dst := From(arrUser).Intersect(arrUser2).Results()
+		dst, _ := From(arrUser).Intersect(arrUser2).Results()
 		if len(dst) != count/2 {
 			b.Fail()
 			//b.Log("arr=", arr)
