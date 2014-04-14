@@ -167,6 +167,8 @@ func main() {
 		//		fmt.Println("where e", e)
 		//	}
 		//}()
+		var ss []int
+		_ = ss[2]
 		i := v.(int)
 		return i%2 == 0
 	}

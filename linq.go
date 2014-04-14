@@ -249,10 +249,6 @@ type HKeyValue struct {
 }
 
 //the queryable struct-------------------------------------------------------------------------
-type stepErr struct {
-	stepTyp int
-	errs    []interface{}
-}
 type Queryable struct {
 	data      dataSource
 	steps     []step
@@ -443,7 +439,7 @@ func (this *Queryable) KeepOrder(keep bool) *Queryable {
 
 func (this *Queryable) get() (data dataSource, err error) {
 	//collect the errors for the pipeline mode step
-	errChan := make(chan stepErr)
+	errChan := make(chan *stepErr)
 	go func() {
 		//fmt.Println("start receive errors")
 		for e := range errChan {
@@ -462,8 +458,8 @@ func (this *Queryable) get() (data dataSource, err error) {
 		if f != nil {
 			f.Fail(func(results ...interface{}) {
 				//fmt.Println("fail")
-				//fmt.Println(results...)
-				errChan <- stepErr{step.getTyp(), results}
+				fmt.Println(results...)
+				errChan <- &stepErr{step.getTyp(), results}
 				//fmt.Println("end fail", stepErr{step.getTyp(), results})
 			})
 		}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strconv"
 	"sync"
 	"unsafe"
 )
@@ -544,11 +545,33 @@ type errorLinq struct {
 }
 
 func (e *errorLinq) Error() string {
-	if e.innerErrs != nil {
+	if e.innerErrs == nil {
 		return e.s
 	} else {
-		errs := append(e.innerErrs, e.s)
-		str := fmt.Sprintf("errors: %v", errs)
+		var str string
+		str += e.s + "\n"
+		for _, ie := range e.innerErrs {
+			if se, ok := ie.(*stepErr); ok {
+				str += se.Error() + "\n"
+			} else {
+				str += fmt.Sprintf("%v", ie) + "\n"
+			}
+		}
 		return str
 	}
+}
+
+type stepErr struct {
+	stepTyp int
+	errs    []interface{}
+}
+
+func (e *stepErr) Error() string {
+	str := ""
+	str += "error appears in " + strconv.Itoa(e.stepTyp) + ":\n"
+	for _, err := range e.errs {
+		str += fmt.Sprintf("%v", err) + "\n"
+	}
+	return str
+
 }
