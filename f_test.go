@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	count         int = 100000
-	distinctcount int = 110000
+	count         int = 100
+	distinctcount int = 110
 	MAXPROCS      int = 4
 )
 
