@@ -40,7 +40,7 @@ import (
 //func (this queryable) Get() chan interface{} {
 //	src := this.source
 //	datas := make([]interface{}, 0, 10000)
-//	startChan := make(chan chunk, 10000)
+//	startChan := make(chan Chunk, 10000)
 //	endChan := make(chan int)
 //	go func() {
 //		count, start, end := 0, 0, 0
@@ -49,7 +49,7 @@ import (
 //			count++
 //			if count == BATCH_SIZE {
 //				end = len(datas) - 1
-//				startChan <- chunk{start, end}
+//				startChan <- Chunk{start, end}
 //				fmt.Println("send", start, end, datas[start:end+1])
 //				count, start = 0, end+1
 //			}
@@ -145,7 +145,7 @@ func getIntChanSrc(src []int) chan int {
 
 func main() {
 	time.Now()
-	count := 20
+	count := 100
 
 	arrInts := make([]int, 0, 20)
 	src1 := make([]interface{}, 0, 20)
@@ -167,13 +167,16 @@ func main() {
 		i := v.(int)
 		return i%2 == 0
 	}
+	_ = whereFunc
 	var selectFunc = func(v interface{}) interface{} {
 		i := v.(int)
 		return "item" + strconv.Itoa(i)
 	}
+	_ = selectFunc
 	var groupKeyFunc = func(v interface{}) interface{} {
 		return v.(int) / 10
 	}
+	_ = groupKeyFunc
 
 	var joinResultSelector = func(o interface{}, i interface{}) interface{} {
 		if i == nil {
@@ -183,10 +186,12 @@ func main() {
 			return strconv.Itoa(o1) + ";" + strconv.Itoa(i1.p)
 		}
 	}
+	_ = joinResultSelector
 
 	var groupJoinResultSelector = func(o interface{}, is []interface{}) interface{} {
 		return KeyValue{o, is}
 	}
+	_ = groupJoinResultSelector
 
 	testLinqOpr("Where opretion", func() ([]interface{}, error) {
 		return From(src1).Where(whereFunc).Results()
@@ -241,13 +246,18 @@ func main() {
 		return q.Intersect(src2)
 	})
 
+	//test Concat
+	testLinqWithAllSource("Concat opretions", src1, func(q *Queryable) *Queryable {
+		return q.Concat(src2)
+	})
+
 	size := count / 4
-	chunkSrc := make(chan *chunk)
+	chunkSrc := make(chan *Chunk)
 	go func() {
-		chunkSrc <- &chunk{src1[0:size], 0}
-		chunkSrc <- &chunk{src1[size : 2*size], size}
-		chunkSrc <- &chunk{src1[2*size : 3*size], 2 * size}
-		chunkSrc <- &chunk{src1[3*size : 4*size], 3 * size}
+		chunkSrc <- &Chunk{src1[0:size], 0}
+		chunkSrc <- &Chunk{src1[size : 2*size], size}
+		chunkSrc <- &Chunk{src1[2*size : 3*size], 2 * size}
+		chunkSrc <- &Chunk{src1[3*size : 4*size], 3 * size}
 		chunkSrc <- nil
 		fmt.Println("close src------------------", chunkSrc)
 	}()
@@ -280,9 +290,9 @@ func testLinqOpr(title string, linqFunc func() ([]interface{}, error), rsHandler
 }
 
 func testLinqWithAllSource(title string, listSrc []interface{}, query func(*Queryable) *Queryable, rsHandlers ...func([]interface{})) {
-	testLinqOpr(title, func() ([]interface{}, error) {
-		return query(From(listSrc)).Results()
-	}, rsHandlers...)
+	//testLinqOpr(title, func() ([]interface{}, error) {
+	//	return query(From(listSrc)).Results()
+	//}, rsHandlers...)
 	testLinqOpr("Chan source use "+title, func() ([]interface{}, error) {
 		return query(From(getChanSrc(listSrc))).Results()
 	}, rsHandlers...)

@@ -525,7 +525,7 @@ func NewAvlTree(compare func(a interface{}, b interface{}) int) *avlTree {
 
 func newChunkAvlTree() *avlTree {
 	return NewAvlTree(func(a interface{}, b interface{}) int {
-		c1, c2 := a.(*chunk), b.(*chunk)
+		c1, c2 := a.(*Chunk), b.(*Chunk)
 		if c1.order < c2.order {
 			return -1
 		} else if c1.order == c2.order {

@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	count         int = 100
-	distinctcount int = 110
+	count         int = 10000
+	distinctcount int = 11000
 	MAXPROCS      int = 4
 )
 
@@ -190,7 +190,7 @@ func distinctUser(v interface{}) interface{} {
 }
 func BenchmarkBlockSourceDistinct(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		dst, _ := From(arrRepeatedUser).Distinct(distinctUser).Results()
+		dst, _ := From(arrRepeatedUser).DistinctBy(distinctUser).Results()
 		if len(dst) != count {
 			b.Fail()
 			//b.Log("arr=", arr)
@@ -260,7 +260,7 @@ func BenchmarkBlockSourceOrder(b *testing.B) {
 	b.StartTimer()
 
 	for i := 0; i < b.N; i++ {
-		dst, _ := From(arrRepeatedUser).Order(orderUser).Results()
+		dst, _ := From(arrRepeatedUser).OrderBy(orderUser).Results()
 		if len(dst) != len(arrRepeatedUser) || dst[0].(user).id != 0 || dst[10].(user).id != 5 {
 			b.Fail()
 			//b.Log("arr=", arr)
