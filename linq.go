@@ -100,9 +100,46 @@ type Queryable struct {
 // Note: if the source is a channel, the channel must be closed by caller of linq,
 // otherwise will be deadlock
 func From(src interface{}) (q *Queryable) {
-	if src == nil {
-		panic(ErrNilSource)
+	//isNotNil(src, ErrNilSource)
+
+	//q = &Queryable{}
+	//q.keepOrder = true
+	//q.steps = make([]step, 0, 4)
+	//q.degree = numCPU
+	//q.chunkSize = DEFAULTCHUNKSIZE
+	//q.errChan = make(chan *stepErr)
+
+	//var ds DataSource
+	//if k := reflect.ValueOf(src).Kind(); k == reflect.Slice || k == reflect.Map {
+	//	ds = &listSource{data: src}
+	//} else if s, ok := src.(chan *Chunk); ok {
+	//	ds = &chanSource{chunkChan: s}
+	//} else if k == reflect.Chan {
+	//	ds = &chanSource{new(sync.Once), src, nil}
+	//} else {
+	//	panic(ErrUnsupportSource)
+	//}
+
+	return newQueryable(newDataSource(src))
+}
+
+func newDataSource(data interface{}) DataSource {
+	isNotNil(data, ErrNilSource)
+
+	var ds DataSource
+	if k := reflect.ValueOf(data).Kind(); k == reflect.Slice || k == reflect.Map {
+		ds = &listSource{data: data}
+	} else if s, ok := data.(chan *Chunk); ok {
+		ds = &chanSource{chunkChan: s}
+	} else if k == reflect.Chan {
+		ds = &chanSource{new(sync.Once), data, nil}
+	} else {
+		panic(ErrUnsupportSource)
 	}
+	return ds
+}
+
+func newQueryable(ds DataSource) (q *Queryable) {
 
 	q = &Queryable{}
 	q.keepOrder = true
@@ -111,15 +148,7 @@ func From(src interface{}) (q *Queryable) {
 	q.chunkSize = DEFAULTCHUNKSIZE
 	q.errChan = make(chan *stepErr)
 
-	if k := reflect.ValueOf(src).Kind(); k == reflect.Slice || k == reflect.Map {
-		q.data = &listSource{data: src}
-	} else if s, ok := src.(chan *Chunk); ok {
-		q.data = &chanSource{chunkChan: s}
-	} else if k == reflect.Chan {
-		q.data = &chanSource{new(sync.Once), src, nil}
-	} else {
-		panic(ErrUnsupportSource)
-	}
+	q.data = ds
 	return
 }
 
@@ -150,12 +179,10 @@ func (this *Queryable) Results() (results []interface{}, err error) {
 // 	q := From(users).Where(func (v interface{}) bool{
 //		return v.(*User).Age > 18
 // 	})
-func (this *Queryable) Where(sure func(interface{}) bool, degrees ...int) *Queryable {
-	if sure == nil {
-		panic(ErrNilAction)
-	}
+func (this *Queryable) Where(predicate func(interface{}) bool, degrees ...int) *Queryable {
+	isNotNil(predicate, ErrNilAction)
 
-	this.steps = append(this.steps, commonStep{ACT_WHERE, sure, getDegreeArg(degrees...)})
+	this.steps = append(this.steps, commonStep{ACT_WHERE, predicate, getDegreeArg(degrees...)})
 	return this
 }
 
@@ -168,9 +195,7 @@ func (this *Queryable) Where(sure func(interface{}) bool, degrees ...int) *Query
 //		return v.(*User).Name
 // 	})
 func (this *Queryable) Select(selectFunc func(interface{}) interface{}, degrees ...int) *Queryable {
-	if selectFunc == nil {
-		panic(ErrNilAction)
-	}
+	isNotNil(selectFunc, ErrNilAction)
 	this.steps = append(this.steps, commonStep{ACT_SELECT, selectFunc, getDegreeArg(degrees...)})
 	return this
 }
@@ -221,9 +246,8 @@ func (this *Queryable) OrderBy(compare func(interface{}, interface{}) int) *Quer
 //		return this.(*User).Age
 // 	})
 func (this *Queryable) GroupBy(keySelector func(interface{}) interface{}, degrees ...int) *Queryable {
-	if keySelector == nil {
-		panic(ErrNilAction)
-	}
+	isNotNil(keySelector, ErrNilAction)
+
 	this.steps = append(this.steps, commonStep{ACT_GROUPBY, keySelector, getDegreeArg(degrees...)})
 	return this
 }
@@ -237,9 +261,8 @@ func (this *Queryable) GroupBy(keySelector func(interface{}) interface{}, degree
 // 	q := From(int[]{1,2,3,4,5}).Union(int[]{3,4,5,6})
 // 	// q.Results() returns {1,2,3,4,5,6}
 func (this *Queryable) Union(source2 interface{}, degrees ...int) *Queryable {
-	if source2 == nil {
-		panic(ErrUnionNilSource)
-	}
+	isNotNil(source2, ErrUnionNilSource)
+
 	this.steps = append(this.steps, commonStep{ACT_UNION, source2, getDegreeArg(degrees...)})
 	return this
 }
@@ -252,9 +275,8 @@ func (this *Queryable) Union(source2 interface{}, degrees ...int) *Queryable {
 // 	q := From(int[]{1,2,3,4,5}).Union(int[]{3,4,5,6})
 // 	// q.Results() returns {1,2,3,4,5,3,4,5,6}
 func (this *Queryable) Concat(source2 interface{}) *Queryable {
-	if source2 == nil {
-		panic(ErrConcatNilSource)
-	}
+	isNotNil(source2, ErrConcatNilSource)
+
 	this.steps = append(this.steps, commonStep{ACT_CONCAT, source2, this.degree})
 	return this
 }
@@ -268,9 +290,8 @@ func (this *Queryable) Concat(source2 interface{}) *Queryable {
 // 	q := From(int[]{1,2,3,4,5}).Intersect(int[]{3,4,5,6})
 // 	// q.Results() returns {3,4,5}
 func (this *Queryable) Intersect(source2 interface{}, degrees ...int) *Queryable {
-	if source2 == nil {
-		panic(ErrInterestNilSource)
-	}
+	isNotNil(source2, ErrInterestNilSource)
+
 	this.steps = append(this.steps, commonStep{ACT_INTERSECT, source2, getDegreeArg(degrees...)})
 	return this
 }
@@ -291,18 +312,11 @@ func (this *Queryable) Join(inner interface{},
 	outerKeySelector func(interface{}) interface{},
 	innerKeySelector func(interface{}) interface{},
 	resultSelector func(interface{}, interface{}) interface{}, degrees ...int) *Queryable {
-	if inner == nil {
-		panic(ErrJoinNilSource)
-	}
-	if outerKeySelector == nil {
-		panic(ErrOuterKeySelector)
-	}
-	if innerKeySelector == nil {
-		panic(ErrInnerKeySelector)
-	}
-	if resultSelector == nil {
-		panic(ErrResultSelector)
-	}
+	isNotNil(inner, ErrJoinNilSource)
+	isNotNil(outerKeySelector, ErrOuterKeySelector)
+	isNotNil(innerKeySelector, ErrInnerKeySelector)
+	isNotNil(resultSelector, ErrResultSelector)
+
 	this.steps = append(this.steps, joinStep{commonStep{ACT_JOIN, inner, getDegreeArg(degrees...)}, outerKeySelector, innerKeySelector, resultSelector, false})
 	return this
 }
@@ -315,18 +329,11 @@ func (this *Queryable) LeftJoin(inner interface{},
 	outerKeySelector func(interface{}) interface{},
 	innerKeySelector func(interface{}) interface{},
 	resultSelector func(interface{}, interface{}) interface{}, degrees ...int) *Queryable {
-	if inner == nil {
-		panic(ErrJoinNilSource)
-	}
-	if outerKeySelector == nil {
-		panic(ErrOuterKeySelector)
-	}
-	if innerKeySelector == nil {
-		panic(ErrInnerKeySelector)
-	}
-	if resultSelector == nil {
-		panic(ErrResultSelector)
-	}
+	isNotNil(inner, ErrJoinNilSource)
+	isNotNil(outerKeySelector, ErrOuterKeySelector)
+	isNotNil(innerKeySelector, ErrInnerKeySelector)
+	isNotNil(resultSelector, ErrResultSelector)
+
 	this.steps = append(this.steps, joinStep{commonStep{ACT_JOIN, inner, getDegreeArg(degrees...)}, outerKeySelector, innerKeySelector, resultSelector, true})
 	return this
 }
@@ -339,18 +346,11 @@ func (this *Queryable) GroupJoin(inner interface{},
 	outerKeySelector func(interface{}) interface{},
 	innerKeySelector func(interface{}) interface{},
 	resultSelector func(interface{}, []interface{}) interface{}, degrees ...int) *Queryable {
-	if inner == nil {
-		panic(ErrJoinNilSource)
-	}
-	if outerKeySelector == nil {
-		panic(ErrOuterKeySelector)
-	}
-	if innerKeySelector == nil {
-		panic(ErrInnerKeySelector)
-	}
-	if resultSelector == nil {
-		panic(ErrResultSelector)
-	}
+	isNotNil(inner, ErrJoinNilSource)
+	isNotNil(outerKeySelector, ErrOuterKeySelector)
+	isNotNil(innerKeySelector, ErrInnerKeySelector)
+	isNotNil(resultSelector, ErrResultSelector)
+
 	this.steps = append(this.steps, joinStep{commonStep{ACT_GROUPJOIN, inner, getDegreeArg(degrees...)}, outerKeySelector, innerKeySelector, resultSelector, false})
 	return this
 }
@@ -363,18 +363,11 @@ func (this *Queryable) LeftGroupJoin(inner interface{},
 	outerKeySelector func(interface{}) interface{},
 	innerKeySelector func(interface{}) interface{},
 	resultSelector func(interface{}, []interface{}) interface{}, degrees ...int) *Queryable {
-	if inner == nil {
-		panic(ErrJoinNilSource)
-	}
-	if outerKeySelector == nil {
-		panic(ErrOuterKeySelector)
-	}
-	if innerKeySelector == nil {
-		panic(ErrInnerKeySelector)
-	}
-	if resultSelector == nil {
-		panic(ErrResultSelector)
-	}
+	isNotNil(inner, ErrJoinNilSource)
+	isNotNil(outerKeySelector, ErrOuterKeySelector)
+	isNotNil(innerKeySelector, ErrInnerKeySelector)
+	isNotNil(resultSelector, ErrResultSelector)
+
 	this.steps = append(this.steps, joinStep{commonStep{ACT_GROUPJOIN, inner, getDegreeArg(degrees...)}, outerKeySelector, innerKeySelector, resultSelector, true})
 	return this
 }
@@ -797,10 +790,10 @@ func getSelect(selectFunc func(interface{}) interface{}) stepAction {
 
 }
 
-func getWhere(sure func(interface{}) bool) stepAction {
+func getWhere(predicate func(interface{}) bool) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption) (dst DataSource, sf *promise.Future, keep bool, e error) {
 		mapChunk := func(c *Chunk) (r *Chunk) {
-			r = filterChunk(c, sure)
+			r = filterChunk(c, predicate)
 			return
 		}
 
@@ -1065,7 +1058,7 @@ func getIntersect(source2 interface{}) stepAction {
 				return
 			}
 
-			f, reduceSrc := parallelMapToChan(src, nil, mapChunk, option)
+			f, reduceSrc := parallelMapToChan(newDataSource(source2), nil, mapChunk, option)
 
 			//get distinct values of src1
 			errs := reduceChan(f.GetChan(), reduceSrc, func(c *Chunk) {
@@ -1085,7 +1078,7 @@ func getIntersect(source2 interface{}) stepAction {
 			}
 		})
 
-		query2 := From(source2).Select(func(v interface{}) interface{} {
+		query2 := newQueryable(src).Select(func(v interface{}) interface{} {
 			return &KeyValue{hash64(v), v}
 		})
 
@@ -1104,6 +1097,74 @@ func getIntersect(source2 interface{}) stepAction {
 			kv := v.(*KeyValue)
 			k := kv.key.(uint64)
 			if _, ok := distKvs[k]; ok {
+				if _, ok := resultKVs[k]; !ok {
+					resultKVs[k] = kv.value
+				}
+			}
+		}
+
+		//get the intersection slices
+		results := make([]interface{}, len(resultKVs))
+		i := 0
+		for _, v := range resultKVs {
+			results[i] = v
+			i++
+		}
+
+		return &listSource{results[0:i]}, nil, option.keepOrder, nil
+
+	})
+}
+
+func getExcept(source2 interface{}) stepAction {
+	return stepAction(func(src DataSource, option *ParallelOption) (result DataSource, f *promise.Future, keep bool, err error) {
+		distKvs := make(map[uint64]bool)
+
+		f1 := promise.Start(func() []interface{} {
+			mapChunk := func(c *Chunk) (r *Chunk) {
+				r = &Chunk{getKeyValues(c, func(v interface{}) interface{} { return v }, nil), c.order}
+				return
+			}
+
+			f, reduceSrc := parallelMapToChan(newDataSource(source2), nil, mapChunk, option)
+
+			//get distinct values of src1
+			errs := reduceChan(f.GetChan(), reduceSrc, func(c *Chunk) {
+				for _, v := range c.data {
+					kv := v.(*hKeyValue)
+					if _, ok := distKvs[kv.keyHash]; !ok {
+						distKvs[kv.keyHash] = true
+						//fmt.Println("add", kv.value, "to distKvs")
+					}
+				}
+			})
+
+			if errs == nil {
+				return nil
+			} else {
+				return []interface{}{NewLinqError("Group error", errs), false}
+			}
+		})
+
+		query2 := newQueryable(src).Select(func(v interface{}) interface{} {
+			return &KeyValue{hash64(v), v}
+		})
+
+		var dataSource2 []interface{}
+		if dataSource2, err = query2.Results(); err != nil {
+			return nil, nil, option.keepOrder, err
+		}
+
+		if r, typ := f1.Get(); typ != promise.RESULT_SUCCESS {
+			return nil, nil, option.keepOrder, NewLinqError("Intersect error", r)
+		}
+
+		//filter source2
+		resultKVs := make(map[uint64]interface{}, len(distKvs))
+		for _, v := range dataSource2 {
+			kv := v.(*KeyValue)
+			k := kv.key.(uint64)
+			if _, ok := distKvs[k]; !ok {
 				if _, ok := resultKVs[k]; !ok {
 					resultKVs[k] = kv.value
 				}
@@ -1523,8 +1584,8 @@ func getKeyValues(c *Chunk, keyFunc func(v interface{}) interface{}, KeyValues *
 	return *KeyValues
 }
 
-func iif(sure bool, trueVal interface{}, falseVal interface{}) interface{} {
-	if sure {
+func iif(predicate bool, trueVal interface{}, falseVal interface{}) interface{} {
+	if predicate {
 		return trueVal
 	} else {
 		return falseVal

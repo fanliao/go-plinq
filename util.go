@@ -669,3 +669,10 @@ func writeStrings(buf *bytes.Buffer, strings []string) {
 		buf.WriteString(s)
 	}
 }
+
+//Asset function--------------------------------------
+func isNotNil(v interface{}, err error) {
+	if v == nil || reflect.ValueOf(v).IsNil() {
+		panic(err)
+	}
+}
