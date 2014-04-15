@@ -1231,6 +1231,7 @@ func singleDegree(src DataSource, option *ParallelOption) (DataSource, bool) {
 			return s, false
 		}
 	} else {
+		//the channel source will always use paralleliam
 		return nil, false
 	}
 }
