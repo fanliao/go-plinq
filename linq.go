@@ -115,7 +115,7 @@ type chanSource struct {
 	once      *sync.Once
 	data1     interface{}
 	chunkChan chan *chunk
-	chunkSize int
+	//chunkSize int
 }
 
 func (this chanSource) Typ() int {
@@ -249,11 +249,19 @@ type HKeyValue struct {
 }
 
 //the queryable struct-------------------------------------------------------------------------
-type Queryable struct {
-	data      dataSource
-	steps     []step
+type parallelOption struct {
+	degree    int
+	chunkSize int
 	keepOrder bool
-	stepErrs  []interface{}
+}
+
+type Queryable struct {
+	data     dataSource
+	steps    []step
+	stepErrs []interface{}
+	parallelOption
+	//degree    int
+	//chunkSize int
 }
 
 func From(src interface{}) (q *Queryable) {
@@ -264,6 +272,8 @@ func From(src interface{}) (q *Queryable) {
 	q = &Queryable{}
 	q.keepOrder = true
 	q.steps = make([]step, 0, 4)
+	q.degree = numCPU
+	q.chunkSize = DEFAULTCHUNKSIZE
 
 	if k := reflect.ValueOf(src).Kind(); k == reflect.Slice || k == reflect.Map {
 		q.data = &listSource{data: src}
@@ -289,50 +299,51 @@ func (this *Queryable) Results() (results []interface{}, err error) {
 	}
 }
 
-func (this *Queryable) Where(sure func(interface{}) bool) *Queryable {
+func (this *Queryable) Where(sure func(interface{}) bool, degrees ...int) *Queryable {
 	if sure == nil {
 		panic(ErrNilAction)
 	}
-	this.steps = append(this.steps, commonStep{ACT_WHERE, sure, numCPU})
+
+	this.steps = append(this.steps, commonStep{ACT_WHERE, sure, this.computeDegree(degrees...)})
 	return this
 }
 
-func (this *Queryable) Select(selectFunc func(interface{}) interface{}) *Queryable {
+func (this *Queryable) Select(selectFunc func(interface{}) interface{}, degrees ...int) *Queryable {
 	if selectFunc == nil {
 		panic(ErrNilAction)
 	}
-	this.steps = append(this.steps, commonStep{ACT_SELECT, selectFunc, numCPU})
+	this.steps = append(this.steps, commonStep{ACT_SELECT, selectFunc, this.computeDegree(degrees...)})
 	return this
 }
 
-func (this *Queryable) Distinct(distinctFunc func(interface{}) interface{}) *Queryable {
-	this.steps = append(this.steps, commonStep{ACT_DISTINCT, distinctFunc, numCPU})
+func (this *Queryable) Distinct(distinctFunc func(interface{}) interface{}, degrees ...int) *Queryable {
+	this.steps = append(this.steps, commonStep{ACT_DISTINCT, distinctFunc, this.computeDegree(degrees...)})
 	return this
 }
 
 func (this *Queryable) Order(compare func(interface{}, interface{}) int) *Queryable {
-	this.steps = append(this.steps, commonStep{ACT_ORDERBY, compare, numCPU})
+	this.steps = append(this.steps, commonStep{ACT_ORDERBY, compare, this.degree})
 	return this
 }
 
-func (this *Queryable) GroupBy(keySelector func(interface{}) interface{}) *Queryable {
+func (this *Queryable) GroupBy(keySelector func(interface{}) interface{}, degrees ...int) *Queryable {
 	if keySelector == nil {
 		panic(ErrNilAction)
 	}
-	this.steps = append(this.steps, commonStep{ACT_GROUPBY, keySelector, numCPU})
+	this.steps = append(this.steps, commonStep{ACT_GROUPBY, keySelector, this.computeDegree(degrees...)})
 	return this
 }
 
-func (this *Queryable) hGroupBy(keySelector func(interface{}) interface{}) *Queryable {
-	this.steps = append(this.steps, commonStep{ACT_HGROUPBY, keySelector, numCPU})
+func (this *Queryable) hGroupBy(keySelector func(interface{}) interface{}, degrees ...int) *Queryable {
+	this.steps = append(this.steps, commonStep{ACT_HGROUPBY, keySelector, this.computeDegree(degrees...)})
 	return this
 }
 
-func (this *Queryable) Union(source2 interface{}) *Queryable {
+func (this *Queryable) Union(source2 interface{}, degrees ...int) *Queryable {
 	if source2 == nil {
 		panic(ErrUnionNilSource)
 	}
-	this.steps = append(this.steps, commonStep{ACT_UNION, source2, numCPU})
+	this.steps = append(this.steps, commonStep{ACT_UNION, source2, this.computeDegree(degrees...)})
 	return this
 }
 
@@ -340,22 +351,22 @@ func (this *Queryable) Concat(source2 interface{}) *Queryable {
 	if source2 == nil {
 		panic(ErrConcatNilSource)
 	}
-	this.steps = append(this.steps, commonStep{ACT_CONCAT, source2, numCPU})
+	this.steps = append(this.steps, commonStep{ACT_CONCAT, source2, this.degree})
 	return this
 }
 
-func (this *Queryable) Intersect(source2 interface{}) *Queryable {
+func (this *Queryable) Intersect(source2 interface{}, degrees ...int) *Queryable {
 	if source2 == nil {
 		panic(ErrInterestNilSource)
 	}
-	this.steps = append(this.steps, commonStep{ACT_INTERSECT, source2, numCPU})
+	this.steps = append(this.steps, commonStep{ACT_INTERSECT, source2, this.computeDegree(degrees...)})
 	return this
 }
 
 func (this *Queryable) Join(inner interface{},
 	outerKeySelector func(interface{}) interface{},
 	innerKeySelector func(interface{}) interface{},
-	resultSelector func(interface{}, interface{}) interface{}) *Queryable {
+	resultSelector func(interface{}, interface{}) interface{}, degrees ...int) *Queryable {
 	if inner == nil {
 		panic(ErrJoinNilSource)
 	}
@@ -368,14 +379,14 @@ func (this *Queryable) Join(inner interface{},
 	if resultSelector == nil {
 		panic(ErrResultSelector)
 	}
-	this.steps = append(this.steps, joinStep{commonStep{ACT_JOIN, inner, numCPU}, outerKeySelector, innerKeySelector, resultSelector, false})
+	this.steps = append(this.steps, joinStep{commonStep{ACT_JOIN, inner, this.computeDegree(degrees...)}, outerKeySelector, innerKeySelector, resultSelector, false})
 	return this
 }
 
 func (this *Queryable) LeftJoin(inner interface{},
 	outerKeySelector func(interface{}) interface{},
 	innerKeySelector func(interface{}) interface{},
-	resultSelector func(interface{}, interface{}) interface{}) *Queryable {
+	resultSelector func(interface{}, interface{}) interface{}, degrees ...int) *Queryable {
 	if inner == nil {
 		panic(ErrJoinNilSource)
 	}
@@ -388,14 +399,14 @@ func (this *Queryable) LeftJoin(inner interface{},
 	if resultSelector == nil {
 		panic(ErrResultSelector)
 	}
-	this.steps = append(this.steps, joinStep{commonStep{ACT_JOIN, inner, numCPU}, outerKeySelector, innerKeySelector, resultSelector, true})
+	this.steps = append(this.steps, joinStep{commonStep{ACT_JOIN, inner, this.computeDegree(degrees...)}, outerKeySelector, innerKeySelector, resultSelector, true})
 	return this
 }
 
 func (this *Queryable) GroupJoin(inner interface{},
 	outerKeySelector func(interface{}) interface{},
 	innerKeySelector func(interface{}) interface{},
-	resultSelector func(interface{}, []interface{}) interface{}) *Queryable {
+	resultSelector func(interface{}, []interface{}) interface{}, degrees ...int) *Queryable {
 	if inner == nil {
 		panic(ErrJoinNilSource)
 	}
@@ -408,14 +419,14 @@ func (this *Queryable) GroupJoin(inner interface{},
 	if resultSelector == nil {
 		panic(ErrResultSelector)
 	}
-	this.steps = append(this.steps, joinStep{commonStep{ACT_GROUPJOIN, inner, numCPU}, outerKeySelector, innerKeySelector, resultSelector, false})
+	this.steps = append(this.steps, joinStep{commonStep{ACT_GROUPJOIN, inner, this.computeDegree(degrees...)}, outerKeySelector, innerKeySelector, resultSelector, false})
 	return this
 }
 
 func (this *Queryable) LeftGroupJoin(inner interface{},
 	outerKeySelector func(interface{}) interface{},
 	innerKeySelector func(interface{}) interface{},
-	resultSelector func(interface{}, []interface{}) interface{}) *Queryable {
+	resultSelector func(interface{}, []interface{}) interface{}, degrees ...int) *Queryable {
 	if inner == nil {
 		panic(ErrJoinNilSource)
 	}
@@ -428,12 +439,22 @@ func (this *Queryable) LeftGroupJoin(inner interface{},
 	if resultSelector == nil {
 		panic(ErrResultSelector)
 	}
-	this.steps = append(this.steps, joinStep{commonStep{ACT_GROUPJOIN, inner, numCPU}, outerKeySelector, innerKeySelector, resultSelector, true})
+	this.steps = append(this.steps, joinStep{commonStep{ACT_GROUPJOIN, inner, this.computeDegree(degrees...)}, outerKeySelector, innerKeySelector, resultSelector, true})
 	return this
 }
 
 func (this *Queryable) KeepOrder(keep bool) *Queryable {
 	this.keepOrder = keep
+	return this
+}
+
+func (this *Queryable) SetDegreeOfParallelism(degree int) *Queryable {
+	this.degree = degree
+	return this
+}
+
+func (this *Queryable) SetSizeOfChunk(size int) *Queryable {
+	this.chunkSize = size
 	return this
 }
 
@@ -448,10 +469,12 @@ func (this *Queryable) get() (data dataSource, err error) {
 		//fmt.Println("end receive errors")
 	}()
 
+	var keepOrder bool = this.parallelOption.keepOrder
 	data = this.data
+	parallelOption := this.parallelOption
 	for _, step := range this.steps {
 		var f *promise.Future
-		data, f, this.keepOrder, err = step.stepAction()(data, this.keepOrder)
+		data, f, keepOrder, err = step.stepAction()(data, parallelOption)
 		if err != nil {
 			return nil, err
 		}
@@ -463,6 +486,8 @@ func (this *Queryable) get() (data dataSource, err error) {
 				//fmt.Println("end fail", stepErr{step.getTyp(), results})
 			})
 		}
+
+		parallelOption.keepOrder = keepOrder
 	}
 
 	return data, nil
@@ -483,7 +508,7 @@ const (
 	ACT_INTERSECT
 )
 
-type stepAction func(dataSource, bool) (dataSource, *promise.Future, bool, error)
+type stepAction func(dataSource, parallelOption) (dataSource, *promise.Future, bool, error)
 type step interface {
 	stepAction() stepAction
 	getTyp() int
@@ -542,8 +567,8 @@ func (this joinStep) stepAction() (act stepAction) {
 }
 
 func getSelect(selectFunc func(interface{}) interface{}, degree int) stepAction {
-	return stepAction(func(src dataSource, keepOrder bool) (dst dataSource, sf *promise.Future, keep bool, e error) {
-		keep = keepOrder
+	return stepAction(func(src dataSource, option parallelOption) (dst dataSource, sf *promise.Future, keep bool, e error) {
+		keep = option.keepOrder
 
 		switch s := src.(type) {
 		case *listSource:
@@ -583,7 +608,7 @@ func getSelect(selectFunc func(interface{}) interface{}, degree int) stepAction 
 }
 
 func getOrder(compare func(interface{}, interface{}) int) stepAction {
-	return stepAction(func(src dataSource, keepOrder bool) (dst dataSource, sf *promise.Future, keep bool, e error) {
+	return stepAction(func(src dataSource, option parallelOption) (dst dataSource, sf *promise.Future, keep bool, e error) {
 		switch s := src.(type) {
 		case *listSource:
 			sorteds := sortSlice(s.ToSlice(false), func(this, that interface{}) bool {
@@ -610,7 +635,7 @@ func getOrder(compare func(interface{}, interface{}) int) stepAction {
 }
 
 func getWhere(sure func(interface{}) bool, degree int) stepAction {
-	return stepAction(func(src dataSource, keepOrder bool) (dst dataSource, sf *promise.Future, keep bool, e error) {
+	return stepAction(func(src dataSource, option parallelOption) (dst dataSource, sf *promise.Future, keep bool, e error) {
 		mapChunk := func(c *chunk) (r *chunk) {
 			r = filterChunk(c, sure)
 			return
@@ -624,7 +649,7 @@ func getWhere(sure func(interface{}) bool, degree int) stepAction {
 }
 
 func getDistinct(distinctFunc func(interface{}) interface{}, degree int) stepAction {
-	return stepAction(func(src dataSource, keepOrder bool) (dataSource, *promise.Future, bool, error) {
+	return stepAction(func(src dataSource, option parallelOption) (dataSource, *promise.Future, bool, error) {
 		mapChunk := func(c *chunk) (r *chunk) {
 			r = &chunk{getKeyValues(c, distinctFunc, nil), c.order}
 			return
@@ -645,7 +670,7 @@ func getDistinct(distinctFunc func(interface{}) interface{}, degree int) stepAct
 
 //note the groupby cannot keep order because the map cannot keep order
 func getGroupBy(groupFunc func(interface{}) interface{}, hashAsKey bool, degree int) stepAction {
-	return stepAction(func(src dataSource, keepOrder bool) (dataSource, *promise.Future, bool, error) {
+	return stepAction(func(src dataSource, option parallelOption) (dataSource, *promise.Future, bool, error) {
 		mapChunk := func(c *chunk) (r *chunk) {
 			r = &chunk{getKeyValues(c, groupFunc, nil), c.order}
 			return
@@ -713,7 +738,7 @@ func getJoinImpl(inner interface{},
 	innerKeySelector func(interface{}) interface{},
 	matchSelector func(*HKeyValue, []interface{}, *[]interface{}),
 	unmatchSelector func(*HKeyValue, *[]interface{}), isLeftJoin bool, degree int) stepAction {
-	return stepAction(func(src dataSource, keepOrder bool) (dst dataSource, sf *promise.Future, keep bool, e error) {
+	return stepAction(func(src dataSource, option parallelOption) (dst dataSource, sf *promise.Future, keep bool, e error) {
 		keep = keepOrder
 		innerKVtask := promise.Start(func() []interface{} {
 			if innerKvsDs, err := From(inner).hGroupBy(innerKeySelector).get(); err == nil {
@@ -768,7 +793,7 @@ func getJoinImpl(inner interface{},
 }
 
 func getUnion(source2 interface{}, degree int) stepAction {
-	return stepAction(func(src dataSource, keepOrder bool) (dataSource, *promise.Future, bool, error) {
+	return stepAction(func(src dataSource, option parallelOption) (dataSource, *promise.Future, bool, error) {
 		reduceSrcChan := make(chan *chunk)
 		mapChunk := func(c *chunk) (r *chunk) {
 			r = &chunk{getKeyValues(c, func(v interface{}) interface{} { return v }, nil), c.order}
@@ -794,7 +819,7 @@ func getUnion(source2 interface{}, degree int) stepAction {
 }
 
 func getConcat(source2 interface{}, degree int) stepAction {
-	return stepAction(func(src dataSource, keepOrder bool) (dataSource, *promise.Future, bool, error) {
+	return stepAction(func(src dataSource, option parallelOption) (dataSource, *promise.Future, bool, error) {
 		slice1 := src.ToSlice(keepOrder)
 		slice2, err2 := From(source2).KeepOrder(keepOrder).Results()
 
@@ -810,7 +835,7 @@ func getConcat(source2 interface{}, degree int) stepAction {
 }
 
 func getIntersect(source2 interface{}, degree int) stepAction {
-	return stepAction(func(src dataSource, keepOrder bool) (dataSource, *promise.Future, bool, error) {
+	return stepAction(func(src dataSource, option parallelOption) (dataSource, *promise.Future, bool, error) {
 
 		distKvs := make(map[uint64]bool)
 
@@ -1224,4 +1249,15 @@ func iif(sure bool, trueVal interface{}, falseVal interface{}) interface{} {
 	} else {
 		return falseVal
 	}
+}
+
+func computeDegree(degrees ...int) int {
+	degree := 0
+	if degrees != nil && len(degrees) > 0 {
+		degree = degrees[0]
+		if degree == 0 {
+			degree = 1
+		}
+	}
+	return degree
 }
