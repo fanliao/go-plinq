@@ -412,7 +412,7 @@ func (this *Queryable) hGroupBy(keySelector func(interface{}) interface{}, degre
 
 func (this *Queryable) makeCopiedSrc() DataSource {
 	if len(this.steps) > 0 {
-		if typ := this.steps[0].getTyp(); typ == ACT_REVERSE || typ == ACT_SELECT {
+		if typ := this.steps[0].Typ(); typ == ACT_REVERSE || typ == ACT_SELECT {
 			if listSrc, ok := this.data.(*listSource); ok {
 				switch data := listSrc.data.(type) {
 				case []interface{}:
@@ -447,18 +447,18 @@ func (this *Queryable) get() (data DataSource, err error) {
 	pOption, keepOrder := this.ParallelOption, this.ParallelOption.keepOrder
 
 	for _, step := range this.steps {
-		//execute the step
 		var f *promise.Future
 		step1 := step
 
-		if data, f, keepOrder, err = step.stepAction()(data, pOption); err != nil {
+		//execute the step
+		if data, f, keepOrder, err = step.Action()(data, step.POption(pOption)); err != nil {
 			return nil, err
 		} else if f != nil {
 			//add a fail callback to collect the errors in pipeline mode
 			//because the steps will be paralle in piplline mode,
 			//so cannot use return value of the function
 			f.Fail(func(results ...interface{}) {
-				this.errChan <- NewStepError(step1.getTyp(), results)
+				this.errChan <- NewStepError(step1.Typ(), results)
 			})
 		}
 
@@ -498,15 +498,15 @@ func (this listSource) ToSlice(keepOrder bool) []interface{} {
 		value := reflect.ValueOf(this.data)
 		switch value.Kind() {
 		case reflect.Slice:
-			l := value.Len()
-			results := make([]interface{}, l, l)
-			for i := 0; i < l; i++ {
+			size := value.Len()
+			results := make([]interface{}, size)
+			for i := 0; i < size; i++ {
 				results[i] = value.Index(i).Interface()
 			}
 			return results
 		case reflect.Map:
-			l := value.Len()
-			results := make([]interface{}, l, l)
+			size := value.Len()
+			results := make([]interface{}, size)
 			for i, k := range value.MapKeys() {
 				results[i] = &KeyValue{k.Interface(), value.MapIndex(k).Interface()}
 			}
@@ -680,12 +680,14 @@ const (
 )
 
 //stepAction presents a action related to a linq operation
-type stepAction func(DataSource, ParallelOption) (DataSource, *promise.Future, bool, error)
+type stepAction func(DataSource, *ParallelOption) (DataSource, *promise.Future, bool, error)
 
 //step present a linq operation
 type step interface {
-	stepAction() stepAction
-	getTyp() int
+	Action() stepAction
+	Typ() int
+	Degree() int
+	POption(option ParallelOption) *ParallelOption
 }
 
 type commonStep struct {
@@ -702,50 +704,56 @@ type joinStep struct {
 	isLeftJoin       bool
 }
 
-func (this commonStep) getTyp() int { return this.typ }
+func (this commonStep) Typ() int    { return this.typ }
+func (this commonStep) Degree() int { return this.degree }
+func (this commonStep) POption(option ParallelOption) *ParallelOption {
+	if this.degree != 0 {
+		option.degree = this.degree
+	}
+	return &option
+}
 
-func (this commonStep) stepAction() (act stepAction) {
+func (this commonStep) Action() (act stepAction) {
 	switch this.typ {
 	case ACT_SELECT:
-		act = getSelect(this.act.(func(interface{}) interface{}), this.degree)
+		act = getSelect(this.act.(func(interface{}) interface{}))
 	case ACT_WHERE:
-		act = getWhere(this.act.(func(interface{}) bool), this.degree)
+		act = getWhere(this.act.(func(interface{}) bool))
 	case ACT_DISTINCT:
-		act = getDistinct(this.act.(func(interface{}) interface{}), this.degree)
+		act = getDistinct(this.act.(func(interface{}) interface{}))
 	case ACT_ORDERBY:
 		act = getOrder(this.act.(func(interface{}, interface{}) int))
 	case ACT_GROUPBY:
-		act = getGroupBy(this.act.(func(interface{}) interface{}), false, this.degree)
+		act = getGroupBy(this.act.(func(interface{}) interface{}), false)
 	case ACT_HGROUPBY:
-		act = getGroupBy(this.act.(func(interface{}) interface{}), true, this.degree)
+		act = getGroupBy(this.act.(func(interface{}) interface{}), true)
 	case ACT_UNION:
-		act = getUnion(this.act, this.degree)
+		act = getUnion(this.act)
 	case ACT_CONCAT:
-		act = getConcat(this.act, this.degree)
+		act = getConcat(this.act)
 	case ACT_INTERSECT:
-		act = getIntersect(this.act, this.degree)
+		act = getIntersect(this.act)
 	case ACT_REVERSE:
-		act = getReverse(this.degree)
+		act = getReverse()
 	}
 	return
 }
 
-func (this joinStep) stepAction() (act stepAction) {
+func (this joinStep) Action() (act stepAction) {
 	switch this.typ {
 	case ACT_JOIN:
 		act = getJoin(this.act, this.outerKeySelector, this.innerKeySelector,
-			this.resultSelector.(func(interface{}, interface{}) interface{}), this.isLeftJoin, this.degree)
+			this.resultSelector.(func(interface{}, interface{}) interface{}), this.isLeftJoin)
 	case ACT_GROUPJOIN:
 		act = getGroupJoin(this.act, this.outerKeySelector, this.innerKeySelector,
-			this.resultSelector.(func(interface{}, []interface{}) interface{}), this.isLeftJoin, this.degree)
+			this.resultSelector.(func(interface{}, []interface{}) interface{}), this.isLeftJoin)
 	}
 	return
 }
 
 // The functions get linq operation------------------------------------
-func getSelect(selectFunc func(interface{}) interface{}, degree int) stepAction {
-	return stepAction(func(src DataSource, option ParallelOption) (dst DataSource, sf *promise.Future, keep bool, e error) {
-		stepParallelOption(&option, degree)
+func getSelect(selectFunc func(interface{}) interface{}) stepAction {
+	return stepAction(func(src DataSource, option *ParallelOption) (dst DataSource, sf *promise.Future, keep bool, e error) {
 		keep = option.keepOrder
 		mapChunk := func(c *Chunk) *Chunk {
 			//result := make([]interface{}, len(c.data)) //c.end-c.start+2)
@@ -754,10 +762,8 @@ func getSelect(selectFunc func(interface{}) interface{}, degree int) stepAction 
 		}
 
 		//try to use sequentail if the size of the data is less than size of chunk
-		if list, handled := trySequential(src, &option, mapChunk); handled {
+		if list, handled := trySequential(src, option, mapChunk); handled {
 			return list, nil, option.keepOrder, nil
-		} else if list != nil {
-			src = list
 		}
 
 		switch s := src.(type) {
@@ -768,7 +774,7 @@ func getSelect(selectFunc func(interface{}) interface{}, degree int) stepAction 
 				out := results[c.order : c.order+len(c.data)]
 				mapSlice(c.data, selectFunc, &out)
 				return nil
-			}, &option)
+			}, option)
 			dst, e = getFutureResult(f, func(r []interface{}) DataSource {
 				//fmt.Println("results=", results)
 				return &listSource{results}
@@ -776,7 +782,7 @@ func getSelect(selectFunc func(interface{}) interface{}, degree int) stepAction 
 			return
 		case *chanSource:
 			//use channel mode if the source is a channel
-			f, out := parallelMapChanToChan(s, nil, mapChunk, &option)
+			f, out := parallelMapChanToChan(s, nil, mapChunk, option)
 
 			sf, dst, e = f, &chanSource{chunkChan: out}, nil
 			//noted when use pipeline mode to start next step, the future of current step must be returned
@@ -789,23 +795,20 @@ func getSelect(selectFunc func(interface{}) interface{}, degree int) stepAction 
 
 }
 
-func getWhere(sure func(interface{}) bool, degree int) stepAction {
-	return stepAction(func(src DataSource, option ParallelOption) (dst DataSource, sf *promise.Future, keep bool, e error) {
-		stepParallelOption(&option, degree)
+func getWhere(sure func(interface{}) bool) stepAction {
+	return stepAction(func(src DataSource, option *ParallelOption) (dst DataSource, sf *promise.Future, keep bool, e error) {
 		mapChunk := func(c *Chunk) (r *Chunk) {
 			r = filterChunk(c, sure)
 			return
 		}
 
 		//try to use sequentail if the size of the data is less than size of chunk
-		if list, handled := trySequential(src, &option, mapChunk); handled {
+		if list, handled := trySequential(src, option, mapChunk); handled {
 			return list, nil, option.keepOrder, nil
-		} else if list != nil {
-			src = list
 		}
 
 		//always use channel mode in Where operation
-		f, reduceSrc := parallelMapToChan(src, nil, mapChunk, &option)
+		f, reduceSrc := parallelMapToChan(src, nil, mapChunk, option)
 
 		//fmt.Println("return where")
 		return &chanSource{chunkChan: reduceSrc}, f, option.keepOrder, nil
@@ -813,7 +816,7 @@ func getWhere(sure func(interface{}) bool, degree int) stepAction {
 }
 
 func getOrder(compare func(interface{}, interface{}) int) stepAction {
-	return stepAction(func(src DataSource, option ParallelOption) (dst DataSource, sf *promise.Future, keep bool, e error) {
+	return stepAction(func(src DataSource, option *ParallelOption) (dst DataSource, sf *promise.Future, keep bool, e error) {
 		//order operation be sequentail
 		option.degree = 1
 
@@ -832,7 +835,7 @@ func getOrder(compare func(interface{}, interface{}) int) stepAction {
 					avl.Insert(v)
 				}
 				return nil
-			}, &option)
+			}, option)
 
 			dst, e = getFutureResult(f, func(r []interface{}) DataSource {
 				return &listSource{avl.ToSlice()}
@@ -844,9 +847,8 @@ func getOrder(compare func(interface{}, interface{}) int) stepAction {
 	})
 }
 
-func getDistinct(distinctFunc func(interface{}) interface{}, degree int) stepAction {
-	return stepAction(func(src DataSource, option ParallelOption) (DataSource, *promise.Future, bool, error) {
-		stepParallelOption(&option, degree)
+func getDistinct(distinctFunc func(interface{}) interface{}) stepAction {
+	return stepAction(func(src DataSource, option *ParallelOption) (DataSource, *promise.Future, bool, error) {
 		mapChunk := func(c *Chunk) (r *Chunk) {
 			r = &Chunk{getKeyValues(c, distinctFunc, nil), c.order}
 			return
@@ -858,12 +860,10 @@ func getDistinct(distinctFunc func(interface{}) interface{}, degree int) stepAct
 		//	distKvs := make(map[uint64]int)
 		//	c = distinctChunkVals(c, distKvs)
 		//	return &listSource{c.data}, nil, option.keepOrder, nil
-		//} else if list != nil {
-		//	src = list
 		//}
 
 		//map the element to a keyValue that key is hash value and value is element
-		f, reduceSrcChan := parallelMapToChan(src, nil, mapChunk, &option)
+		f, reduceSrcChan := parallelMapToChan(src, nil, mapChunk, option)
 
 		//reduce the keyValue map to get distinct values
 		if chunks, err := reduceDistinctVals(f, reduceSrcChan); err == nil {
@@ -877,16 +877,15 @@ func getDistinct(distinctFunc func(interface{}) interface{}, degree int) stepAct
 }
 
 //note the groupby cannot keep order because the map cannot keep order
-func getGroupBy(groupFunc func(interface{}) interface{}, hashAsKey bool, degree int) stepAction {
-	return stepAction(func(src DataSource, option ParallelOption) (DataSource, *promise.Future, bool, error) {
-		stepParallelOption(&option, degree)
+func getGroupBy(groupFunc func(interface{}) interface{}, hashAsKey bool) stepAction {
+	return stepAction(func(src DataSource, option *ParallelOption) (DataSource, *promise.Future, bool, error) {
 		mapChunk := func(c *Chunk) (r *Chunk) {
 			r = &Chunk{getKeyValues(c, groupFunc, nil), c.order}
 			return
 		}
 
 		//map the element to a keyValue that key is group key and value is element
-		f, reduceSrc := parallelMapToChan(src, nil, mapChunk, &option)
+		f, reduceSrc := parallelMapToChan(src, nil, mapChunk, option)
 
 		groupKvs := make(map[interface{}]interface{})
 		groupKv := func(v interface{}) {
@@ -920,7 +919,7 @@ func getGroupBy(groupFunc func(interface{}) interface{}, hashAsKey bool, degree 
 func getJoin(inner interface{},
 	outerKeySelector func(interface{}) interface{},
 	innerKeySelector func(interface{}) interface{},
-	resultSelector func(interface{}, interface{}) interface{}, isLeftJoin bool, degree int) stepAction {
+	resultSelector func(interface{}, interface{}) interface{}, isLeftJoin bool) stepAction {
 	return getJoinImpl(inner, outerKeySelector, innerKeySelector,
 		func(outerkv *hKeyValue, innerList []interface{}, results *[]interface{}) {
 			for _, iv := range innerList {
@@ -928,29 +927,28 @@ func getJoin(inner interface{},
 			}
 		}, func(outerkv *hKeyValue, results *[]interface{}) {
 			*results = appendSlice(*results, resultSelector(outerkv.value, nil))
-		}, isLeftJoin, degree)
+		}, isLeftJoin)
 }
 
 func getGroupJoin(inner interface{},
 	outerKeySelector func(interface{}) interface{},
 	innerKeySelector func(interface{}) interface{},
-	resultSelector func(interface{}, []interface{}) interface{}, isLeftJoin bool, degree int) stepAction {
+	resultSelector func(interface{}, []interface{}) interface{}, isLeftJoin bool) stepAction {
 
 	return getJoinImpl(inner, outerKeySelector, innerKeySelector,
 		func(outerkv *hKeyValue, innerList []interface{}, results *[]interface{}) {
 			*results = appendSlice(*results, resultSelector(outerkv.value, innerList))
 		}, func(outerkv *hKeyValue, results *[]interface{}) {
 			*results = appendSlice(*results, resultSelector(outerkv.value, []interface{}{}))
-		}, isLeftJoin, degree)
+		}, isLeftJoin)
 }
 
 func getJoinImpl(inner interface{},
 	outerKeySelector func(interface{}) interface{},
 	innerKeySelector func(interface{}) interface{},
 	matchSelector func(*hKeyValue, []interface{}, *[]interface{}),
-	unmatchSelector func(*hKeyValue, *[]interface{}), isLeftJoin bool, degree int) stepAction {
-	return stepAction(func(src DataSource, option ParallelOption) (dst DataSource, sf *promise.Future, keep bool, e error) {
-		stepParallelOption(&option, degree)
+	unmatchSelector func(*hKeyValue, *[]interface{}), isLeftJoin bool) stepAction {
+	return stepAction(func(src DataSource, option *ParallelOption) (dst DataSource, sf *promise.Future, keep bool, e error) {
 		keep = option.keepOrder
 		innerKVtask := promise.Start(func() []interface{} {
 			if innerKvsDs, err := From(inner).hGroupBy(innerKeySelector).get(); err == nil {
@@ -994,7 +992,7 @@ func getJoinImpl(inner interface{},
 		case *listSource:
 			//Todo:
 			//can use channel mode like Where operation?
-			outerKeySelectorFuture := parallelMapListToList(s, mapChunk, &option)
+			outerKeySelectorFuture := parallelMapListToList(s, mapChunk, option)
 
 			dst, e = getFutureResult(outerKeySelectorFuture, func(results []interface{}) DataSource {
 				result := expandChunks(results, false)
@@ -1002,7 +1000,7 @@ func getJoinImpl(inner interface{},
 			})
 			return
 		case *chanSource:
-			f, out := parallelMapChanToChan(s, nil, mapChunk, &option)
+			f, out := parallelMapChanToChan(s, nil, mapChunk, option)
 			dst, sf, e = &chanSource{chunkChan: out}, f, nil
 			return
 		}
@@ -1011,9 +1009,8 @@ func getJoinImpl(inner interface{},
 	})
 }
 
-func getUnion(source2 interface{}, degree int) stepAction {
-	return stepAction(func(src DataSource, option ParallelOption) (DataSource, *promise.Future, bool, error) {
-		stepParallelOption(&option, degree)
+func getUnion(source2 interface{}) stepAction {
+	return stepAction(func(src DataSource, option *ParallelOption) (DataSource, *promise.Future, bool, error) {
 		reduceSrcChan := make(chan *Chunk)
 		mapChunk := func(c *Chunk) (r *Chunk) {
 			r = &Chunk{getKeyValues(c, func(v interface{}) interface{} { return v }, nil), c.order}
@@ -1022,8 +1019,8 @@ func getUnion(source2 interface{}, degree int) stepAction {
 
 		//map the elements of source and source2 to the a KeyValue slice
 		//includes the hash value and the original element
-		f1, reduceSrcChan := parallelMapToChan(src, reduceSrcChan, mapChunk, &option)
-		f2, reduceSrcChan := parallelMapToChan(From(source2).data, reduceSrcChan, mapChunk, &option)
+		f1, reduceSrcChan := parallelMapToChan(src, reduceSrcChan, mapChunk, option)
+		f2, reduceSrcChan := parallelMapToChan(From(source2).data, reduceSrcChan, mapChunk, option)
 
 		mapFuture := promise.WhenAll(f1, f2)
 
@@ -1041,10 +1038,8 @@ func getUnion(source2 interface{}, degree int) stepAction {
 	})
 }
 
-func getConcat(source2 interface{}, degree int) stepAction {
-	return stepAction(func(src DataSource, option ParallelOption) (DataSource, *promise.Future, bool, error) {
-		stepParallelOption(&option, degree)
-
+func getConcat(source2 interface{}) stepAction {
+	return stepAction(func(src DataSource, option *ParallelOption) (DataSource, *promise.Future, bool, error) {
 		slice1 := src.ToSlice(option.keepOrder)
 		if slice2, err2 := From(source2).KeepOrder(option.keepOrder).Results(); err2 == nil {
 			result := make([]interface{}, len(slice1)+len(slice2))
@@ -1058,9 +1053,8 @@ func getConcat(source2 interface{}, degree int) stepAction {
 	})
 }
 
-func getIntersect(source2 interface{}, degree int) stepAction {
-	return stepAction(func(src DataSource, option ParallelOption) (result DataSource, f *promise.Future, keep bool, err error) {
-		stepParallelOption(&option, degree)
+func getIntersect(source2 interface{}) stepAction {
+	return stepAction(func(src DataSource, option *ParallelOption) (result DataSource, f *promise.Future, keep bool, err error) {
 		distKvs := make(map[uint64]bool)
 
 		f1 := promise.Start(func() []interface{} {
@@ -1069,7 +1063,7 @@ func getIntersect(source2 interface{}, degree int) stepAction {
 				return
 			}
 
-			f, reduceSrc := parallelMapToChan(src, nil, mapChunk, &option)
+			f, reduceSrc := parallelMapToChan(src, nil, mapChunk, option)
 
 			//get distinct values of src1
 			errs := reduceChan(f.GetChan(), reduceSrc, func(c *Chunk) {
@@ -1126,9 +1120,8 @@ func getIntersect(source2 interface{}, degree int) stepAction {
 	})
 }
 
-func getReverse(degree int) stepAction {
-	return stepAction(func(src DataSource, option ParallelOption) (dst DataSource, sf *promise.Future, keep bool, e error) {
-		stepParallelOption(&option, degree)
+func getReverse() stepAction {
+	return stepAction(func(src DataSource, option *ParallelOption) (dst DataSource, sf *promise.Future, keep bool, e error) {
 		keep = option.keepOrder
 		wholeSlice := src.ToSlice(true)
 		srcSlice, size := wholeSlice[0:len(wholeSlice)/2], len(wholeSlice)
@@ -1146,15 +1139,13 @@ func getReverse(degree int) stepAction {
 		reverseSrc := &listSource{srcSlice}
 
 		//try to use sequentail if the size of the data is less than size of chunk
-		if list, handled := trySequential(reverseSrc, &option, mapChunk); handled {
+		if _, handled := trySequential(reverseSrc, option, mapChunk); handled {
 			return &listSource{wholeSlice}, nil, option.keepOrder, nil
-		} else if list != nil {
-			src = list
 		}
 
 		f := parallelMapListToList(reverseSrc, func(c *Chunk) *Chunk {
 			return mapChunk(c)
-		}, &option)
+		}, option)
 		dst, e = getFutureResult(f, func(r []interface{}) DataSource {
 			//fmt.Println("results=", results)
 			return &listSource{wholeSlice}
@@ -1282,28 +1273,21 @@ func parallelMapList(src DataSource, getAction func(*Chunk) func() []interface{}
 
 //if the data source is listSource, then computer the degree of paralleliam.
 //if the degree is 1, the paralleliam is no need.
-func singleDegree(src DataSource, option *ParallelOption) (DataSource, bool) {
+func singleDegree(src DataSource, option *ParallelOption) bool {
 	if s, ok := src.(*listSource); ok {
 		list := s.ToSlice(false)
-		s.data = list
-		if len(list) <= option.chunkSize {
-			return s, true
-		} else {
-			return s, false
-		}
+		return len(list) <= option.chunkSize
 	} else {
 		//the channel source will always use paralleliam
-		return nil, false
+		return false
 	}
 }
 
 func trySequential(src DataSource, option *ParallelOption, mapChunk func(c *Chunk) (r *Chunk)) (DataSource, bool) {
-	if list, useSingle := singleDegree(src, option); useSingle {
-		c := &Chunk{list.ToSlice(false), 0}
+	if useSingle := singleDegree(src, option); useSingle {
+		c := &Chunk{src.ToSlice(false), 0}
 		r := mapChunk(c)
 		return &listSource{r.data}, true
-	} else if list != nil {
-		return list, false
 	} else {
 		return nil, false
 	}
@@ -1553,10 +1537,4 @@ func getDegreeArg(degrees ...int) int {
 		}
 	}
 	return degree
-}
-
-func stepParallelOption(option *ParallelOption, stepDegree int) {
-	if stepDegree != 0 {
-		option.degree = stepDegree
-	}
 }
