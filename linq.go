@@ -1115,10 +1115,13 @@ func getReverse(degree int) stepAction {
 		stepParallelOption(&option, degree)
 		keep = option.keepOrder
 		wholeSlice := src.ToSlice(true)
+		fmt.Println("get wholeSlice", wholeSlice)
 		srcSlice := wholeSlice[0 : len(wholeSlice)/2]
 		size := len(srcSlice)
+		fmt.Println("get srcSlice", srcSlice)
 
 		mapChunk := func(c *Chunk) *Chunk {
+			fmt.Println("reverse a chunk", c)
 			for i := 0; i < len(c.data); i++ {
 				j := c.order + i
 				t := wholeSlice[size-1-j]
@@ -1138,9 +1141,11 @@ func getReverse(degree int) stepAction {
 			src = list
 		}
 
+		fmt.Println("start parallel")
 		f := parallelMapListToList(reverseSrc, func(c *Chunk) *Chunk {
 			return mapChunk(c)
 		}, &option)
+		fmt.Println("getFutureResult", wholeSlice)
 		dst, e = getFutureResult(f, func(r []interface{}) DataSource {
 			//fmt.Println("results=", results)
 			return &listSource{wholeSlice}
