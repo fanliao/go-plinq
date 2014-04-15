@@ -251,6 +251,11 @@ func main() {
 		return q.Concat(src2)
 	})
 
+	//test Reverse
+	testLinqWithAllSource("Reverse opretions", src1, func(q *Queryable) *Queryable {
+		return q.Reverse()
+	})
+
 	size := count / 4
 	chunkSrc := make(chan *Chunk)
 	go func() {

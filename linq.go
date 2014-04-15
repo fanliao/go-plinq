@@ -379,6 +379,11 @@ func (this *Queryable) LeftGroupJoin(inner interface{},
 	return this
 }
 
+func (this *Queryable) Reverse(degrees ...int) *Queryable {
+	this.steps = append(this.steps, commonStep{ACT_GROUPJOIN, nil, getDegreeArg(degrees...)})
+	return this
+}
+
 //KeepOrder
 func (this *Queryable) KeepOrder(keep bool) *Queryable {
 	this.keepOrder = keep
@@ -654,6 +659,7 @@ const (
 	ACT_UNION
 	ACT_CONCAT
 	ACT_INTERSECT
+	ACT_REVERSE
 )
 
 //stepAction presents a action related to a linq operation
@@ -701,6 +707,8 @@ func (this commonStep) stepAction() (act stepAction) {
 		act = getConcat(this.act, this.degree)
 	case ACT_INTERSECT:
 		act = getIntersect(this.act, this.degree)
+	case ACT_REVERSE:
+		act = getReverse(this.degree)
 	}
 	return
 }
@@ -1099,6 +1107,45 @@ func getIntersect(source2 interface{}, degree int) stepAction {
 
 		return &listSource{results[0:i]}, nil, option.keepOrder, nil
 
+	})
+}
+
+func getReverse(degree int) stepAction {
+	return stepAction(func(src DataSource, option ParallelOption) (dst DataSource, sf *promise.Future, keep bool, e error) {
+		stepParallelOption(&option, degree)
+		keep = option.keepOrder
+		wholeSlice := src.ToSlice(true)
+		srcSlice := wholeSlice[0 : len(wholeSlice)/2]
+		size := len(srcSlice)
+
+		mapChunk := func(c *Chunk) *Chunk {
+			for i := 0; i < len(c.data); i++ {
+				j := c.order + i
+				t := wholeSlice[size-1-j]
+				wholeSlice[size-1-j] = c.data[i]
+				c.data[i] = t
+				fmt.Println("reverse", j, size-1-j)
+			}
+			return nil
+		}
+
+		reverseSrc := &listSource{srcSlice}
+
+		//try to use sequentail if the size of the data is less than size of chunk
+		if list, handled := trySequential(reverseSrc, &option, mapChunk); handled {
+			return list, nil, option.keepOrder, nil
+		} else if list != nil {
+			src = list
+		}
+
+		f := parallelMapListToList(reverseSrc, func(c *Chunk) *Chunk {
+			return mapChunk(c)
+		}, &option)
+		dst, e = getFutureResult(f, func(r []interface{}) DataSource {
+			//fmt.Println("results=", results)
+			return &listSource{wholeSlice}
+		})
+		return
 	})
 }
 
