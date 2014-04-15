@@ -93,9 +93,6 @@ func hashByPtr(dataPtr unsafe.Pointer, typ *rtype, hashObj *sHash) {
 		hashString(*((*string)(dataPtr)), hashObj)
 	case reflect.Struct:
 		hashStruct(dataPtr, t, hashObj)
-		//case reflect.Interface:
-		//case reflect.Slice:
-		//case reflect.Array:
 	case reflect.Int8:
 		hashUInt32(uint32(*((*int8)(dataPtr))), hashObj)
 	case reflect.Int16:
@@ -112,7 +109,6 @@ func hashByPtr(dataPtr unsafe.Pointer, typ *rtype, hashObj *sHash) {
 		v := *((*int64)(dataPtr))
 		hashUInt32((uint32)(v&0x7FFFFFFF), hashObj)
 		hashUInt32((uint32)(v>>32), hashObj)
-	//hashUInt32(*((*uint32)(dataPtr)), hashObj)
 	case reflect.Uint64:
 		v := *((*uint64)(dataPtr))
 		hashUInt32((uint32)(v&0x7FFFFFFF), hashObj)
@@ -171,7 +167,7 @@ func hashValue(dataPtr unsafe.Pointer, size uintptr, hashObj *sHash) {
 	//fmt.Println(logs...)
 }
 
-func tHash(data interface{}) uint64 {
+func hash64(data interface{}) uint64 {
 	dataPtr, size := dataPtr(data)
 	sh := NewSHash()
 	hashByPtr(dataPtr, size, sh)

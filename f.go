@@ -349,5 +349,5 @@ func testHash() {
 }
 
 func printHash(data interface{}) {
-	fmt.Println("hash", data, tHash(data))
+	fmt.Println("hash", data, hash64(data))
 }

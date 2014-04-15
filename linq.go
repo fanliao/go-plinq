@@ -488,7 +488,7 @@ func (this listSource) ToSlice(keepOrder bool) []interface{} {
 		return data
 	case map[interface{}]interface{}:
 		i := 0
-		results := make([]interface{}, len(data), len(data))
+		results := make([]interface{}, len(data))
 		for k, v := range data {
 			results[i] = &KeyValue{k, v}
 			i++
@@ -632,6 +632,7 @@ func (this chanSource) ToSlice(keepOrder bool) []interface{} {
 		if srcChan.Kind() != reflect.Chan {
 			panic(ErrUnsupportSource)
 		}
+
 		result := make([]interface{}, 0, 10)
 		for {
 			if v, ok := srcChan.Recv(); ok {
@@ -768,13 +769,14 @@ func getSelect(selectFunc func(interface{}) interface{}) stepAction {
 
 		switch s := src.(type) {
 		case *listSource:
-			l := len(s.ToSlice(false))
-			results := make([]interface{}, l, l)
+			size := len(s.ToSlice(false))
+			results := make([]interface{}, size)
 			f := parallelMapListToList(s, func(c *Chunk) *Chunk {
 				out := results[c.order : c.order+len(c.data)]
 				mapSlice(c.data, selectFunc, &out)
 				return nil
 			}, option)
+
 			dst, e = getFutureResult(f, func(r []interface{}) DataSource {
 				//fmt.Println("results=", results)
 				return &listSource{results}
@@ -1075,6 +1077,7 @@ func getIntersect(source2 interface{}) stepAction {
 					}
 				}
 			})
+
 			if errs == nil {
 				return nil
 			} else {
@@ -1083,7 +1086,7 @@ func getIntersect(source2 interface{}) stepAction {
 		})
 
 		query2 := From(source2).Select(func(v interface{}) interface{} {
-			return &KeyValue{tHash(v), v}
+			return &KeyValue{hash64(v), v}
 		})
 
 		var dataSource2 []interface{}
@@ -1422,7 +1425,7 @@ func filterSlice(src []interface{}, f func(interface{}) bool) []interface{} {
 func mapSlice(src []interface{}, f func(interface{}) interface{}, out *[]interface{}) []interface{} {
 	var dst []interface{}
 	if out == nil {
-		dst = make([]interface{}, len(src), len(src))
+		dst = make([]interface{}, len(src))
 	} else {
 		dst = *out
 	}
@@ -1454,7 +1457,7 @@ func expandChunks(src []interface{}, keepOrder bool) []interface{} {
 	}
 
 	count := 0
-	chunks := make([]*Chunk, len(src), len(src))
+	chunks := make([]*Chunk, len(src))
 	for i, c := range src {
 		switch v := c.(type) {
 		case []interface{}:
@@ -1466,7 +1469,7 @@ func expandChunks(src []interface{}, keepOrder bool) []interface{} {
 	}
 
 	//fmt.Println("count", count)
-	result := make([]interface{}, count, count)
+	result := make([]interface{}, count)
 	start := 0
 	for _, c := range chunks {
 		size := len(c.data)
@@ -1488,17 +1491,17 @@ func appendSlice(src []interface{}, v interface{}) []interface{} {
 	}
 }
 
-func appendChunkSlice(src []*Chunk, v *Chunk) []*Chunk {
-	c, l := cap(src), len(src)
-	if c >= l+1 {
-		return append(src, v)
-	} else {
-		//reslice
-		newSlice := make([]*Chunk, l+1, 2*c)
-		_ = copy(newSlice[0:l], src)
-		return append(newSlice, v)
-	}
-}
+//func appendChunkSlice(src []*Chunk, v *Chunk) []*Chunk {
+//	c, l := cap(src), len(src)
+//	if c >= l+1 {
+//		return append(src, v)
+//	} else {
+//		//reslice
+//		newSlice := make([]*Chunk, l+1, 2*c)
+//		_ = copy(newSlice[0:l], src)
+//		return append(newSlice, v)
+//	}
+//}
 
 func ceilChunkSize(a int, b int) int {
 	if a%b != 0 {
@@ -1515,7 +1518,7 @@ func getKeyValues(c *Chunk, keyFunc func(v interface{}) interface{}, KeyValues *
 	}
 	mapSlice(c.data, func(v interface{}) interface{} {
 		k := keyFunc(v)
-		return &hKeyValue{tHash(k), k, v}
+		return &hKeyValue{hash64(k), k, v}
 	}, KeyValues)
 	return *KeyValues
 }
