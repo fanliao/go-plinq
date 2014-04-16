@@ -552,8 +552,18 @@ func getError(i interface{}) (e error) {
 }
 
 // NewLinqError returns an error that formats as the given text and includes the given inner errors.
-func NewLinqError(text string, innerErrs []interface{}) error {
-	return &errorLinq{text, innerErrs}
+func NewLinqError(text string, err interface{}) error {
+	if aggErr, ok := err.(*promise.AggregateError); ok {
+		errs := make([]interface{}, len(aggErr.InnerErrs))
+		for i, e := range aggErr.InnerErrs {
+			errs[i] = e
+		}
+		return &errorLinq{text, errs}
+	} else if errs, ok := err.([]interface{}); ok {
+		return &errorLinq{text, errs}
+	} else {
+		return &errorLinq{text, []interface{}{err}}
+	}
 }
 
 // errorLinq is a trivial implementation of error.
@@ -627,11 +637,12 @@ func stepTypToString(typ int) string {
 }
 
 // NewLinqError returns an error that formats as the given text and includes the given inner errors.
-func NewStepError(stepTyp int, innerErrs []interface{}) *stepErr {
-	rs := make([]interface{}, 0, len(innerErrs))
-	if len(innerErrs) > 0 {
-		if _, ok := innerErrs[0].(promise.PromiseResult); ok {
-			for i, r := range innerErrs {
+func NewStepError(stepTyp int, innerErrs interface{}) *stepErr {
+	if ies, ok := innerErrs.([]interface{}); ok {
+		rs := make([]interface{}, 0, len(ies))
+		if len(ies) > 0 {
+			//if _, ok := ies[0].(promise.PromiseResult); ok {
+			for i, r := range ies {
 				pr := r.(promise.PromiseResult)
 				if pr.Typ != promise.RESULT_SUCCESS {
 					rs = append(rs,
@@ -640,11 +651,14 @@ func NewStepError(stepTyp int, innerErrs []interface{}) *stepErr {
 							fmt.Sprintf("%v", pr.Result)}, ""))
 				}
 			}
-		} else {
-			rs = innerErrs
+			//} else {
+			rs = ies
+			//}
 		}
+		return &stepErr{stepTyp, rs}
+	} else {
+		return &stepErr{stepTyp, []interface{}{innerErrs}}
 	}
-	return &stepErr{stepTyp, rs}
 }
 
 func newErrorWithStacks(i interface{}) (e error) {

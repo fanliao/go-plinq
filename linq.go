@@ -450,7 +450,7 @@ func (this *Queryable) get() (data DataSource, err error) {
 			//add a fail callback to collect the errors in pipeline mode
 			//because the steps will be paralle in piplline mode,
 			//so cannot use return value of the function
-			f.Fail(func(results ...interface{}) {
+			f.Fail(func(results interface{}) {
 				this.errChan <- NewStepError(step1.Typ(), results)
 			})
 		}
@@ -945,11 +945,11 @@ func getJoinImpl(inner interface{},
 	unmatchSelector func(*hKeyValue, *[]interface{}), isLeftJoin bool) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption) (dst DataSource, sf *promise.Future, keep bool, e error) {
 		keep = option.keepOrder
-		innerKVtask := promise.Start(func() []interface{} {
+		innerKVtask := promise.Start(func() (interface{}, error) {
 			if innerKvsDs, err := From(inner).hGroupBy(innerKeySelector).get(); err == nil {
-				return []interface{}{innerKvsDs.(*listSource).data, true}
+				return innerKvsDs.(*listSource).data, nil
 			} else {
-				return []interface{}{err, false}
+				return nil, err
 			}
 		})
 
@@ -962,11 +962,11 @@ func getJoinImpl(inner interface{},
 			outerKvs := getKeyValues(c, outerKeySelector, nil)
 			results := make([]interface{}, 0, 10)
 
-			if r, ok := innerKVtask.Get(); ok != promise.RESULT_SUCCESS {
+			if r, err := innerKVtask.Get(); err != nil {
 				//todo:
-				fmt.Println("innerKV get error", ok, r)
+				fmt.Println("innerKV get error", err, r)
 			} else {
-				innerKvs := r[0].(map[interface{}]interface{})
+				innerKvs := r.(map[interface{}]interface{})
 
 				for _, o := range outerKvs {
 					outerkv := o.(*hKeyValue)
@@ -1050,137 +1050,176 @@ func getConcat(source2 interface{}) stepAction {
 
 func getIntersect(source2 interface{}) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption) (result DataSource, f *promise.Future, keep bool, err error) {
-		distKvs := make(map[uint64]bool)
+		//distKvs := make(map[uint64]bool)
 
-		f1 := promise.Start(func() []interface{} {
-			mapChunk := func(c *Chunk) (r *Chunk) {
-				r = &Chunk{getKeyValues(c, func(v interface{}) interface{} { return v }, nil), c.order}
-				return
-			}
+		//f1 := promise.Start(func() []interface{} {
+		//	mapChunk := func(c *Chunk) (r *Chunk) {
+		//		r = &Chunk{getKeyValues(c, func(v interface{}) interface{} { return v }, nil), c.order}
+		//		return
+		//	}
 
-			f, reduceSrc := parallelMapToChan(newDataSource(source2), nil, mapChunk, option)
+		//	f, reduceSrc := parallelMapToChan(newDataSource(source2), nil, mapChunk, option)
 
-			//get distinct values of src1
-			errs := reduceChan(f.GetChan(), reduceSrc, func(c *Chunk) {
-				for _, v := range c.data {
-					kv := v.(*hKeyValue)
-					if _, ok := distKvs[kv.keyHash]; !ok {
-						distKvs[kv.keyHash] = true
-						//fmt.Println("add", kv.value, "to distKvs")
-					}
-				}
+		//	//get distinct values of src1
+		//	errs := reduceChan(f.GetChan(), reduceSrc, func(c *Chunk) {
+		//		for _, v := range c.data {
+		//			kv := v.(*hKeyValue)
+		//			if _, ok := distKvs[kv.keyHash]; !ok {
+		//				distKvs[kv.keyHash] = true
+		//				//fmt.Println("add", kv.value, "to distKvs")
+		//			}
+		//		}
+		//	})
+
+		//	if errs == nil {
+		//		return nil
+		//	} else {
+		//		return []interface{}{NewLinqError("Group error", errs), false}
+		//	}
+		//})
+
+		//query2 := newQueryable(src).Select(func(v interface{}) interface{} {
+		//	return &KeyValue{hash64(v), v}
+		//})
+
+		//var dataSource2 []interface{}
+		//if dataSource2, err = query2.Results(); err != nil {
+		//	return nil, nil, option.keepOrder, err
+		//}
+
+		//if r, typ := f1.Get(); typ != promise.RESULT_SUCCESS {
+		//	return nil, nil, option.keepOrder, NewLinqError("Intersect error", r)
+		//}
+
+		////filter source2
+		//resultKVs := make(map[uint64]interface{}, len(distKvs))
+		//for _, v := range dataSource2 {
+		//	kv := v.(*KeyValue)
+		//	k := kv.key.(uint64)
+		//	if _, ok := distKvs[k]; ok {
+		//		if _, ok := resultKVs[k]; !ok {
+		//			resultKVs[k] = kv.value
+		//		}
+		//	}
+		//}
+
+		////get the intersection slices
+		//results := make([]interface{}, len(resultKVs))
+		//i := 0
+		//for _, v := range resultKVs {
+		//	results[i] = v
+		//	i++
+		//}
+
+		//return &listSource{results[0:i]}, nil, option.keepOrder, nil
+
+		allFutures := promise.WhenAll(promise.Start(func() (interface{}, error) {
+			return distinctKvs(source2, option)
+		}), promise.Start(func() (interface{}, error) {
+			query2 := newQueryable(src).Select(func(v interface{}) interface{} {
+				return &KeyValue{hash64(v), v}
 			})
 
-			if errs == nil {
-				return nil
-			} else {
-				return []interface{}{NewLinqError("Group error", errs), false}
-			}
-		})
+			return query2.Results()
+		}))
 
-		query2 := newQueryable(src).Select(func(v interface{}) interface{} {
-			return &KeyValue{hash64(v), v}
-		})
+		if r, err := allFutures.Get(); err == nil {
+			distKvs := r.([]interface{})[0].(map[uint64]interface{})
+			kvs := r.([]interface{})[1].([]interface{})
 
-		var dataSource2 []interface{}
-		if dataSource2, err = query2.Results(); err != nil {
-			return nil, nil, option.keepOrder, err
-		}
-
-		if r, typ := f1.Get(); typ != promise.RESULT_SUCCESS {
-			return nil, nil, option.keepOrder, NewLinqError("Intersect error", r)
-		}
-
-		//filter source2
-		resultKVs := make(map[uint64]interface{}, len(distKvs))
-		for _, v := range dataSource2 {
-			kv := v.(*KeyValue)
-			k := kv.key.(uint64)
-			if _, ok := distKvs[k]; ok {
-				if _, ok := resultKVs[k]; !ok {
-					resultKVs[k] = kv.value
+			//filter source2
+			resultKVs := make(map[uint64]interface{}, len(distKvs))
+			for _, v := range kvs {
+				kv, k := v.(*KeyValue), v.(*KeyValue).key.(uint64)
+				if _, ok := distKvs[k]; ok {
+					if _, ok := resultKVs[k]; !ok {
+						resultKVs[k] = kv.value
+					}
 				}
 			}
+
+			//get the intersection slices
+			results := make([]interface{}, len(resultKVs))
+			i := 0
+			for _, v := range resultKVs {
+				results[i] = v
+				i++
+			}
+
+			return &listSource{results[0:i]}, nil, option.keepOrder, nil
+		} else {
+			return nil, nil, option.keepOrder, NewLinqError("Except error", r)
 		}
-
-		//get the intersection slices
-		results := make([]interface{}, len(resultKVs))
-		i := 0
-		for _, v := range resultKVs {
-			results[i] = v
-			i++
-		}
-
-		return &listSource{results[0:i]}, nil, option.keepOrder, nil
-
 	})
 }
 
 func getExcept(source2 interface{}) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption) (result DataSource, f *promise.Future, keep bool, err error) {
-		distKvs := make(map[uint64]bool)
+		//distKvs := make(map[uint64]bool)
 
-		f1 := promise.Start(func() []interface{} {
-			mapChunk := func(c *Chunk) (r *Chunk) {
-				r = &Chunk{getKeyValues(c, func(v interface{}) interface{} { return v }, nil), c.order}
-				return
-			}
+		//f1 := promise.Start(func() []interface{} {
+		//	mapChunk := func(c *Chunk) (r *Chunk) {
+		//		r = &Chunk{getKeyValues(c, func(v interface{}) interface{} { return v }, nil), c.order}
+		//		return
+		//	}
 
-			f, reduceSrc := parallelMapToChan(newDataSource(source2), nil, mapChunk, option)
+		//	f, reduceSrc := parallelMapToChan(newDataSource(source2), nil, mapChunk, option)
 
-			//get distinct values of src1
-			errs := reduceChan(f.GetChan(), reduceSrc, func(c *Chunk) {
-				for _, v := range c.data {
-					kv := v.(*hKeyValue)
-					if _, ok := distKvs[kv.keyHash]; !ok {
-						distKvs[kv.keyHash] = true
-						//fmt.Println("add", kv.value, "to distKvs")
-					}
-				}
+		//	//get distinct values of src1
+		//	errs := reduceChan(f.GetChan(), reduceSrc, func(c *Chunk) {
+		//		for _, v := range c.data {
+		//			kv := v.(*hKeyValue)
+		//			if _, ok := distKvs[kv.keyHash]; !ok {
+		//				distKvs[kv.keyHash] = true
+		//				//fmt.Println("add", kv.value, "to distKvs")
+		//			}
+		//		}
+		//	})
+
+		//	if errs == nil {
+		//		return nil
+		//	} else {
+		//		return []interface{}{NewLinqError("Group error", errs), false}
+		//	}
+		//})
+
+		allFutures := promise.WhenAll(promise.Start(func() (interface{}, error) {
+			return distinctKvs(source2, option)
+		}), promise.Start(func() (interface{}, error) {
+			query2 := newQueryable(src).Select(func(v interface{}) interface{} {
+				return &KeyValue{hash64(v), v}
 			})
 
-			if errs == nil {
-				return nil
-			} else {
-				return []interface{}{NewLinqError("Group error", errs), false}
-			}
-		})
+			return query2.Results()
+		}))
 
-		query2 := newQueryable(src).Select(func(v interface{}) interface{} {
-			return &KeyValue{hash64(v), v}
-		})
+		if r, err := allFutures.Get(); err == nil {
+			distKvs := r.([]interface{})[0].(map[uint64]interface{})
+			kvs := r.([]interface{})[1].([]interface{})
 
-		var dataSource2 []interface{}
-		if dataSource2, err = query2.Results(); err != nil {
-			return nil, nil, option.keepOrder, err
-		}
-
-		if r, typ := f1.Get(); typ != promise.RESULT_SUCCESS {
-			return nil, nil, option.keepOrder, NewLinqError("Intersect error", r)
-		}
-
-		//filter source2
-		resultKVs := make(map[uint64]interface{}, len(distKvs))
-		for _, v := range dataSource2 {
-			kv := v.(*KeyValue)
-			k := kv.key.(uint64)
-			if _, ok := distKvs[k]; !ok {
-				if _, ok := resultKVs[k]; !ok {
-					resultKVs[k] = kv.value
+			//filter source2
+			resultKVs := make(map[uint64]interface{}, len(distKvs))
+			for _, v := range kvs {
+				kv, k := v.(*KeyValue), v.(*KeyValue).key.(uint64)
+				if _, ok := distKvs[k]; ok {
+					if _, ok := resultKVs[k]; !ok {
+						resultKVs[k] = kv.value
+					}
 				}
 			}
+
+			//get the intersection slices
+			results := make([]interface{}, len(resultKVs))
+			i := 0
+			for _, v := range resultKVs {
+				results[i] = v
+				i++
+			}
+
+			return &listSource{results[0:i]}, nil, option.keepOrder, nil
+		} else {
+			return nil, nil, option.keepOrder, NewLinqError("Except error", err)
 		}
-
-		//get the intersection slices
-		results := make([]interface{}, len(resultKVs))
-		i := 0
-		for _, v := range resultKVs {
-			results[i] = v
-			i++
-		}
-
-		return &listSource{results[0:i]}, nil, option.keepOrder, nil
-
 	})
 }
 
@@ -1218,6 +1257,28 @@ func getReverse() stepAction {
 	})
 }
 
+func distinctKvs(src interface{}, option *ParallelOption) (map[uint64]interface{}, error) {
+	distKvs := make(map[uint64]interface{})
+	q := From(src).Select(func(v interface{}) interface{} {
+		return &hKeyValue{hash64(v), v, v}
+	})
+
+	if kvs, err := q.Results(); err != nil {
+		return nil, err
+	} else {
+		//get distinct values
+		for _, v := range kvs {
+			kv := v.(*hKeyValue)
+			if _, ok := distKvs[kv.keyHash]; !ok {
+				distKvs[kv.keyHash] = kv.value
+				//fmt.Println("add", kv.value, "to distKvs")
+			}
+		}
+
+		return distKvs, nil
+	}
+}
+
 //paralleliam functions------------------------------------------
 func parallelMapToChan(src DataSource, reduceSrcChan chan *Chunk, mapChunk func(c *Chunk) (r *Chunk), option *ParallelOption) (f *promise.Future, ch chan *Chunk) {
 	//get all values and keys
@@ -1241,7 +1302,7 @@ func parallelMapChanToChan(src *chanSource, out chan *Chunk, task func(*Chunk) *
 	itr := src.Itr(option.chunkSize)
 	fs := make([]*promise.Future, option.degree)
 	for i := 0; i < option.degree; i++ {
-		f := promise.Start(func() []interface{} {
+		f := promise.Start(func() (interface{}, error) {
 			for {
 				//fmt.Println("begin select receive")
 				if c, ok := itr(); ok {
@@ -1262,7 +1323,7 @@ func parallelMapChanToChan(src *chanSource, out chan *Chunk, task func(*Chunk) *
 					break
 				}
 			}
-			return nil
+			return nil, nil
 			//fmt.Println("r=", r)
 		})
 		fs[i] = f
@@ -1282,14 +1343,14 @@ func parallelMapListToChan(src DataSource, out chan *Chunk, task func(*Chunk) *C
 		createOutChan = true
 	}
 
-	f := parallelMapList(src, func(c *Chunk) func() []interface{} {
-		return func() []interface{} {
+	f := parallelMapList(src, func(c *Chunk) func() (interface{}, error) {
+		return func() (interface{}, error) {
 			r := task(c)
 			if out != nil {
 				out <- r
 				//fmt.Println("send", len(r.data))
 			}
-			return nil
+			return nil, nil
 		}
 	}, option)
 	if createOutChan {
@@ -1300,15 +1361,15 @@ func parallelMapListToChan(src DataSource, out chan *Chunk, task func(*Chunk) *C
 }
 
 func parallelMapListToList(src DataSource, task func(*Chunk) *Chunk, option *ParallelOption) *promise.Future {
-	return parallelMapList(src, func(c *Chunk) func() []interface{} {
-		return func() []interface{} {
+	return parallelMapList(src, func(c *Chunk) func() (interface{}, error) {
+		return func() (interface{}, error) {
 			r := task(c)
-			return []interface{}{r, true}
+			return r, nil
 		}
 	}, option)
 }
 
-func parallelMapList(src DataSource, getAction func(*Chunk) func() []interface{}, option *ParallelOption) (f *promise.Future) {
+func parallelMapList(src DataSource, getAction func(*Chunk) func() (interface{}, error), option *ParallelOption) (f *promise.Future) {
 	fs := make([]*promise.Future, option.degree)
 	data := src.ToSlice(false)
 	lenOfData, size, j := len(data), ceilChunkSize(len(data), option.degree), 0
@@ -1359,7 +1420,7 @@ func trySequential(src DataSource, option *ParallelOption, mapChunk func(c *Chun
 }
 
 //the functions reduces the paralleliam map result----------------------------------------------------------
-func reduceChan(chEndFlag chan *promise.PromiseResult, src chan *Chunk, reduce func(*Chunk)) []interface{} {
+func reduceChan(chEndFlag chan *promise.PromiseResult, src chan *Chunk, reduce func(*Chunk)) interface{} {
 	if cap(src) == 0 {
 		//for no buffer channel,
 		//receiving the end flag from the chEndFlag presents the the all data be sent
@@ -1435,7 +1496,7 @@ func distinctChunkVals(c *Chunk, distKvs map[uint64]int) *Chunk {
 
 func addCloseChanCallback(f *promise.Future, out chan *Chunk) {
 	//fmt.Println("addCloseChanCallback")
-	f.Always(func(results ...interface{}) {
+	f.Always(func(results interface{}) {
 		//must use goroutiner, else may deadlock when out is buffer chan
 		//because it maybe called before the chan receiver be started.
 		//if the buffer is full, out <- nil will be holder then deadlock
@@ -1455,13 +1516,13 @@ func addCloseChanCallback(f *promise.Future, out chan *Chunk) {
 }
 
 func getFutureResult(f *promise.Future, dataSourceFunc func([]interface{}) DataSource) (DataSource, error) {
-	if results, typ := f.Get(); typ != promise.RESULT_SUCCESS {
+	if results, err := f.Get(); err != nil {
 		//todo
-		fmt.Println("getFutureResult get", results, typ)
+		fmt.Println("getFutureResult get", err)
 		return nil, nil
 	} else {
 		//fmt.Println("(results)=", (results))
-		return dataSourceFunc(results), nil
+		return dataSourceFunc(results.([]interface{})), nil
 	}
 }
 

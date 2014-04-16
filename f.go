@@ -145,7 +145,7 @@ func getIntChanSrc(src []int) chan int {
 
 func main() {
 	time.Now()
-	count := 50
+	count := 20
 
 	arrInts := make([]int, 0, 20)
 	src1 := make([]interface{}, 0, 20)
@@ -255,6 +255,18 @@ func main() {
 	testLinqWithAllSource("Reverse opretions", src1, func(q *Queryable) *Queryable {
 		return q.Reverse()
 	})
+
+	fmt.Print("distinctKvs return:")
+	concats, _ := From(src1).Concat(src2).Results()
+	kvs, e := distinctKvs(concats, &ParallelOption{numCPU, DEFAULTCHUNKSIZE, false})
+	if e == nil {
+		for _, v := range kvs {
+			fmt.Print(v, " ")
+		}
+		fmt.Println(", len=", len(kvs), "\n")
+	} else {
+		fmt.Println(e.Error(), "\n")
+	}
 
 	size := count / 4
 	chunkSrc := make(chan *Chunk)
