@@ -145,7 +145,7 @@ func getIntChanSrc(src []int) chan int {
 
 func main() {
 	time.Now()
-	count := 100
+	count := 50
 
 	arrInts := make([]int, 0, 20)
 	src1 := make([]interface{}, 0, 20)
@@ -295,9 +295,9 @@ func testLinqOpr(title string, linqFunc func() ([]interface{}, error), rsHandler
 }
 
 func testLinqWithAllSource(title string, listSrc []interface{}, query func(*Queryable) *Queryable, rsHandlers ...func([]interface{})) {
-	//testLinqOpr(title, func() ([]interface{}, error) {
-	//	return query(From(listSrc)).Results()
-	//}, rsHandlers...)
+	testLinqOpr(title, func() ([]interface{}, error) {
+		return query(From(listSrc)).Results()
+	}, rsHandlers...)
 	testLinqOpr("Chan source use "+title, func() ([]interface{}, error) {
 		return query(From(getChanSrc(listSrc))).Results()
 	}, rsHandlers...)

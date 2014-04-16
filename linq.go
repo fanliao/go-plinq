@@ -15,7 +15,7 @@ const (
 	ptrSize          = unsafe.Sizeof((*byte)(nil))
 	kindMask         = 0x7f
 	kindNoPointers   = 0x80
-	DEFAULTCHUNKSIZE = 200
+	DEFAULTCHUNKSIZE = 20
 )
 
 var (
@@ -380,7 +380,7 @@ func (this *Queryable) LeftGroupJoin(inner interface{},
 }
 
 func (this *Queryable) Reverse(degrees ...int) *Queryable {
-	this.steps = append(this.steps, commonStep{ACT_GROUPJOIN, nil, getDegreeArg(degrees...)})
+	this.steps = append(this.steps, commonStep{ACT_REVERSE, nil, getDegreeArg(degrees...)})
 	return this
 }
 
@@ -410,6 +410,25 @@ func (this *Queryable) hGroupBy(keySelector func(interface{}) interface{}, degre
 	return this
 }
 
+func (this *Queryable) makeCopiedSrc() DataSource {
+	if len(this.steps) > 0 {
+		if typ := this.steps[0].getTyp(); typ == ACT_REVERSE || typ == ACT_SELECT {
+			if listSrc, ok := this.data.(*listSource); ok {
+				switch data := listSrc.data.(type) {
+				case []interface{}:
+					newSlice := make([]interface{}, len(data))
+					_ = copy(newSlice, data)
+					return &listSource{newSlice}
+				default:
+					newSlice := listSrc.ToSlice(false)
+					return &listSource{newSlice}
+				}
+			}
+		}
+	}
+	return this.data
+}
+
 // get be used in queryable internal.
 // get will executes all linq operations included in Queryable
 // and return the result
@@ -424,22 +443,20 @@ func (this *Queryable) get() (data DataSource, err error) {
 		//fmt.Println("end receive errors")
 	}()
 
-	data = this.data
-	ParallelOption, keepOrder := this.ParallelOption, this.ParallelOption.keepOrder
+	data = this.makeCopiedSrc() //data
+	pOption, keepOrder := this.ParallelOption, this.ParallelOption.keepOrder
 
 	for _, step := range this.steps {
 		//execute the step
 		var f *promise.Future
-		data, f, keepOrder, err = step.stepAction()(data, ParallelOption)
-		if err != nil {
-			return nil, err
-		}
-
-		//add a fail callback to collect the errors in pipeline mode
-		//because the steps will be paralle in piplline mode,
-		//so cannot use return value of the function
 		step1 := step
-		if f != nil {
+
+		if data, f, keepOrder, err = step.stepAction()(data, pOption); err != nil {
+			return nil, err
+		} else if f != nil {
+			//add a fail callback to collect the errors in pipeline mode
+			//because the steps will be paralle in piplline mode,
+			//so cannot use return value of the function
 			f.Fail(func(results ...interface{}) {
 				this.errChan <- NewStepError(step1.getTyp(), results)
 			})
@@ -448,7 +465,7 @@ func (this *Queryable) get() (data DataSource, err error) {
 		//set the keepOrder for next step
 		//some operation will enforce after operations keep the order,
 		//e.g OrderBy operation
-		ParallelOption.keepOrder = keepOrder
+		pOption.keepOrder = keepOrder
 	}
 
 	return data, nil
@@ -731,9 +748,9 @@ func getSelect(selectFunc func(interface{}) interface{}, degree int) stepAction 
 		stepParallelOption(&option, degree)
 		keep = option.keepOrder
 		mapChunk := func(c *Chunk) *Chunk {
-			result := make([]interface{}, len(c.data)) //c.end-c.start+2)
-			mapSlice(c.data, selectFunc, &result)
-			return &Chunk{result, c.order}
+			//result := make([]interface{}, len(c.data)) //c.end-c.start+2)
+			mapSlice(c.data, selectFunc, &(c.data))
+			return c //&Chunk{result, c.order}
 		}
 
 		//try to use sequentail if the size of the data is less than size of chunk
@@ -1029,16 +1046,15 @@ func getConcat(source2 interface{}, degree int) stepAction {
 		stepParallelOption(&option, degree)
 
 		slice1 := src.ToSlice(option.keepOrder)
-		slice2, err2 := From(source2).KeepOrder(option.keepOrder).Results()
-
-		if err2 != nil {
+		if slice2, err2 := From(source2).KeepOrder(option.keepOrder).Results(); err2 == nil {
+			result := make([]interface{}, len(slice1)+len(slice2))
+			_ = copy(result[0:len(slice1)], slice1)
+			_ = copy(result[len(slice1):len(slice1)+len(slice2)], slice2)
+			return &listSource{result}, nil, option.keepOrder, nil
+		} else {
 			return nil, nil, option.keepOrder, err2
 		}
 
-		result := make([]interface{}, len(slice1)+len(slice2))
-		_ = copy(result[0:len(slice1)], slice1)
-		_ = copy(result[len(slice1):len(slice1)+len(slice2)], slice2)
-		return &listSource{result}, nil, option.keepOrder, nil
 	})
 }
 
@@ -1115,37 +1131,30 @@ func getReverse(degree int) stepAction {
 		stepParallelOption(&option, degree)
 		keep = option.keepOrder
 		wholeSlice := src.ToSlice(true)
-		fmt.Println("get wholeSlice", wholeSlice)
-		srcSlice := wholeSlice[0 : len(wholeSlice)/2]
-		size := len(srcSlice)
-		fmt.Println("get srcSlice", srcSlice)
+		srcSlice, size := wholeSlice[0:len(wholeSlice)/2], len(wholeSlice)
 
 		mapChunk := func(c *Chunk) *Chunk {
-			fmt.Println("reverse a chunk", c)
 			for i := 0; i < len(c.data); i++ {
 				j := c.order + i
 				t := wholeSlice[size-1-j]
 				wholeSlice[size-1-j] = c.data[i]
 				c.data[i] = t
-				fmt.Println("reverse", j, size-1-j)
 			}
-			return nil
+			return c
 		}
 
 		reverseSrc := &listSource{srcSlice}
 
 		//try to use sequentail if the size of the data is less than size of chunk
 		if list, handled := trySequential(reverseSrc, &option, mapChunk); handled {
-			return list, nil, option.keepOrder, nil
+			return &listSource{wholeSlice}, nil, option.keepOrder, nil
 		} else if list != nil {
 			src = list
 		}
 
-		fmt.Println("start parallel")
 		f := parallelMapListToList(reverseSrc, func(c *Chunk) *Chunk {
 			return mapChunk(c)
 		}, &option)
-		fmt.Println("getFutureResult", wholeSlice)
 		dst, e = getFutureResult(f, func(r []interface{}) DataSource {
 			//fmt.Println("results=", results)
 			return &listSource{wholeSlice}

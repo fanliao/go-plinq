@@ -374,6 +374,29 @@ func BenchmarkGoLinqIntersect(b *testing.B) {
 	}
 }
 
+////test reverse--------------------------------------------------------------------
+func BenchmarkBlockSourceReverse(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		dst, _ := From(arrUser).Reverse().Results()
+		if len(dst) != count {
+			b.Fail()
+			//b.Log("arr=", arr)
+			b.Error("size is ", len(dst))
+			b.Log("dst=", dst)
+		}
+	}
+}
+
+func BenchmarkGoLinqReverse(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		dst, _ := linq.From(arrUser).Reverse().Results()
+		if len(dst) != count {
+			b.Fail()
+			b.Error("size is ", len(dst))
+		}
+	}
+}
+
 //func BencmarkQuickSort(b *testing.B) {
 //	for i := 0; i < b.N; i++ {
 //		sortQ := sortable{}
