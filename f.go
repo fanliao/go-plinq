@@ -261,9 +261,17 @@ func main() {
 		return q.Reverse()
 	})
 
+	sum := func(v interface{}, summary interface{}) interface{} {
+		return v.(int) + summary.(int)
+	}
+	//test Reverse
+	testLinqWithAllSource("aggregate opretions", src1, func(q *Queryable) *Queryable {
+		return q.aggregate(sum)
+	})
+
 	fmt.Print("distinctKvs return:")
 	concats, _ := From(src1).Concat(src2).Results()
-	kvs, e := distinctKvs(concats, &ParallelOption{numCPU, DEFAULTCHUNKSIZE, false})
+	kvs, e := distinctKVs(concats, &ParallelOption{numCPU, DEFAULTCHUNKSIZE, false})
 	if e == nil {
 		for _, v := range kvs {
 			fmt.Print(v, " ")

@@ -413,8 +413,13 @@ func (this *Queryable) SetSizeOfChunk(size int) *Queryable {
 	return this
 }
 
+func (this *Queryable) aggregate(aggregateFuncs ...func(interface{}, interface{}) interface{}) *Queryable {
+	this.steps = append(this.steps, commonStep{ACT_AGGREGATE, aggregateFuncs, 0})
+	return this
+}
+
 func (this *Queryable) hGroupBy(keySelector func(interface{}) interface{}, degrees ...int) *Queryable {
-	this.steps = append(this.steps, commonStep{ACT_HGROUPBY, keySelector, getDegreeArg(degrees...)})
+	this.steps = append(this.steps, commonStep{ACT_HGROUPBY, keySelector, 0})
 	return this
 }
 
@@ -687,6 +692,7 @@ const (
 	ACT_INTERSECT
 	ACT_REVERSE
 	ACT_EXCEPT
+	ACT_AGGREGATE
 )
 
 //stepAction presents a action related to a linq operation
@@ -747,6 +753,8 @@ func (this commonStep) Action() (act stepAction) {
 		act = getExcept(this.act)
 	case ACT_REVERSE:
 		act = getReverse()
+	case ACT_AGGREGATE:
+		act = getAggregate(this.act.([]func(interface{}, interface{}) interface{}))
 	}
 	return
 }
@@ -774,7 +782,7 @@ func getSelect(selectFunc func(interface{}) interface{}) stepAction {
 		}
 
 		//try to use sequentail if the size of the data is less than size of chunk
-		if list, handled := trySequential(src, option, mapChunk); handled {
+		if list, handled := trySequentialMap(src, option, mapChunk); handled {
 			return list, nil, option.keepOrder, nil
 		}
 
@@ -816,7 +824,7 @@ func getWhere(predicate func(interface{}) bool) stepAction {
 		}
 
 		//try to use sequentail if the size of the data is less than size of chunk
-		if list, handled := trySequential(src, option, mapChunk); handled {
+		if list, handled := trySequentialMap(src, option, mapChunk); handled {
 			return list, nil, option.keepOrder, nil
 		}
 
@@ -867,11 +875,11 @@ func getDistinct(distinctFunc func(interface{}) interface{}) stepAction {
 			return
 		}
 
-		//test the size = 100, trySequential only speed up 10%
-		//if list, handled := trySequential(src, &option, mapChunk); handled {
+		//test the size = 100, trySequentialMap only speed up 10%
+		//if list, handled := trySequentialMap(src, &option, mapChunk); handled {
 		//	c := &Chunk{list.ToSlice(false), 0}
-		//	distKvs := make(map[uint64]int)
-		//	c = distinctChunkVals(c, distKvs)
+		//	distKVs := make(map[uint64]int)
+		//	c = distinctChunkVals(c, distKVs)
 		//	return &listSource{c.data}, nil, option.keepOrder, nil
 		//}
 
@@ -900,15 +908,15 @@ func getGroupBy(groupFunc func(interface{}) interface{}, hashAsKey bool) stepAct
 		//map the element to a keyValue that key is group key and value is element
 		f, reduceSrc := parallelMapToChan(src, nil, mapChunk, option)
 
-		groupKvs := make(map[interface{}]interface{})
-		groupKv := func(v interface{}) {
+		groupKVs := make(map[interface{}]interface{})
+		groupKV := func(v interface{}) {
 			kv := v.(*hKeyValue)
 			k := iif(hashAsKey, kv.keyHash, kv.key)
-			if v, ok := groupKvs[k]; !ok {
-				groupKvs[k] = []interface{}{kv.value}
+			if v, ok := groupKVs[k]; !ok {
+				groupKVs[k] = []interface{}{kv.value}
 			} else {
 				list := v.([]interface{})
-				groupKvs[k] = appendSlice(list, kv.value)
+				groupKVs[k] = appendSlice(list, kv.value)
 			}
 		}
 
@@ -916,12 +924,12 @@ func getGroupBy(groupFunc func(interface{}) interface{}, hashAsKey bool) stepAct
 		//get key with group values values
 		errs := reduceChan(f.GetChan(), reduceSrc, func(c *Chunk) {
 			for _, v := range c.data {
-				groupKv(v)
+				groupKV(v)
 			}
 		})
 
 		if errs == nil {
-			return &listSource{groupKvs}, nil, option.keepOrder, nil
+			return &listSource{groupKVs}, nil, option.keepOrder, nil
 		} else {
 			return nil, nil, option.keepOrder, NewLinqError("Group error", errs)
 		}
@@ -964,8 +972,8 @@ func getJoinImpl(inner interface{},
 	return stepAction(func(src DataSource, option *ParallelOption) (dst DataSource, sf *promise.Future, keep bool, e error) {
 		keep = option.keepOrder
 		innerKVtask := promise.Start(func() (interface{}, error) {
-			if innerKvsDs, err := From(inner).hGroupBy(innerKeySelector).get(); err == nil {
-				return innerKvsDs.(*listSource).data, nil
+			if innerKVsDs, err := From(inner).hGroupBy(innerKeySelector).get(); err == nil {
+				return innerKVsDs.(*listSource).data, nil
 			} else {
 				return nil, err
 			}
@@ -977,18 +985,18 @@ func getJoinImpl(inner interface{},
 					fmt.Println("mapChunk get error:", e)
 				}
 			}()
-			outerKvs := getKeyValues(c, outerKeySelector, nil)
+			outerKVs := getKeyValues(c, outerKeySelector, nil)
 			results := make([]interface{}, 0, 10)
 
 			if r, err := innerKVtask.Get(); err != nil {
 				//todo:
 				fmt.Println("innerKV get error", err, r)
 			} else {
-				innerKvs := r.(map[interface{}]interface{})
+				innerKVs := r.(map[interface{}]interface{})
 
-				for _, o := range outerKvs {
+				for _, o := range outerKVs {
 					outerkv := o.(*hKeyValue)
-					if innerList, ok := innerKvs[outerkv.keyHash]; ok {
+					if innerList, ok := innerKVs[outerkv.keyHash]; ok {
 						//fmt.Println("outer", *outerkv, "inner", innerList)
 						matchSelector(outerkv, innerList.([]interface{}), &results)
 					} else if isLeftJoin {
@@ -1068,8 +1076,8 @@ func getConcat(source2 interface{}) stepAction {
 
 func getIntersect(source2 interface{}) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption) (result DataSource, f *promise.Future, keep bool, err error) {
-		results, _, err := getSet(src, source2, func(hashKey1 uint64, distKvs map[uint64]interface{}) bool {
-			_, ok := distKvs[hashKey1]
+		results, _, err := filterSet(src, source2, func(hashKey1 uint64, distKVs map[uint64]interface{}) bool {
+			_, ok := distKVs[hashKey1]
 			return ok
 		}, option)
 
@@ -1083,8 +1091,8 @@ func getIntersect(source2 interface{}) stepAction {
 
 func getExcept(source2 interface{}) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption) (result DataSource, f *promise.Future, keep bool, err error) {
-		results, _, err := getSet(src, source2, func(hashKey1 uint64, distKvs map[uint64]interface{}) bool {
-			_, ok := distKvs[hashKey1]
+		results, _, err := filterSet(src, source2, func(hashKey1 uint64, distKVs map[uint64]interface{}) bool {
+			_, ok := distKVs[hashKey1]
 			return !ok
 		}, option)
 
@@ -1115,7 +1123,7 @@ func getReverse() stepAction {
 		reverseSrc := &listSource{srcSlice}
 
 		//try to use sequentail if the size of the data is less than size of chunk
-		if _, handled := trySequential(reverseSrc, option, mapChunk); handled {
+		if _, handled := trySequentialMap(reverseSrc, option, mapChunk); handled {
 			return &listSource{wholeSlice}, nil, option.keepOrder, nil
 		}
 
@@ -1130,9 +1138,72 @@ func getReverse() stepAction {
 	})
 }
 
-func getSet(src DataSource, source2 interface{}, filter func(uint64, map[uint64]interface{}) bool, option *ParallelOption) ([]interface{}, map[uint64]interface{}, error) {
+func getAggregate(aggregateFuncs []func(interface{}, interface{}) interface{}) stepAction {
+	return stepAction(func(src DataSource, option *ParallelOption) (result DataSource, f *promise.Future, keep bool, err error) {
+		keep = option.keepOrder
+
+		//try to use sequentail if the size of the data is less than size of chunk
+		if rs, handled := trySequentialAggregate(src, option, aggregateFuncs); handled {
+			return &listSource{rs}, nil, option.keepOrder, nil
+		}
+
+		mapChunk := func(c *Chunk) (r *Chunk) {
+			r = &Chunk{aggregateSlice(c.data, aggregateFuncs), c.order}
+			return
+		}
+		f, reduceSrc := parallelMapToChan(src, nil, mapChunk, option)
+
+		//reduce the keyValue map to get grouped slice
+		//get key with group values values
+		first := true
+		rs := make([]interface{}, len(aggregateFuncs))
+		avl := newChunkAvlTree()
+		if errs := reduceChan(f.GetChan(), reduceSrc, func(c *Chunk) {
+			if !keep {
+				//datas := c.data
+				if first {
+					for i := 0; i < len(rs); i++ {
+						rs[i] = c.data[i]
+					}
+					first = false
+				} else {
+					for i := 0; i < len(rs); i++ {
+						rs[i] = aggregateFuncs[i](c.data[i], rs[i])
+					}
+				}
+			} else {
+				avl.Insert(c)
+			}
+		}); errs != nil {
+			err = getError(errs)
+		}
+
+		if keep {
+			cs := avl.ToSlice()
+			for _, v := range cs {
+				c := v.(*Chunk)
+				//datas := c.data
+				if first {
+					for i := 0; i < len(rs); i++ {
+						rs[i] = c.data[i]
+						first = false
+					}
+				} else {
+					for i := 0; i < len(rs); i++ {
+						rs[i] = aggregateFuncs[i](c.data[i], rs[i])
+					}
+				}
+			}
+		}
+
+		return &listSource{rs}, nil, false, err
+
+	})
+}
+
+func filterSet(src DataSource, source2 interface{}, filter func(uint64, map[uint64]interface{}) bool, option *ParallelOption) ([]interface{}, map[uint64]interface{}, error) {
 	f1, f2 := promise.Start(func() (interface{}, error) {
-		return distinctKvs(source2, option)
+		return distinctKVs(source2, option)
 	}), promise.Start(func() (interface{}, error) {
 		return selectKVs(newQueryable(src))
 	})
@@ -1142,17 +1213,17 @@ func getSet(src DataSource, source2 interface{}, filter func(uint64, map[uint64]
 	} else if r2, err := f2.Get(); err != nil {
 		return nil, nil, NewLinqError("Set error", err)
 	} else {
-		distKvs := r1.(map[uint64]interface{})
+		distKVs := r1.(map[uint64]interface{})
 		kvs := r2.([]interface{})
 
 		//filter src
 		i := 0
-		results, resultKVs := make([]interface{}, len(distKvs)),
-			make(map[uint64]interface{}, len(distKvs))
+		results, resultKVs := make([]interface{}, len(distKVs)),
+			make(map[uint64]interface{}, len(distKVs))
 		for _, v := range kvs {
 			kv := v.(*KeyValue)
 			k := kv.key.(uint64)
-			if filter(k, distKvs) {
+			if filter(k, distKVs) {
 				if _, ok := resultKVs[k]; !ok {
 					resultKVs[k] = kv.value
 					results[i] = kv.value
@@ -1165,8 +1236,8 @@ func getSet(src DataSource, source2 interface{}, filter func(uint64, map[uint64]
 	}
 }
 
-func distinctKvs(src interface{}, option *ParallelOption) (map[uint64]interface{}, error) {
-	distKvs := make(map[uint64]interface{})
+func distinctKVs(src interface{}, option *ParallelOption) (map[uint64]interface{}, error) {
+	distKVs := make(map[uint64]interface{})
 
 	if kvs, err := selectKVs(From(src)); err != nil {
 		return nil, err
@@ -1175,13 +1246,13 @@ func distinctKvs(src interface{}, option *ParallelOption) (map[uint64]interface{
 		for _, v := range kvs {
 			kv := v.(*KeyValue)
 			k := kv.key.(uint64)
-			if _, ok := distKvs[k]; !ok {
-				distKvs[k] = kv.value
-				//fmt.Println("add", kv.value, "to distKvs")
+			if _, ok := distKVs[k]; !ok {
+				distKVs[k] = kv.value
+				//fmt.Println("add", kv.value, "to distKVs")
 			}
 		}
 
-		return distKvs, nil
+		return distKVs, nil
 	}
 }
 
@@ -1192,6 +1263,79 @@ func selectKVs(q *Queryable) ([]interface{}, error) {
 }
 
 //paralleliam functions------------------------------------------
+//func parallelAggregate(src DataSource, aggregateFuncs []func(interface{}, interface{}) interface{}, option *ParallelOption)(f *promise.Future, interface{}){
+//	//get all values and keys
+//	switch s := src.(type) {
+//	case *listSource:
+//    	fs := make([]*promise.Future, option.degree)
+//    	data := src.ToSlice(false)
+//    	lenOfData, size, j := len(data), ceilChunkSize(len(data), option.degree), 0
+
+//    	if size < option.chunkSize {
+//    		size = option.chunkSize
+//    	}
+
+//    	for i := 0; i < option.degree && i*size < lenOfData; i++ {
+//    		end := (i + 1) * size
+//    		if end >= lenOfData {
+//    			end = lenOfData
+//    		}
+//    		c := &Chunk{data[i*size : end], i * size} //, end}
+
+//    		f = promise.Start(func() (interface{}, error){
+//                return aggregateSlice(src.ToSlice(false), aggregateFuncs), nil
+//            })
+//    		fs[i] = f
+//    		j++
+//    	}
+//    	if rs, err := promise.WhenAll(fs[0:j]...); err == nil{
+//             c:= &chunk{rs.([]interface{})}
+//            r := aggregateSlice(c)
+//            return r, nil
+//        } else {
+//            return nil, err
+//        }
+//	case *chanSource:
+//		out = make(chan *Chunk, option.degree)
+
+//	itr := src.Itr(option.chunkSize)
+//	fs := make([]*promise.Future, option.degree)
+//	//for i := 0; i < option.degree; i++ {
+//		f := promise.Start(func() (r interface{}, error) {
+//                var r interface{}
+//			for {
+//				//fmt.Println("begin select receive")
+//				if c, ok := itr(); ok {
+//					//fmt.Println("select receive", c)
+//					if reflect.ValueOf(c).IsNil() {
+//						src.Close()
+//						//fmt.Println("select receive a nil-----------------")
+//						break
+//					}
+//					//fmt.Println("select receive", *c)
+//					r := aggregateChunk(c)
+//					if r != nil {
+//                    out <- r
+//                    }
+//				} else {
+//					//fmt.Println("end receive--------------")
+//					break
+//				}
+//			}
+//			return nil, nil
+//			//fmt.Println("r=", r)
+//		})
+//		//fs[i] = f
+//	//}
+//	f := promise.WhenAll(fs...)
+
+//	addCloseChanCallback(f, out)
+//	return f, out
+//	default:
+//		panic(ErrUnsupportSource)
+//	}
+//}
+
 func parallelMapToChan(src DataSource, reduceSrcChan chan *Chunk, mapChunk func(c *Chunk) (r *Chunk), option *ParallelOption) (f *promise.Future, ch chan *Chunk) {
 	//get all values and keys
 	switch s := src.(type) {
@@ -1320,11 +1464,21 @@ func singleDegree(src DataSource, option *ParallelOption) bool {
 	}
 }
 
-func trySequential(src DataSource, option *ParallelOption, mapChunk func(c *Chunk) (r *Chunk)) (DataSource, bool) {
+func trySequentialMap(src DataSource, option *ParallelOption, mapChunk func(c *Chunk) (r *Chunk)) (DataSource, bool) {
 	if useSingle := singleDegree(src, option); useSingle {
 		c := &Chunk{src.ToSlice(false), 0}
 		r := mapChunk(c)
 		return &listSource{r.data}, true
+	} else {
+		return nil, false
+	}
+
+}
+
+func trySequentialAggregate(src DataSource, option *ParallelOption, aggregateFuncs []func(interface{}, interface{}) interface{}) ([]interface{}, bool) {
+	if useSingle := singleDegree(src, option); useSingle {
+		rs := aggregateSlice(src.ToSlice(false), aggregateFuncs)
+		return rs, true
 	} else {
 		return nil, false
 	}
@@ -1379,9 +1533,9 @@ func reduceChan(chEndFlag chan *promise.PromiseResult, src chan *Chunk, reduce f
 func reduceDistinctVals(mapFuture *promise.Future, reduceSrcChan chan *Chunk) ([]interface{}, error) {
 	//get distinct values
 	chunks := make([]interface{}, 0, 2)
-	distKvs := make(map[uint64]int)
+	distKVs := make(map[uint64]int)
 	errs := reduceChan(mapFuture.GetChan(), reduceSrcChan, func(c *Chunk) {
-		chunks = appendSlice(chunks, distinctChunkVals(c, distKvs))
+		chunks = appendSlice(chunks, distinctChunkVals(c, distKVs))
 	})
 	if errs == nil {
 		return chunks, nil
@@ -1391,13 +1545,13 @@ func reduceDistinctVals(mapFuture *promise.Future, reduceSrcChan chan *Chunk) ([
 }
 
 //util functions--------------------------------------------------------
-func distinctChunkVals(c *Chunk, distKvs map[uint64]int) *Chunk {
+func distinctChunkVals(c *Chunk, distKVs map[uint64]int) *Chunk {
 	result := make([]interface{}, len(c.data))
 	i := 0
 	for _, v := range c.data {
 		kv := v.(*hKeyValue)
-		if _, ok := distKvs[kv.keyHash]; !ok {
-			distKvs[kv.keyHash] = 1
+		if _, ok := distKVs[kv.keyHash]; !ok {
+			distKVs[kv.keyHash] = 1
 			result[i] = kv.value
 			i++
 		}
@@ -1468,6 +1622,27 @@ func mapSlice(src []interface{}, f func(interface{}) interface{}, out *[]interfa
 		dst[i] = f(v)
 	}
 	return dst
+}
+
+func aggregateSlice(src []interface{}, fs []func(interface{}, interface{}) interface{}) []interface{} {
+	//fmt.Println("aggregateSlice0", src)
+	if len(src) == 0 {
+		return nil
+	}
+
+	//fmt.Println("aggregateSlice1", fs)
+	rs := make([]interface{}, len(fs))
+	for j := 0; j < len(fs); j++ {
+		rs[j] = src[0]
+	}
+
+	for i := 1; i < len(src); i++ {
+		for j := 0; j < len(fs); j++ {
+			rs[j] = fs[j](src[i], rs[j])
+		}
+	}
+	//fmt.Println("aggregateSlice2", rs)
+	return rs
 }
 
 func expandChunks(src []interface{}, keepOrder bool) []interface{} {
