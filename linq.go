@@ -172,6 +172,27 @@ func (this *Queryable) Results() (results []interface{}, err error) {
 	}
 }
 
+func (this *Queryable) Aggregate(aggregateFuncs ...func(interface{}, interface{}) interface{}) (result interface{}, err error) {
+	if ds, e := this.get(); e == nil {
+
+		results, e := getAggregate(ds, aggregateFuncs, &(this.ParallelOption))
+
+		if this.errChan != nil {
+			close(this.errChan)
+		}
+
+		if len(aggregateFuncs) == 1 {
+			result = results[0]
+		} else {
+			result = results
+		}
+		err = e
+		return
+	} else {
+		return nil, e
+	}
+}
+
 // Where returns a query includes the Where operation
 // Where operation filters a sequence of values based on a predicate function.
 //
@@ -753,8 +774,8 @@ func (this commonStep) Action() (act stepAction) {
 		act = getExcept(this.act)
 	case ACT_REVERSE:
 		act = getReverse()
-	case ACT_AGGREGATE:
-		act = getAggregate(this.act.([]func(interface{}, interface{}) interface{}))
+		//case ACT_AGGREGATE:
+		//	act = getAggregate(this.act.([]func(interface{}, interface{}) interface{}))
 	}
 	return
 }
@@ -1138,67 +1159,59 @@ func getReverse() stepAction {
 	})
 }
 
-func getAggregate(aggregateFuncs []func(interface{}, interface{}) interface{}) stepAction {
-	return stepAction(func(src DataSource, option *ParallelOption) (result DataSource, f *promise.Future, keep bool, err error) {
-		keep = option.keepOrder
+func getAggregate(src DataSource, aggregateFuncs []func(interface{}, interface{}) interface{}, option *ParallelOption) (result []interface{}, err error) {
+	keep := option.keepOrder
 
-		//try to use sequentail if the size of the data is less than size of chunk
-		if rs, handled := trySequentialAggregate(src, option, aggregateFuncs); handled {
-			return &listSource{rs}, nil, option.keepOrder, nil
-		}
+	//try to use sequentail if the size of the data is less than size of chunk
+	if rs, handled := trySequentialAggregate(src, option, aggregateFuncs); handled {
+		return rs, nil
+	}
 
-		mapChunk := func(c *Chunk) (r *Chunk) {
-			r = &Chunk{aggregateSlice(c.data, aggregateFuncs), c.order}
-			return
-		}
-		f, reduceSrc := parallelMapToChan(src, nil, mapChunk, option)
+	mapChunk := func(c *Chunk) (r *Chunk) {
+		r = &Chunk{aggregateSlice(c.data, aggregateFuncs), c.order}
+		return
+	}
+	f, reduceSrc := parallelMapToChan(src, nil, mapChunk, option)
 
-		//reduce the keyValue map to get grouped slice
-		//get key with group values values
-		first := true
-		rs := make([]interface{}, len(aggregateFuncs))
-		avl := newChunkAvlTree()
-		if errs := reduceChan(f.GetChan(), reduceSrc, func(c *Chunk) {
-			if !keep {
-				//datas := c.data
-				if first {
-					for i := 0; i < len(rs); i++ {
-						rs[i] = c.data[i]
-					}
-					first = false
-				} else {
-					for i := 0; i < len(rs); i++ {
-						rs[i] = aggregateFuncs[i](c.data[i], rs[i])
-					}
-				}
-			} else {
-				avl.Insert(c)
+	//reduce the keyValue map to get grouped slice
+	//get key with group values values
+	first := true
+	rs := make([]interface{}, len(aggregateFuncs))
+	agg := func(c *Chunk) {
+		if first {
+			for i := 0; i < len(rs); i++ {
+				rs[i] = c.data[i]
 			}
-		}); errs != nil {
-			err = getError(errs)
-		}
-
-		if keep {
-			cs := avl.ToSlice()
-			for _, v := range cs {
-				c := v.(*Chunk)
-				//datas := c.data
-				if first {
-					for i := 0; i < len(rs); i++ {
-						rs[i] = c.data[i]
-						first = false
-					}
-				} else {
-					for i := 0; i < len(rs); i++ {
-						rs[i] = aggregateFuncs[i](c.data[i], rs[i])
-					}
-				}
+		} else {
+			for i := 0; i < len(rs); i++ {
+				rs[i] = iif(first, c.data[i], aggregateFuncs[i](c.data[i], rs[i]))
 			}
 		}
+		first = false
+	}
 
-		return &listSource{rs}, nil, false, err
+	avl := newChunkAvlTree()
+	if errs := reduceChan(f.GetChan(), reduceSrc, func(c *Chunk) {
+		if !keep {
+			//datas := c.data
+			agg(c)
+		} else {
+			avl.Insert(c)
+		}
+	}); errs != nil {
+		err = getError(errs)
+	}
 
-	})
+	if keep {
+		cs := avl.ToSlice()
+		for _, v := range cs {
+			c := v.(*Chunk)
+			agg(c)
+		}
+	}
+
+	return rs, err
+
 }
 
 func filterSet(src DataSource, source2 interface{}, filter func(uint64, map[uint64]interface{}) bool, option *ParallelOption) ([]interface{}, map[uint64]interface{}, error) {
