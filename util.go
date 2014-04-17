@@ -15,6 +15,12 @@ import (
 	"unsafe"
 )
 
+const (
+	ptrSize        = unsafe.Sizeof((*byte)(nil))
+	kindMask       = 0x7f
+	kindNoPointers = 0x80
+)
+
 //hash an object-----------------------------------------------
 // interfaceHeader is the header for an interface{} value. it is copied from unsafe.emptyInterface
 type interfaceHeader struct {
@@ -522,9 +528,9 @@ func NewAvlTree(compare func(a interface{}, b interface{}) int) *avlTree {
 func newChunkAvlTree() *avlTree {
 	return NewAvlTree(func(a interface{}, b interface{}) int {
 		c1, c2 := a.(*Chunk), b.(*Chunk)
-		if c1.order < c2.order {
+		if c1.Order < c2.Order {
 			return -1
-		} else if c1.order == c2.order {
+		} else if c1.Order == c2.Order {
 			return 0
 		} else {
 			return 1

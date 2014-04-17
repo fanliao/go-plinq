@@ -2,6 +2,7 @@ package plinq
 
 import (
 	"github.com/ahmetalpbalkan/go-linq"
+	c "github.com/smartystreets/goconvey/convey"
 	"math"
 	"math/rand"
 	"runtime"
@@ -75,6 +76,12 @@ func select1(v interface{}) interface{} {
 
 func select2(v interface{}) interface{} {
 	return math.Sin(math.Cos(math.Pow(float64(v.(int)), 2)))
+}
+
+func TestWhere(t *testing.T) {
+	c.Convey("When passed nil function, error returned", t, func() {
+		c.So(func() { From(arr).Where(nil) }, c.ShouldPanicWith, ErrNilAction)
+	})
 }
 
 func BenchmarkBlockSourceWhere(b *testing.B) {
@@ -467,33 +474,33 @@ func BenchmarkGoLinqAggregate(b *testing.B) {
 //	c1 := results[i].(*chunk)
 //	if i+1 == len(results) {
 //		//only a chunk
-//		copy(tr[start:start+len(c1.data)], c1.data)
+//		copy(tr[start:start+len(c1.Data)], c1.Data)
 //		return len(tr)
 //	}
 
 //	c2 := results[i+1].(*chunk)
 //	j, k, m := 0, 0, start
-//	for ; j < len(c1.data) && k < len(c2.data); m++ {
-//		if c1.data[j].(user).id < c2.data[k].(user).id {
-//			tr[m] = c1.data[j]
+//	for ; j < len(c1.Data) && k < len(c2.Data); m++ {
+//		if c1.Data[j].(user).id < c2.Data[k].(user).id {
+//			tr[m] = c1.Data[j]
 //			j++
 //		} else {
-//			tr[m] = c2.data[k]
+//			tr[m] = c2.Data[k]
 //			k++
 //		}
 //	}
 
-//	if j < len(c1.data) {
-//		for i := 0; i < len(c1.data)-j; i++ {
-//			tr[m+i] = c1.data[j+i]
+//	if j < len(c1.Data) {
+//		for i := 0; i < len(c1.Data)-j; i++ {
+//			tr[m+i] = c1.Data[j+i]
 //		}
 //	}
-//	if k < len(c2.data) {
-//		for i := 0; i < len(c2.data)-k; i++ {
-//			tr[m+i] = c2.data[k+i]
+//	if k < len(c2.Data) {
+//		for i := 0; i < len(c2.Data)-k; i++ {
+//			tr[m+i] = c2.Data[k+i]
 //		}
 //	}
-//	return start + len(c1.data) + len(c2.data)
+//	return start + len(c1.Data) + len(c2.Data)
 //}
 
 //func BencmarkParallelSort(b *testing.B) {
@@ -505,9 +512,9 @@ func BenchmarkGoLinqAggregate(b *testing.B) {
 //			sortQ.less = func(this, that interface{}) bool {
 //				return this.(user).id < that.(user).id
 //			}
-//			sortQ.values = tout[c.order : c.order+len(c.data)]
-//			_ = copy(sortQ.values, c.data)
-//			return []interface{}{&chunk{sortQ.values, c.order}, true}
+//			sortQ.values = tout[c.Order : c.Order+len(c.Data)]
+//			_ = copy(sortQ.values, c.Data)
+//			return []interface{}{&chunk{sortQ.values, c.Order}, true}
 //		}, MAXPROCS)
 
 //		sourceFromFuture(f, func(results []interface{}) source {

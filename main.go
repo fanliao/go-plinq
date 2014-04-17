@@ -176,6 +176,17 @@ func TestLinq() {
 		return q.Aggregate(Sum, Count, Max, Min)
 	})
 
+	//TODO: don't support the mixed type in aggregate
+	////test aggregate multiple operation
+	//testLinqAggWithAllSource("aggregate multiple opretions with mixed type", src1, func(q *Queryable) (interface{}, error) {
+	//	return From([]interface{}{1, int8(2), uint(3), float64(4.4)}).Aggregate(Sum, Count, Max, Min)
+	//})
+
+	//TODO: don't support the mixed type in aggregate
+	//test aggregate multiple operation
+	testLinqAggWithAllSource("aggregate multiple opretions with mixed type", src1, func(q *Queryable) (interface{}, error) {
+		return From([]interface{}{0, 3, 6, 9}).Aggregate(Sum, Count, Max, Min)
+	})
 	myAgg := &AggregateOpr{"",
 		func(v interface{}, t interface{}) interface{} {
 			v1, t1 := v.(power), t.(string)

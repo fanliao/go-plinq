@@ -8,14 +8,12 @@ import (
 	"runtime"
 	"sync"
 	"time"
-	"unsafe"
 )
 
 const (
-	ptrSize          = unsafe.Sizeof((*byte)(nil))
-	kindMask         = 0x7f
-	kindNoPointers   = 0x80
-	DEFAULTCHUNKSIZE = 10
+	DEFAULTCHUNKSIZE     = 200
+	SOURCE_LIST      int = iota //presents the list source
+	SOURCE_CHUNK                //presents the channel source
 )
 
 var (
@@ -46,34 +44,33 @@ func init() {
 // the struct and interface about data DataSource---------------------------------------------------
 // A Chunk presents a data chunk, the paralleliam algorithm always handle a chunk in a paralleliam tasks.
 type Chunk struct {
-	data  []interface{}
-	order int
+	Data  []interface{}
+	Order int //a index presents the order of chunk
 }
 
-const (
-	SOURCE_BLOCK int = iota
-	SOURCE_CHUNK
-)
-
+// The DataSource presents the data of linq operation
+// Most linq operations usually convert a DataSource to another DataSource
 type DataSource interface {
-	Typ() int //block or chan?
-	ToSlice(bool) []interface{}
-	//ToChan() chan interface{}
+	Typ() int                   //list or chan?
+	ToSlice(bool) []interface{} //Get a slice includes all datas
+	//ToChan() chan interface{}   //will be implement in futures
 }
 
-// KeyValue presents a key value pair, it be used by GroupBy operations
+// KeyValue presents a key value pair, it be used by GroupBy, Join and Set operations
 type KeyValue struct {
 	key   interface{}
 	value interface{}
 }
 
 //Aggregate operation structs and functions-------------------------------
+//
 type AggregateOpr struct {
-	seed      interface{}
-	action    func(interface{}, interface{}) interface{}
-	sumAction func(interface{}, interface{}) interface{}
+	Seed         interface{}
+	AggAction    func(interface{}, interface{}) interface{}
+	ReduceAction func(interface{}, interface{}) interface{}
 }
 
+// Standard Sum, Count, Min and Max Aggregation operation
 var (
 	Sum   *AggregateOpr
 	Count *AggregateOpr
@@ -91,7 +88,7 @@ type ParallelOption struct {
 
 // A Queryable presents an object includes the data and query operations
 // All query functions will return Queryable.
-// For getting the results of the query, use Results().
+// For getting the result slice of the query, use Results().
 type Queryable struct {
 	data     DataSource
 	steps    []step
@@ -119,26 +116,6 @@ type Queryable struct {
 // Note: if the source is a channel, the channel must be closed by caller of linq,
 // otherwise will be deadlock
 func From(src interface{}) (q *Queryable) {
-	//isNotNil(src, ErrNilSource)
-
-	//q = &Queryable{}
-	//q.keepOrder = true
-	//q.steps = make([]step, 0, 4)
-	//q.degree = numCPU
-	//q.chunkSize = DEFAULTCHUNKSIZE
-	//q.errChan = make(chan *stepErr)
-
-	//var ds DataSource
-	//if k := reflect.ValueOf(src).Kind(); k == reflect.Slice || k == reflect.Map {
-	//	ds = &listSource{data: src}
-	//} else if s, ok := src.(chan *Chunk); ok {
-	//	ds = &chanSource{chunkChan: s}
-	//} else if k == reflect.Chan {
-	//	ds = &chanSource{new(sync.Once), src, nil}
-	//} else {
-	//	panic(ErrUnsupportSource)
-	//}
-
 	return newQueryable(newDataSource(src))
 }
 
@@ -172,7 +149,7 @@ func newQueryable(ds DataSource) (q *Queryable) {
 }
 
 // Results evaluates the query and returns the results as interface{} slice.
-// An error occurred in during evaluation of the query will be returned.
+// If the error occurred in during evaluation of the query, it will be returned.
 //
 // Example:
 // 	results, err := From([]interface{}{"Jack", "Rock"}).Select(something).Results()
@@ -191,6 +168,23 @@ func (this *Queryable) Results() (results []interface{}, err error) {
 	}
 }
 
+// Aggregate returns the results of aggregation operation
+// Aggregation operation aggregates the result in the data source base on the AggregateOpr.
+//
+// Aggregate can return a slice includes multiple results if passes multiple aggregation operation once.
+// If passes one aggregation operation, Aggregate will return single interface{}
+//
+// Noted:
+// Aggregate supports the customized aggregation function
+// TODO: doesn't support the mixed type in aggregate now
+// TODO: Will panic if the error appears in aggregate function, but should return an error
+//
+// Example:
+//	arr = []interface{}{0, 3, 6, 9}
+//	aggResults, err := From(arr).Aggregate(Sum, Count, Max, Min) // return [18, 4, 9, 0]
+//	// or
+//	sum, err := From(arr).Aggregate(Sum) // sum is 18
+// TODO: the customized aggregation function
 func (this *Queryable) Aggregate(aggregateFuncs ...*AggregateOpr) (result interface{}, err error) {
 	if ds, e := this.get(); e == nil {
 
@@ -212,16 +206,26 @@ func (this *Queryable) Aggregate(aggregateFuncs ...*AggregateOpr) (result interf
 	}
 }
 
+// Sum computes sum of numeric values in the data source.
+// TODO: If sequence has non-numeric types or nil, should returns an error.
+// Example:
+//	arr = []interface{}{0, 3, 6, 9}
+//	sum, err := From(arr).Sum() // sum is 18
 func (this *Queryable) Sum() (result interface{}, err error) {
 	aggregateOprs := []*AggregateOpr{Sum}
 
-	if results, err := this.Aggregate(aggregateOprs...); err == nil {
-		return results, nil
+	if result, err = this.Aggregate(aggregateOprs...); err == nil {
+		return result, nil
 	} else {
 		return nil, err
 	}
 }
 
+// Average computes average of numeric values in the data source.
+// TODO: If sequence has non-numeric types or nil, should returns an error.
+// Example:
+//	arr = []interface{}{0, 3, 6, 9}
+//	arg, err := From(arr).Average() // sum is 4.5
 func (this *Queryable) Average() (result interface{}, err error) {
 	aggregateOprs := []*AggregateOpr{Sum, Count}
 
@@ -235,6 +239,13 @@ func (this *Queryable) Average() (result interface{}, err error) {
 	}
 }
 
+// Max returns the maximum value in the data source.
+// Max operation supports the numeric types, string and time.Time
+// TODO: need more testing for string and time.Time
+// TODO: If sequence has other types or nil, should returns an error.
+// Example:
+//	arr = []interface{}{0, 3, 6, 9}
+//	max, err := From(arr).Max() // max is 9
 func (this *Queryable) Max(lesss ...func(interface{}, interface{}) bool) (result interface{}, err error) {
 	var less func(interface{}, interface{}) bool
 	if lesss == nil || len(lesss) == 0 {
@@ -252,6 +263,13 @@ func (this *Queryable) Max(lesss ...func(interface{}, interface{}) bool) (result
 	}
 }
 
+// Min returns the minimum value in the data source.
+// Min operation supports the numeric types, string and time.Time
+// TODO: need more testing for string and time.Time
+// TODO: If sequence has other types or nil, should returns an error.
+// Example:
+//	arr = []interface{}{0, 3, 6, 9}
+//	min, err := From(arr).Max() // min is 0
 func (this *Queryable) Min(lesss ...func(interface{}, interface{}) bool) (result interface{}, err error) {
 	var less func(interface{}, interface{}) bool
 	if lesss == nil || len(lesss) == 0 {
@@ -484,12 +502,21 @@ func (this *Queryable) LeftGroupJoin(inner interface{},
 	return this
 }
 
+// Reverse returns a query includes the Reverse operation
+// Reverse operation returns a data source with a inverted order of the original source
+//
+// Example:
+// 	q := From([]int{1,2,3,4,5}).Reverse()
+// 	// q.Results() returns {5,4,3,2,1}
 func (this *Queryable) Reverse(degrees ...int) *Queryable {
 	this.steps = append(this.steps, commonStep{ACT_REVERSE, nil, getDegreeArg(degrees...)})
 	return this
 }
 
-//KeepOrder
+// KeepOrder returns a query from the original query,
+// the result slice will keep the order of origin query as much as possible
+// Noted: Order operation will change the original order
+// TODO: Distinct, Union, Join, Interest, Except operations need more testing
 func (this *Queryable) KeepOrder(keep bool) *Queryable {
 	this.keepOrder = keep
 	return this
@@ -504,7 +531,7 @@ func (this *Queryable) SetDegreeOfParallelism(degree int) *Queryable {
 }
 
 // SetSizeOfChunk set the size of chunk.
-// chunk is the data unit of the parallelism
+// chunk is the data unit of the parallelism, default size is DEFAULTCHUNKSIZE
 func (this *Queryable) SetSizeOfChunk(size int) *Queryable {
 	this.chunkSize = size
 	return this
@@ -588,7 +615,7 @@ type listSource struct {
 }
 
 func (this listSource) Typ() int {
-	return SOURCE_BLOCK
+	return SOURCE_LIST
 }
 
 // ToSlice returns the interface{} slice
@@ -758,8 +785,8 @@ func (this chanSource) ToSlice(keepOrder bool) []interface{} {
 //func (this chanSource) ToChan() chan interface{} {
 //	out := make(chan interface{})
 //	go func() {
-//		for c := range this.data {
-//			for _, v := range c.data {
+//		for c := range this.Data {
+//			for _, v := range c.Data {
 //				out <- v
 //			}
 //		}
@@ -873,9 +900,9 @@ func getSelect(selectFunc func(interface{}) interface{}) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption) (dst DataSource, sf *promise.Future, keep bool, e error) {
 		keep = option.keepOrder
 		mapChunk := func(c *Chunk) *Chunk {
-			//result := make([]interface{}, len(c.data)) //c.end-c.start+2)
-			mapSlice(c.data, selectFunc, &(c.data))
-			return c //&Chunk{result, c.order}
+			//result := make([]interface{}, len(c.Data)) //c.end-c.start+2)
+			mapSlice(c.Data, selectFunc, &(c.Data))
+			return c //&Chunk{result, c.Order}
 		}
 
 		//try to use sequentail if the size of the data is less than size of chunk
@@ -888,8 +915,8 @@ func getSelect(selectFunc func(interface{}) interface{}) stepAction {
 			size := len(s.ToSlice(false))
 			results := make([]interface{}, size)
 			f := parallelMapListToList(s, func(c *Chunk) *Chunk {
-				out := results[c.order : c.order+len(c.data)]
-				mapSlice(c.data, selectFunc, &out)
+				out := results[c.Order : c.Order+len(c.Data)]
+				mapSlice(c.Data, selectFunc, &out)
 				return nil
 			}, option)
 
@@ -949,7 +976,7 @@ func getOrder(compare func(interface{}, interface{}) int) stepAction {
 			//AVL tree sort
 			avl := NewAvlTree(compare)
 			f, _ := parallelMapChanToChan(s, nil, func(c *Chunk) *Chunk {
-				for _, v := range c.data {
+				for _, v := range c.Data {
 					avl.Insert(v)
 				}
 				return nil
@@ -968,7 +995,7 @@ func getOrder(compare func(interface{}, interface{}) int) stepAction {
 func getDistinct(distinctFunc func(interface{}) interface{}) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption) (DataSource, *promise.Future, bool, error) {
 		mapChunk := func(c *Chunk) (r *Chunk) {
-			r = &Chunk{getKeyValues(c, distinctFunc, nil), c.order}
+			r = &Chunk{getKeyValues(c, distinctFunc, nil), c.Order}
 			return
 		}
 
@@ -977,7 +1004,7 @@ func getDistinct(distinctFunc func(interface{}) interface{}) stepAction {
 		//	c := &Chunk{list.ToSlice(false), 0}
 		//	distKVs := make(map[uint64]int)
 		//	c = distinctChunkVals(c, distKVs)
-		//	return &listSource{c.data}, nil, option.keepOrder, nil
+		//	return &listSource{c.Data}, nil, option.keepOrder, nil
 		//}
 
 		//map the element to a keyValue that key is hash value and value is element
@@ -998,7 +1025,7 @@ func getDistinct(distinctFunc func(interface{}) interface{}) stepAction {
 func getGroupBy(groupFunc func(interface{}) interface{}, hashAsKey bool) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption) (DataSource, *promise.Future, bool, error) {
 		mapChunk := func(c *Chunk) (r *Chunk) {
-			r = &Chunk{getKeyValues(c, groupFunc, nil), c.order}
+			r = &Chunk{getKeyValues(c, groupFunc, nil), c.Order}
 			return
 		}
 
@@ -1020,7 +1047,7 @@ func getGroupBy(groupFunc func(interface{}) interface{}, hashAsKey bool) stepAct
 		//reduce the keyValue map to get grouped slice
 		//get key with group values values
 		errs := reduceChan(f.GetChan(), reduceSrc, func(c *Chunk) {
-			for _, v := range c.data {
+			for _, v := range c.Data {
 				groupKV(v)
 			}
 		})
@@ -1103,7 +1130,7 @@ func getJoinImpl(inner interface{},
 				}
 			}
 
-			return &Chunk{results, c.order}
+			return &Chunk{results, c.Order}
 		}
 
 		switch s := src.(type) {
@@ -1131,7 +1158,7 @@ func getUnion(source2 interface{}) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption) (DataSource, *promise.Future, bool, error) {
 		reduceSrcChan := make(chan *Chunk)
 		mapChunk := func(c *Chunk) (r *Chunk) {
-			r = &Chunk{getKeyValues(c, func(v interface{}) interface{} { return v }, nil), c.order}
+			r = &Chunk{getKeyValues(c, func(v interface{}) interface{} { return v }, nil), c.Order}
 			return
 		}
 
@@ -1208,11 +1235,11 @@ func getReverse() stepAction {
 		srcSlice, size := wholeSlice[0:len(wholeSlice)/2], len(wholeSlice)
 
 		mapChunk := func(c *Chunk) *Chunk {
-			for i := 0; i < len(c.data); i++ {
-				j := c.order + i
+			for i := 0; i < len(c.Data); i++ {
+				j := c.Order + i
 				t := wholeSlice[size-1-j]
-				wholeSlice[size-1-j] = c.data[i]
-				c.data[i] = t
+				wholeSlice[size-1-j] = c.Data[i]
+				c.Data[i] = t
 			}
 			return c
 		}
@@ -1249,7 +1276,7 @@ func getAggregate(src DataSource, aggregateFuncs []*AggregateOpr, option *Parall
 
 	rs := make([]interface{}, len(aggregateFuncs))
 	mapChunk := func(c *Chunk) (r *Chunk) {
-		r = &Chunk{aggregateSlice(c.data, aggregateFuncs, false, true), c.order}
+		r = &Chunk{aggregateSlice(c.Data, aggregateFuncs, false, true), c.Order}
 		return
 	}
 	f, reduceSrc := parallelMapToChan(src, nil, mapChunk, option)
@@ -1260,16 +1287,16 @@ func getAggregate(src DataSource, aggregateFuncs []*AggregateOpr, option *Parall
 	agg := func(c *Chunk) {
 		if first {
 			for i := 0; i < len(rs); i++ {
-				if aggregateFuncs[i].sumAction != nil {
-					rs[i] = aggregateFuncs[i].seed
+				if aggregateFuncs[i].ReduceAction != nil {
+					rs[i] = aggregateFuncs[i].Seed
 				}
 			}
 		}
 		first = false
 
 		for i := 0; i < len(rs); i++ {
-			if aggregateFuncs[i].sumAction != nil {
-				rs[i] = aggregateFuncs[i].sumAction(c.data[i], rs[i])
+			if aggregateFuncs[i].ReduceAction != nil {
+				rs[i] = aggregateFuncs[i].ReduceAction(c.Data[i], rs[i])
 			}
 		}
 	}
@@ -1277,7 +1304,7 @@ func getAggregate(src DataSource, aggregateFuncs []*AggregateOpr, option *Parall
 	avl := newChunkAvlTree()
 	if errs := reduceChan(f.GetChan(), reduceSrc, func(c *Chunk) {
 		if !keep {
-			//datas := c.data
+			//datas := c.Data
 			agg(c)
 		} else {
 			avl.Insert(c)
@@ -1501,7 +1528,7 @@ func parallelMapListToChan(src DataSource, out chan *Chunk, task func(*Chunk) *C
 			r := task(c)
 			if out != nil {
 				out <- r
-				//fmt.Println("send", len(r.data))
+				//fmt.Println("send", len(r.Data))
 			}
 			return nil, nil
 		}
@@ -1565,7 +1592,7 @@ func trySequentialMap(src DataSource, option *ParallelOption, mapChunk func(c *C
 	if useSingle := singleDegree(src, option); useSingle {
 		c := &Chunk{src.ToSlice(false), 0}
 		r := mapChunk(c)
-		return &listSource{r.data}, true
+		return &listSource{r.Data}, true
 	} else {
 		return nil, false
 	}
@@ -1584,7 +1611,7 @@ func trySequentialAggregate(src DataSource, option *ParallelOption, aggregateFun
 
 func ifMustSequential(aggregateFuncs []*AggregateOpr) bool {
 	for _, f := range aggregateFuncs {
-		if f.sumAction == nil {
+		if f.ReduceAction == nil {
 			return true
 		}
 	}
@@ -1652,9 +1679,9 @@ func reduceDistinctVals(mapFuture *promise.Future, reduceSrcChan chan *Chunk) ([
 
 //util functions--------------------------------------------------------
 func distinctChunkVals(c *Chunk, distKVs map[uint64]int) *Chunk {
-	result := make([]interface{}, len(c.data))
+	result := make([]interface{}, len(c.Data))
 	i := 0
-	for _, v := range c.data {
+	for _, v := range c.Data {
 		kv := v.(*hKeyValue)
 		if _, ok := distKVs[kv.keyHash]; !ok {
 			distKVs[kv.keyHash] = 1
@@ -1662,7 +1689,7 @@ func distinctChunkVals(c *Chunk, distKVs map[uint64]int) *Chunk {
 			i++
 		}
 	}
-	c.data = result[0:i]
+	c.Data = result[0:i]
 	return c
 }
 
@@ -1699,10 +1726,10 @@ func getFutureResult(f *promise.Future, dataSourceFunc func([]interface{}) DataS
 }
 
 func filterChunk(c *Chunk, f func(interface{}) bool) *Chunk {
-	result := filterSlice(c.data, f)
+	result := filterSlice(c.Data, f)
 	//fmt.Println("c=", c)
 	//fmt.Println("result=", result)
-	return &Chunk{result, c.order}
+	return &Chunk{result, c.Order}
 }
 
 func filterSlice(src []interface{}, f func(interface{}) bool) []interface{} {
@@ -1740,15 +1767,15 @@ func aggregateSlice(src []interface{}, fs []*AggregateOpr, asSequential bool, as
 	//fmt.Println("aggregateSlice1", fs)
 	rs := make([]interface{}, len(fs))
 	for j := 0; j < len(fs); j++ {
-		if (asSequential && fs[j].sumAction == nil) || (asParallel && fs[j].sumAction != nil) {
-			rs[j] = fs[j].seed
+		if (asSequential && fs[j].ReduceAction == nil) || (asParallel && fs[j].ReduceAction != nil) {
+			rs[j] = fs[j].Seed
 		}
 	}
 
 	for i := 0; i < len(src); i++ {
 		for j := 0; j < len(fs); j++ {
-			if (asSequential && fs[j].sumAction == nil) || (asParallel && fs[j].sumAction != nil) {
-				rs[j] = fs[j].action(src[i], rs[j])
+			if (asSequential && fs[j].ReduceAction == nil) || (asParallel && fs[j].ReduceAction != nil) {
+				rs[j] = fs[j].AggAction(src[i], rs[j])
 			}
 		}
 	}
@@ -1772,7 +1799,7 @@ func expandChunks(src []interface{}, keepOrder bool) []interface{} {
 			case *Chunk:
 				a1, b1 = v, b.(*Chunk)
 			}
-			return a1.order < b1.order
+			return a1.Order < b1.Order
 		})
 	}
 
@@ -1785,15 +1812,15 @@ func expandChunks(src []interface{}, keepOrder bool) []interface{} {
 		case *Chunk:
 			chunks[i] = v
 		}
-		count += len(chunks[i].data)
+		count += len(chunks[i].Data)
 	}
 
 	//fmt.Println("count", count)
 	result := make([]interface{}, count)
 	start := 0
 	for _, c := range chunks {
-		size := len(c.data)
-		copy(result[start:start+size], c.data)
+		size := len(c.Data)
+		copy(result[start:start+size], c.Data)
 		start += size
 	}
 	return result
@@ -1833,10 +1860,10 @@ func ceilChunkSize(a int, b int) int {
 
 func getKeyValues(c *Chunk, keyFunc func(v interface{}) interface{}, KeyValues *[]interface{}) []interface{} {
 	if KeyValues == nil {
-		list := (make([]interface{}, len(c.data)))
+		list := (make([]interface{}, len(c.Data)))
 		KeyValues = &list
 	}
-	mapSlice(c.data, func(v interface{}) interface{} {
+	mapSlice(c.Data, func(v interface{}) interface{} {
 		k := keyFunc(v)
 		return &hKeyValue{hash64(k), k, v}
 	}, KeyValues)
