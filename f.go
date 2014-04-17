@@ -150,15 +150,15 @@ func main() {
 	arrInts := make([]int, 0, 20)
 	src1 := make([]interface{}, 0, 20)
 	src2 := make([]interface{}, 0, 20)
-	pow1 := make([]interface{}, 0, 20)
+	powers := make([]interface{}, 0, 20)
 	for i := 0; i < count; i++ {
 		arrInts = append(arrInts, i)
 		src1 = append(src1, i)
 		src2 = append(src2, i+count/2)
 	}
 	for i := count / 4; i < count/2; i++ {
-		pow1 = append(pow1, power{i, i * i})
-		pow1 = append(pow1, power{i, i * 100})
+		powers = append(powers, power{i, i * i})
+		powers = append(powers, power{i, i * 100})
 	}
 
 	var whereFunc = func(v interface{}) bool {
@@ -222,7 +222,7 @@ func main() {
 
 	//test left join
 	testLinqWithAllSource("LeftJoin opretions", src1, func(q *Queryable) *Queryable {
-		return q.LeftJoin(pow1,
+		return q.LeftJoin(powers,
 			func(o interface{}) interface{} { return o },
 			func(i interface{}) interface{} { return i.(power).i },
 			joinResultSelector)
@@ -230,7 +230,7 @@ func main() {
 
 	//test left group join
 	testLinqWithAllSource("LeftGroupJoin opretions", src1, func(q *Queryable) *Queryable {
-		return q.LeftGroupJoin(pow1,
+		return q.LeftGroupJoin(powers,
 			func(o interface{}) interface{} { return o },
 			func(i interface{}) interface{} { return i.(power).i },
 			groupJoinResultSelector)
@@ -263,13 +263,41 @@ func main() {
 
 	//test Aggregate
 	testLinqAggWithAllSource("aggregate opretions", src1, func(q *Queryable) (interface{}, error) {
-		return q.Aggregate(Sum)
+		return q.Sum()
 	})
 
 	//test Average
-	testLinqAggWithAllSource("aggregate opretions", src1, func(q *Queryable) (interface{}, error) {
+	testLinqAggWithAllSource("average opretions", src1, func(q *Queryable) (interface{}, error) {
 		return q.Average()
 	})
+
+	//test Max
+	testLinqAggWithAllSource("max opretions", src1, func(q *Queryable) (interface{}, error) {
+		return q.Max()
+	})
+
+	//test Min
+	testLinqAggWithAllSource("min opretions", src1, func(q *Queryable) (interface{}, error) {
+		return q.Min()
+	})
+
+	//test aggregate multiple operation
+	testLinqAggWithAllSource("aggregate multiple opretions", src1, func(q *Queryable) (interface{}, error) {
+		return q.Aggregate(Sum, Count, Max, Min)
+	})
+
+	myAgg := &AggregateOpr{"",
+		func(v interface{}, t interface{}) interface{} {
+			v1, t1 := v.(power), t.(string)
+			return t1 + "|{" + strconv.Itoa(v1.i) + ":" + strconv.Itoa(v1.p) + "}"
+		}, func(t1 interface{}, t2 interface{}) interface{} {
+			return t1.(string) + t2.(string)
+		}}
+	//test customized aggregate operation
+	testLinqAggWithAllSource("customized aggregate opretions", powers, func(q *Queryable) (interface{}, error) {
+		return q.Aggregate(myAgg)
+	})
+
 	fmt.Print("distinctKvs return:")
 	concats, _ := From(src1).Concat(src2).Results()
 	kvs, e := distinctKVs(concats, &ParallelOption{numCPU, DEFAULTCHUNKSIZE, false})

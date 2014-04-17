@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"runtime"
 	"sync"
-	//"time"
+	"time"
 	"unsafe"
 )
 
@@ -39,8 +39,8 @@ func init() {
 
 	Sum = &AggregateOpr{0, sumOpr, sumOpr}
 	Count = &AggregateOpr{0, countOpr, sumOpr}
-	Min = &AggregateOpr{seed: nil}
-	Max = &AggregateOpr{seed: nil}
+	Min = getMinOpr(defLess)
+	Max = getMaxOpr(defLess)
 }
 
 // the struct and interface about data DataSource---------------------------------------------------
@@ -212,42 +212,58 @@ func (this *Queryable) Aggregate(aggregateFuncs ...*AggregateOpr) (result interf
 	}
 }
 
+func (this *Queryable) Sum() (result interface{}, err error) {
+	aggregateOprs := []*AggregateOpr{Sum}
+
+	if results, err := this.Aggregate(aggregateOprs...); err == nil {
+		return results, nil
+	} else {
+		return nil, err
+	}
+}
+
 func (this *Queryable) Average() (result interface{}, err error) {
-	aggregateOprs := make([]*AggregateOpr, 2)
-	aggregateOprs[0] = Sum
-	aggregateOprs[1] = Count
+	aggregateOprs := []*AggregateOpr{Sum, Count}
+
 	if results, err := this.Aggregate(aggregateOprs...); err == nil {
 		count := float64(results.([]interface{})[1].(int))
-		var r float64 = 0
-		switch val := results.([]interface{})[0].(type) {
-		case int:
-			r = float64(val) / count
-		case int8:
-			r = float64(val) / count
-		case int16:
-			r = float64(val) / count
-		case int32:
-			r = float64(val) / count
-		case int64:
-			r = float64(val) / count
-		case uint:
-			r = float64(val) / count
-		case uint8:
-			r = float64(val) / count
-		case uint16:
-			r = float64(val) / count
-		case uint32:
-			r = float64(val) / count
-		case uint64:
-			r = float64(val) / count
-		case float32:
-			r = float64(val) / count
-		case float64:
-			r = float64(val) / count
-		default:
-			panic(errors.New("unsupport aggregate type")) //reflect.NewAt(t, ptr).Elem().Interface()
-		}
-		return r, nil
+		sum := results.([]interface{})[0]
+
+		return divide(sum, count), nil
+	} else {
+		return nil, err
+	}
+}
+
+func (this *Queryable) Max(lesss ...func(interface{}, interface{}) bool) (result interface{}, err error) {
+	var less func(interface{}, interface{}) bool
+	if lesss == nil || len(lesss) == 0 {
+		less = defLess
+	} else {
+		less = lesss[0]
+	}
+
+	aggregateOprs := []*AggregateOpr{getMaxOpr(less)}
+
+	if results, err := this.Aggregate(aggregateOprs...); err == nil {
+		return results, nil
+	} else {
+		return nil, err
+	}
+}
+
+func (this *Queryable) Min(lesss ...func(interface{}, interface{}) bool) (result interface{}, err error) {
+	var less func(interface{}, interface{}) bool
+	if lesss == nil || len(lesss) == 0 {
+		less = defLess
+	} else {
+		less = lesss[0]
+	}
+
+	aggregateOprs := []*AggregateOpr{getMinOpr(less)}
+
+	if results, err := this.Aggregate(aggregateOprs...); err == nil {
+		return results, nil
 	} else {
 		return nil, err
 	}
@@ -1222,13 +1238,18 @@ func getReverse() stepAction {
 func getAggregate(src DataSource, aggregateFuncs []*AggregateOpr, option *ParallelOption) (result []interface{}, err error) {
 	keep := option.keepOrder
 
+	//var (
+	//	rs      []interface{} = make([]interface{}, len(aggregateFuncs))
+	//	handled bool
+	//)
 	//try to use sequentail if the size of the data is less than size of chunk
 	if rs, handled := trySequentialAggregate(src, option, aggregateFuncs); handled {
 		return rs, nil
 	}
 
+	rs := make([]interface{}, len(aggregateFuncs))
 	mapChunk := func(c *Chunk) (r *Chunk) {
-		r = &Chunk{aggregateSlice(c.data, aggregateFuncs), c.order}
+		r = &Chunk{aggregateSlice(c.data, aggregateFuncs, false, true), c.order}
 		return
 	}
 	f, reduceSrc := parallelMapToChan(src, nil, mapChunk, option)
@@ -1236,18 +1257,21 @@ func getAggregate(src DataSource, aggregateFuncs []*AggregateOpr, option *Parall
 	//reduce the keyValue map to get grouped slice
 	//get key with group values values
 	first := true
-	rs := make([]interface{}, len(aggregateFuncs))
 	agg := func(c *Chunk) {
 		if first {
 			for i := 0; i < len(rs); i++ {
-				rs[i] = aggregateFuncs[i].seed
+				if aggregateFuncs[i].sumAction != nil {
+					rs[i] = aggregateFuncs[i].seed
+				}
 			}
 		}
 		first = false
+
 		for i := 0; i < len(rs); i++ {
-			rs[i] = aggregateFuncs[i].sumAction(c.data[i], rs[i])
+			if aggregateFuncs[i].sumAction != nil {
+				rs[i] = aggregateFuncs[i].sumAction(c.data[i], rs[i])
+			}
 		}
-		first = false
 	}
 
 	avl := newChunkAvlTree()
@@ -1549,13 +1573,22 @@ func trySequentialMap(src DataSource, option *ParallelOption, mapChunk func(c *C
 }
 
 func trySequentialAggregate(src DataSource, option *ParallelOption, aggregateFuncs []*AggregateOpr) ([]interface{}, bool) {
-	if useSingle := singleDegree(src, option); useSingle {
-		rs := aggregateSlice(src.ToSlice(false), aggregateFuncs)
+	if useSingle := singleDegree(src, option); useSingle || ifMustSequential(aggregateFuncs) {
+		rs := aggregateSlice(src.ToSlice(false), aggregateFuncs, true, true)
 		return rs, true
 	} else {
 		return nil, false
 	}
 
+}
+
+func ifMustSequential(aggregateFuncs []*AggregateOpr) bool {
+	for _, f := range aggregateFuncs {
+		if f.sumAction == nil {
+			return true
+		}
+	}
+	return false
 }
 
 //the functions reduces the paralleliam map result----------------------------------------------------------
@@ -1697,7 +1730,8 @@ func mapSlice(src []interface{}, f func(interface{}) interface{}, out *[]interfa
 	return dst
 }
 
-func aggregateSlice(src []interface{}, fs []*AggregateOpr) []interface{} {
+//TODO: the code need be restructured
+func aggregateSlice(src []interface{}, fs []*AggregateOpr, asSequential bool, asParallel bool) []interface{} {
 	//fmt.Println("aggregateSlice0", src)
 	if len(src) == 0 {
 		return nil
@@ -1706,12 +1740,16 @@ func aggregateSlice(src []interface{}, fs []*AggregateOpr) []interface{} {
 	//fmt.Println("aggregateSlice1", fs)
 	rs := make([]interface{}, len(fs))
 	for j := 0; j < len(fs); j++ {
-		rs[j] = fs[j].seed
+		if (asSequential && fs[j].sumAction == nil) || (asParallel && fs[j].sumAction != nil) {
+			rs[j] = fs[j].seed
+		}
 	}
 
 	for i := 0; i < len(src); i++ {
 		for j := 0; j < len(fs); j++ {
-			rs[j] = fs[j].action(src[i], rs[j])
+			if (asSequential && fs[j].sumAction == nil) || (asParallel && fs[j].sumAction != nil) {
+				rs[j] = fs[j].action(src[i], rs[j])
+			}
 		}
 	}
 	//fmt.Println("aggregateSlice ", src, "return", rs)
@@ -1881,4 +1919,85 @@ func maxOpr(v interface{}, t interface{}, less func(interface{}, interface{}) bo
 	} else {
 		return v
 	}
+}
+
+func getMinOpr(less func(interface{}, interface{}) bool) *AggregateOpr {
+	fun := func(a interface{}, b interface{}) interface{} {
+		return minOpr(a, b, less)
+	}
+	return &AggregateOpr{0, fun, fun}
+}
+
+func getMaxOpr(less func(interface{}, interface{}) bool) *AggregateOpr {
+	fun := func(a interface{}, b interface{}) interface{} {
+		return maxOpr(a, b, less)
+	}
+	return &AggregateOpr{0, fun, fun}
+}
+
+func defLess(a interface{}, b interface{}) bool {
+	switch val := a.(type) {
+	case int:
+		return val < b.(int)
+	case int8:
+		return val < b.(int8)
+	case int16:
+		return val < b.(int16)
+	case int32:
+		return val < b.(int32)
+	case int64:
+		return val < b.(int64)
+	case uint:
+		return val < b.(uint)
+	case uint8:
+		return val < b.(uint8)
+	case uint16:
+		return val < b.(uint16)
+	case uint32:
+		return val < b.(uint32)
+	case uint64:
+		return val < b.(uint64)
+	case float32:
+		return val < b.(float32)
+	case float64:
+		return val < b.(float64)
+	case string:
+		return val < b.(string)
+	case time.Time:
+		return val.Before(b.(time.Time))
+	default:
+		panic(errors.New("unsupport aggregate type")) //reflect.NewAt(t, ptr).Elem().Interface()
+	}
+}
+
+func divide(a interface{}, count float64) (r float64) {
+	switch val := a.(type) {
+	case int:
+		r = float64(val) / count
+	case int8:
+		r = float64(val) / count
+	case int16:
+		r = float64(val) / count
+	case int32:
+		r = float64(val) / count
+	case int64:
+		r = float64(val) / count
+	case uint:
+		r = float64(val) / count
+	case uint8:
+		r = float64(val) / count
+	case uint16:
+		r = float64(val) / count
+	case uint32:
+		r = float64(val) / count
+	case uint64:
+		r = float64(val) / count
+	case float32:
+		r = float64(val) / count
+	case float64:
+		r = float64(val) / count
+	default:
+		panic(errors.New("unsupport aggregate type")) //reflect.NewAt(t, ptr).Elem().Interface()
+	}
+	return
 }
