@@ -1862,6 +1862,7 @@ func getDegreeArg(degrees ...int) int {
 	return degree
 }
 
+//aggregate functions---------------------------------------------------
 func sumOpr(v interface{}, t interface{}) interface{} {
 	switch val := v.(type) {
 	case int:
