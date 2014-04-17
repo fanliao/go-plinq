@@ -246,6 +246,11 @@ func main() {
 		return q.Intersect(src2)
 	})
 
+	//test except
+	testLinqWithAllSource("Except opretions", src1, func(q *Queryable) *Queryable {
+		return q.Except(src2)
+	})
+
 	//test Concat
 	testLinqWithAllSource("Concat opretions", src1, func(q *Queryable) *Queryable {
 		return q.Concat(src2)

@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	count         int = 10000
-	distinctcount int = 11000
+	count         int = 1000
+	distinctcount int = 1100
 	MAXPROCS      int = 4
 )
 
@@ -367,6 +367,29 @@ func BenchmarkBlockSourceIntersect(b *testing.B) {
 func BenchmarkGoLinqIntersect(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		dst, _ := linq.From(arrUser).Intersect(arrUser2).Results()
+		if len(dst) != count/2 {
+			b.Fail()
+			b.Error("size is ", len(dst))
+		}
+	}
+}
+
+////test except--------------------------------------------------------------------
+func BenchmarkBlockSourceExcept(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		dst, _ := From(arrUser).Except(arrUser2).Results()
+		if len(dst) != count/2 {
+			b.Fail()
+			//b.Log("arr=", arr)
+			b.Error("size is ", len(dst))
+			b.Log("dst=", dst)
+		}
+	}
+}
+
+func BenchmarkGoLinqExcept(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		dst, _ := linq.From(arrUser).Except(arrUser2).Results()
 		if len(dst) != count/2 {
 			b.Fail()
 			b.Error("size is ", len(dst))

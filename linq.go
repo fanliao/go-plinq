@@ -15,7 +15,7 @@ const (
 	ptrSize          = unsafe.Sizeof((*byte)(nil))
 	kindMask         = 0x7f
 	kindNoPointers   = 0x80
-	DEFAULTCHUNKSIZE = 20
+	DEFAULTCHUNKSIZE = 200
 )
 
 var (
@@ -293,6 +293,13 @@ func (this *Queryable) Intersect(source2 interface{}, degrees ...int) *Queryable
 	isNotNil(source2, ErrInterestNilSource)
 
 	this.steps = append(this.steps, commonStep{ACT_INTERSECT, source2, getDegreeArg(degrees...)})
+	return this
+}
+
+func (this *Queryable) Except(source2 interface{}, degrees ...int) *Queryable {
+	isNotNil(source2, ErrInterestNilSource)
+
+	this.steps = append(this.steps, commonStep{ACT_EXCEPT, source2, getDegreeArg(degrees...)})
 	return this
 }
 
@@ -671,6 +678,7 @@ const (
 	ACT_CONCAT
 	ACT_INTERSECT
 	ACT_REVERSE
+	ACT_EXCEPT
 )
 
 //stepAction presents a action related to a linq operation
@@ -727,6 +735,8 @@ func (this commonStep) Action() (act stepAction) {
 		act = getConcat(this.act)
 	case ACT_INTERSECT:
 		act = getIntersect(this.act)
+	case ACT_EXCEPT:
+		act = getExcept(this.act)
 	case ACT_REVERSE:
 		act = getReverse()
 	}
@@ -1050,141 +1060,30 @@ func getConcat(source2 interface{}) stepAction {
 
 func getIntersect(source2 interface{}) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption) (result DataSource, f *promise.Future, keep bool, err error) {
-		//distKvs := make(map[uint64]bool)
+		results, _, err := getSet(src, source2, func(hashKey1 uint64, distKvs map[uint64]interface{}) bool {
+			_, ok := distKvs[hashKey1]
+			return ok
+		}, option)
 
-		//f1 := promise.Start(func() []interface{} {
-		//	mapChunk := func(c *Chunk) (r *Chunk) {
-		//		r = &Chunk{getKeyValues(c, func(v interface{}) interface{} { return v }, nil), c.order}
-		//		return
-		//	}
-
-		//	f, reduceSrc := parallelMapToChan(newDataSource(source2), nil, mapChunk, option)
-
-		//	//get distinct values of src1
-		//	errs := reduceChan(f.GetChan(), reduceSrc, func(c *Chunk) {
-		//		for _, v := range c.data {
-		//			kv := v.(*hKeyValue)
-		//			if _, ok := distKvs[kv.keyHash]; !ok {
-		//				distKvs[kv.keyHash] = true
-		//				//fmt.Println("add", kv.value, "to distKvs")
-		//			}
-		//		}
-		//	})
-
-		//	if errs == nil {
-		//		return nil
-		//	} else {
-		//		return []interface{}{NewLinqError("Group error", errs), false}
-		//	}
-		//})
-
-		//query2 := newQueryable(src).Select(func(v interface{}) interface{} {
-		//	return &KeyValue{hash64(v), v}
-		//})
-
-		//var dataSource2 []interface{}
-		//if dataSource2, err = query2.Results(); err != nil {
-		//	return nil, nil, option.keepOrder, err
-		//}
-
-		//if r, typ := f1.Get(); typ != promise.RESULT_SUCCESS {
-		//	return nil, nil, option.keepOrder, NewLinqError("Intersect error", r)
-		//}
-
-		////filter source2
-		//resultKVs := make(map[uint64]interface{}, len(distKvs))
-		//for _, v := range dataSource2 {
-		//	kv := v.(*KeyValue)
-		//	k := kv.key.(uint64)
-		//	if _, ok := distKvs[k]; ok {
-		//		if _, ok := resultKVs[k]; !ok {
-		//			resultKVs[k] = kv.value
-		//		}
-		//	}
-		//}
-
-		////get the intersection slices
-		//results := make([]interface{}, len(resultKVs))
-		//i := 0
-		//for _, v := range resultKVs {
-		//	results[i] = v
-		//	i++
-		//}
-
-		//return &listSource{results[0:i]}, nil, option.keepOrder, nil
-
-		allFutures := promise.WhenAll(promise.Start(func() (interface{}, error) {
-			return distinctKvs(source2, option)
-		}), promise.Start(func() (interface{}, error) {
-			return newQueryable(src).Select(func(v interface{}) interface{} {
-				return &KeyValue{hash64(v), v}
-			}).Results()
-		}))
-
-		if r, err := allFutures.Get(); err == nil {
-			distKvs := r.([]interface{})[0].(map[uint64]interface{})
-			kvs := r.([]interface{})[1].([]interface{})
-
-			//filter source2
-			i, results, resultKVs := 0,
-				make([]interface{}, len(distKvs)),
-				make(map[uint64]interface{}, len(distKvs))
-			for _, v := range kvs {
-				kv, k := v.(*KeyValue), v.(*KeyValue).key.(uint64)
-				if _, ok := distKvs[k]; ok {
-					if _, ok := resultKVs[k]; !ok {
-						resultKVs[k] = kv.value
-						results[i] = kv.value
-						i++
-					}
-				}
-			}
-
-			return &listSource{results[0:i]}, nil, option.keepOrder, nil
+		if err == nil {
+			return &listSource{results}, nil, option.keepOrder, nil
 		} else {
-			return nil, nil, option.keepOrder, NewLinqError("Intersect error", r)
+			return nil, nil, option.keepOrder, err
 		}
 	})
 }
 
 func getExcept(source2 interface{}) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption) (result DataSource, f *promise.Future, keep bool, err error) {
-		allFutures := promise.WhenAll(promise.Start(func() (interface{}, error) {
-			return distinctKvs(source2, option)
-		}), promise.Start(func() (interface{}, error) {
-			query2 := newQueryable(src).Select(func(v interface{}) interface{} {
-				return &KeyValue{hash64(v), v}
-			})
+		results, _, err := getSet(src, source2, func(hashKey1 uint64, distKvs map[uint64]interface{}) bool {
+			_, ok := distKvs[hashKey1]
+			return !ok
+		}, option)
 
-			return query2.Results()
-		}))
-
-		if r, err := allFutures.Get(); err == nil {
-			distKvs := r.([]interface{})[0].(map[uint64]interface{})
-			kvs := r.([]interface{})[1].([]interface{})
-
-			//filter source2
-			resultKVs := make(map[uint64]interface{}, len(distKvs))
-			for _, v := range kvs {
-				kv, k := v.(*KeyValue), v.(*KeyValue).key.(uint64)
-				if _, ok := distKvs[k]; ok {
-					if _, ok := resultKVs[k]; !ok {
-						resultKVs[k] = kv.value
-					}
-				}
-			}
-
-			//get the intersection slices
-			results := make([]interface{}, len(resultKVs))
-			i := 0
-			for _, v := range resultKVs {
-				results[i] = v
-				i++
-			}
-
-			return &listSource{results[0:i]}, nil, option.keepOrder, nil
+		if err == nil {
+			return &listSource{results}, nil, option.keepOrder, nil
 		} else {
-			return nil, nil, option.keepOrder, NewLinqError("Except error", err)
+			return nil, nil, option.keepOrder, err
 		}
 	})
 }
@@ -1223,46 +1122,79 @@ func getReverse() stepAction {
 	})
 }
 
-func getSet(source2 interface{}, filter func(uint64, map[uint64]interface{}) bool) stepAction {
-	return stepAction(func(src DataSource, option *ParallelOption) (result DataSource, f *promise.Future, keep bool, err error) {
-		allFutures := promise.WhenAll(promise.Start(func() (interface{}, error) {
-			return distinctKvs(source2, option)
-		}), promise.Start(func() (interface{}, error) {
-			return newQueryable(src).Select(func(v interface{}) interface{} {
-				return &KeyValue{hash64(v), v}
-			}).Results()
-		}))
+func getSet(src DataSource, source2 interface{}, filter func(uint64, map[uint64]interface{}) bool, option *ParallelOption) ([]interface{}, map[uint64]interface{}, error) {
+	f1, f2 := promise.Start(func() (interface{}, error) {
+		return distinctKvs(source2, option)
+	}), promise.Start(func() (interface{}, error) {
+		return newQueryable(src).Select(func(v interface{}) interface{} {
+			return &KeyValue{hash64(v), v}
+		}).Results()
+	})
 
-		if r, err := allFutures.Get(); err == nil {
-			distKvs := r.([]interface{})[0].(map[uint64]interface{})
-			kvs := r.([]interface{})[1].([]interface{})
+	if r1, err := f1.Get(); err != nil {
+		return nil, nil, NewLinqError("Set error", err)
+	} else if r2, err := f2.Get(); err != nil {
+		return nil, nil, NewLinqError("Set error", err)
+	} else {
+		distKvs := r1.(map[uint64]interface{})
+		kvs := r2.([]interface{})
 
-			//filter source2
-			i, results, resultKVs := 0,
-				make([]interface{}, len(distKvs)),
-				make(map[uint64]interface{}, len(distKvs))
-			for _, v := range kvs {
-				kv, k := v.(*KeyValue), v.(*KeyValue).key.(uint64)
-				if filter(k, distKvs) {
-					if _, ok := resultKVs[k]; !ok {
-						resultKVs[k] = kv.value
-						results[i] = kv.value
-						i++
-					}
+		//filter src
+		i := 0
+		results, resultKVs := make([]interface{}, len(distKvs)),
+			make(map[uint64]interface{}, len(distKvs))
+		for _, v := range kvs {
+			kv := v.(*KeyValue)
+			k := kv.key.(uint64)
+			if filter(k, distKvs) {
+				if _, ok := resultKVs[k]; !ok {
+					resultKVs[k] = kv.value
+					results[i] = kv.value
+					i++
 				}
 			}
-
-			return &listSource{results[0:i]}, nil, option.keepOrder, nil
-		} else {
-			return nil, nil, option.keepOrder, NewLinqError("Intersect error", r)
 		}
-	})
+
+		return results[0:i], resultKVs, nil
+	}
+	//allFutures := promise.WhenAll(promise.Start(func() (interface{}, error) {
+	//	return distinctKvs(source2, option)
+	//}), promise.Start(func() (interface{}, error) {
+	//	return newQueryable(src).Select(func(v interface{}) interface{} {
+	//		return &KeyValue{hash64(v), v}
+	//	}).Results()
+	//}))
+
+	//if r, err := allFutures.Get(); err == nil {
+	//	distKvs := r.([]interface{})[0].(map[uint64]interface{})
+	//	kvs := r.([]interface{})[1].([]interface{})
+
+	//	//filter src
+	//	i := 0
+	//	results, resultKVs := make([]interface{}, len(distKvs)),
+	//		make(map[uint64]interface{}, len(distKvs))
+	//	for _, v := range kvs {
+	//		kv := v.(*KeyValue)
+	//		k :=kv.key.(uint64)
+	//		if filter(k, distKvs) {
+	//			if _, ok := resultKVs[k]; !ok {
+	//				resultKVs[k] = kv.value
+	//				results[i] = kv.value
+	//				i++
+	//			}
+	//		}
+	//	}
+
+	//	return results[0:i], resultKVs, nil
+	//} else {
+	//	return nil, nil, NewLinqError("Set error", r)
+	//}
 }
 
 func distinctKvs(src interface{}, option *ParallelOption) (map[uint64]interface{}, error) {
 	distKvs := make(map[uint64]interface{})
 	q := From(src).Select(func(v interface{}) interface{} {
-		return &hKeyValue{hash64(v), v, v}
+		return &KeyValue{hash64(v), v}
 	})
 
 	if kvs, err := q.Results(); err != nil {
@@ -1270,9 +1202,10 @@ func distinctKvs(src interface{}, option *ParallelOption) (map[uint64]interface{
 	} else {
 		//get distinct values
 		for _, v := range kvs {
-			kv := v.(*hKeyValue)
-			if _, ok := distKvs[kv.keyHash]; !ok {
-				distKvs[kv.keyHash] = kv.value
+			kv := v.(*KeyValue)
+			k := kv.key.(uint64)
+			if _, ok := distKvs[k]; !ok {
+				distKvs[k] = kv.value
 				//fmt.Println("add", kv.value, "to distKvs")
 			}
 		}
