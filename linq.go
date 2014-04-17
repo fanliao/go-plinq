@@ -1588,7 +1588,12 @@ func singleDegree(src DataSource, option *ParallelOption) bool {
 	}
 }
 
-func trySequentialMap(src DataSource, option *ParallelOption, mapChunk func(c *Chunk) (r *Chunk)) (DataSource, bool) {
+func trySequentialMap(src DataSource, option *ParallelOption, mapChunk func(c *Chunk) (r *Chunk)) (DataSource, error, bool) {
+	defer func() {
+		if e := recover(); e != nil {
+			return nil, newErrorWithStacks(e), true
+		}
+	}()
 	if useSingle := singleDegree(src, option); useSingle {
 		c := &Chunk{src.ToSlice(false), 0}
 		r := mapChunk(c)
@@ -1599,7 +1604,12 @@ func trySequentialMap(src DataSource, option *ParallelOption, mapChunk func(c *C
 
 }
 
-func trySequentialAggregate(src DataSource, option *ParallelOption, aggregateFuncs []*AggregateOpr) ([]interface{}, bool) {
+func trySequentialAggregate(src DataSource, option *ParallelOption, aggregateFuncs []*AggregateOpr) ([]interface{}, error, bool) {
+	defer func() {
+		if e := recover(); e != nil {
+			return nil, newErrorWithStacks(e), true
+		}
+	}()
 	if useSingle := singleDegree(src, option); useSingle || ifMustSequential(aggregateFuncs) {
 		rs := aggregateSlice(src.ToSlice(false), aggregateFuncs, true, true)
 		return rs, true

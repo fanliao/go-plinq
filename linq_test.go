@@ -3,7 +3,7 @@ package plinq
 import (
 	"github.com/ahmetalpbalkan/go-linq"
 	c "github.com/smartystreets/goconvey/convey"
-	"math"
+	//"math"
 	"math/rand"
 	"runtime"
 	"strconv"
@@ -11,34 +11,53 @@ import (
 )
 
 const (
-	count         int = 10000
-	distinctcount int = 11000
-	MAXPROCS      int = 4
+	count        int = 20
+	rptCount     int = 24
+	countForB    int = 10000
+	rptCountForB int = 11000
+	MAXPROCS     int = 4
 )
 
 var (
-	arr             []interface{} = make([]interface{}, count, count)
-	arrUser         []interface{} = make([]interface{}, count, count)
-	arrRepeatedUser []interface{} = make([]interface{}, distinctcount, distinctcount)
-	arrUser2        []interface{} = make([]interface{}, count, count)
+	arrUserForT    []interface{}       = make([]interface{}, count, count)
+	arrRptUserForT []interface{}       = make([]interface{}, rptCount, rptCount)
+	arrUser2ForT   []interface{}       = make([]interface{}, count, count)
+	arrInt         []int               = make([]int, count, count)
+	mapForT        map[int]interface{} = make(map[int]interface{}, count)
 
-	arrRole []interface{} = make([]interface{}, count, count)
+	arr        []interface{} = make([]interface{}, countForB, countForB)
+	arrUser    []interface{} = make([]interface{}, countForB, countForB)
+	arrRptUser []interface{} = make([]interface{}, rptCountForB, rptCountForB)
+	arrUser2   []interface{} = make([]interface{}, countForB, countForB)
+
+	arrRole []interface{} = make([]interface{}, countForB, countForB)
 )
 
 func init() {
 	runtime.GOMAXPROCS(MAXPROCS)
 	for i := 0; i < count; i++ {
+		arrInt[i] = i
+		arrUserForT[i] = user{i, "user" + strconv.Itoa(i)}
+		arrRptUserForT[i] = user{i, "user" + strconv.Itoa(i)}
+		arrUser2ForT[i] = user{i + countForB/2, "user" + strconv.Itoa(i+count/2)}
+		mapForT[i] = user{i, "user" + strconv.Itoa(i)}
+	}
+	for i := 0; i < rptCount-count; i++ {
+		arrRptUserForT[count+i] = user{i, "user" + strconv.Itoa(count+i)}
+	}
+
+	for i := 0; i < countForB; i++ {
 		arr[i] = i
 		arrUser[i] = user{i, "user" + strconv.Itoa(i)}
-		arrRepeatedUser[i] = user{i, "user" + strconv.Itoa(i)}
-		arrUser2[i] = user{i + count/2, "user" + strconv.Itoa(i+count/2)}
+		arrRptUser[i] = user{i, "user" + strconv.Itoa(i)}
+		arrUser2[i] = user{i + countForB/2, "user" + strconv.Itoa(i+countForB/2)}
 	}
 
-	for i := 0; i < distinctcount-count; i++ {
-		arrRepeatedUser[count+i] = user{i, "user" + strconv.Itoa(count+i)}
+	for i := 0; i < rptCountForB-countForB; i++ {
+		arrRptUser[countForB+i] = user{i, "user" + strconv.Itoa(countForB+i)}
 	}
 
-	for i := 0; i < count/2; i++ {
+	for i := 0; i < countForB/2; i++ {
 		arrRole[i*2] = role{i, "role" + strconv.Itoa(i)}
 		arrRole[i*2+1] = role{i, "role" + strconv.Itoa(i+1)}
 	}
@@ -53,7 +72,13 @@ type role struct {
 	role string
 }
 
-func where1(v interface{}) bool {
+func wherePanic(v interface{}) bool {
+	var s []interface{}
+	_ = s[2]
+	return true
+}
+
+func whereInt(v interface{}) bool {
 	i := v.(int)
 	//time.Sleep(10 * time.Nanosecond)
 	return i%2 == 0
@@ -70,24 +95,41 @@ func selectUser(v interface{}) interface{} {
 	return strconv.Itoa(u.id) + "/" + u.name
 }
 
-func select1(v interface{}) interface{} {
+func selectInt(v interface{}) interface{} {
 	return v.(int) + 9999
 }
 
-func select2(v interface{}) interface{} {
-	return math.Sin(math.Cos(math.Pow(float64(v.(int)), 2)))
-}
-
 func TestWhere(t *testing.T) {
-	c.Convey("When passed nil function, error returned", t, func() {
-		c.So(func() { From(arr).Where(nil) }, c.ShouldPanicWith, ErrNilAction)
+	c.Convey("When passed nil function, error be returned", t, func() {
+		c.So(func() { From(arrInt).Where(nil) }, c.ShouldPanicWith, ErrNilAction)
 	})
+
+	c.Convey("An error should be returned if the error appears in where function", t, func() {
+		_, err := From(arrInt).Where(wherePanic).Results()
+		c.So(err, c.ShouldNotBeNil)
+	})
+
+	c.Convey("Filter an empty slice", t, func() {
+	})
+
+	c.Convey("Filter an int slice", t, func() {
+	})
+
+	c.Convey("Filter an interface{} slice", t, func() {
+	})
+
+	c.Convey("Filter a map", t, func() {
+	})
+
+	c.Convey("Filter a channel", t, func() {
+	})
+
 }
 
 func BenchmarkBlockSourceWhere(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		dst, _ := From(arrUser).Where(whereUser).Results()
-		if len(dst) != count/2 {
+		if len(dst) != countForB/2 {
 			b.Fail()
 			b.Log("arr=", arr)
 			b.Error("size is ", len(dst))
@@ -102,7 +144,7 @@ func BenchmarkGoLinqWhere(b *testing.B) {
 			v := i.(user)
 			return v.id%2 == 0, nil
 		}).Results()
-		if len(dst) != count/2 {
+		if len(dst) != countForB/2 {
 			b.Fail()
 			b.Error("size is ", len(dst))
 		}
@@ -115,7 +157,7 @@ func BenchmarkGoLinqWhere(b *testing.B) {
 //			v := i.(user)
 //			return v.id%2 == 0, nil
 //		}).Results()
-//		if len(dst) != count/2 {
+//		if len(dst) != countForB/2 {
 //			b.Fail()
 //			b.Error("size is ", len(dst))
 //		}
@@ -125,7 +167,7 @@ func BenchmarkGoLinqWhere(b *testing.B) {
 func BenchmarkBlockSourceSelectWhere(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		dst, _ := From(arrUser).Where(whereUser).Select(selectUser).Results()
-		if len(dst) != count/2 {
+		if len(dst) != countForB/2 {
 			b.Fail()
 			//b.Log("arr=", arr)
 			b.Error("size is ", len(dst))
@@ -143,7 +185,7 @@ func BenchmarkGoLinqSelectWhere(b *testing.B) {
 			u := v.(user)
 			return strconv.Itoa(u.id) + "/" + u.name, nil
 		}).Results()
-		if len(dst) != count/2 {
+		if len(dst) != countForB/2 {
 			b.Fail()
 			b.Error("size is ", len(dst))
 		}
@@ -159,7 +201,7 @@ func BenchmarkGoLinqSelectWhere(b *testing.B) {
 //			u := v.(user)
 //			return strconv.Itoa(u.id) + "/" + u.name, nil
 //		}).Results()
-//		if len(dst) != count/2 {
+//		if len(dst) != countForB/2 {
 //			b.Fail()
 //			b.Error("size is ", len(dst))
 //		}
@@ -171,7 +213,7 @@ func BenchmarkBlockSourceGroupBy(b *testing.B) {
 		dst, _ := From(arrUser).GroupBy(func(v interface{}) interface{} {
 			return v.(user).id / 10
 		}).Results()
-		if len(dst) != count/10 {
+		if len(dst) != countForB/10 {
 			b.Fail()
 			b.Error("size is ", len(dst))
 		}
@@ -185,8 +227,8 @@ func distinctUser(v interface{}) interface{} {
 }
 func BenchmarkBlockSourceDistinct(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		dst, _ := From(arrRepeatedUser).DistinctBy(distinctUser).Results()
-		if len(dst) != count {
+		dst, _ := From(arrRptUser).DistinctBy(distinctUser).Results()
+		if len(dst) != countForB {
 			b.Fail()
 			//b.Log("arr=", arr)
 			b.Error("size is ", len(dst))
@@ -196,7 +238,7 @@ func BenchmarkBlockSourceDistinct(b *testing.B) {
 }
 
 func BenchmarkGoLinqDistinct(b *testing.B) {
-	if count > 10000 {
+	if countForB > 10000 {
 		b.Fatal()
 		return
 	}
@@ -205,7 +247,7 @@ func BenchmarkGoLinqDistinct(b *testing.B) {
 			v1, v2 := a.(user), b.(user)
 			return v1.id == v2.id, nil
 		}).Results()
-		if len(dst) != count {
+		if len(dst) != countForB {
 			b.Fail()
 			b.Error("size is ", len(dst))
 		}
@@ -218,7 +260,7 @@ func BenchmarkGoLinqDistinct(b *testing.B) {
 //			v1, v2 := a.(user), b.(user)
 //			return v1.id == v2.id, nil
 //		}).AsParallel().Results()
-//		if len(dst) != count {
+//		if len(dst) != countForB {
 //			b.Fail()
 //			b.Error("size is ", len(dst))
 //		}
@@ -249,14 +291,14 @@ func randomList(list []interface{}) {
 
 func BenchmarkBlockSourceOrder(b *testing.B) {
 	b.StopTimer()
-	randoms := make([]interface{}, 0, len(arrRepeatedUser))
-	_ = copy(randoms, arrRepeatedUser)
+	randoms := make([]interface{}, 0, len(arrRptUser))
+	_ = copy(randoms, arrRptUser)
 	randomList(randoms)
 	b.StartTimer()
 
 	for i := 0; i < b.N; i++ {
-		dst, _ := From(arrRepeatedUser).OrderBy(orderUser).Results()
-		if len(dst) != len(arrRepeatedUser) || dst[0].(user).id != 0 || dst[10].(user).id != 5 {
+		dst, _ := From(arrRptUser).OrderBy(orderUser).Results()
+		if len(dst) != len(arrRptUser) || dst[0].(user).id != 0 || dst[10].(user).id != 5 {
 			b.Fail()
 			//b.Log("arr=", arr)
 			b.Error("size is ", len(dst))
@@ -280,7 +322,7 @@ func resultSelector(u interface{}, v interface{}) interface{} {
 func BenchmarkBlockSourceJoin(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		dst, _ := From(arrUser).Join(arrRole, userSelector, roleSelector, resultSelector).Results()
-		if len(dst) != count {
+		if len(dst) != countForB {
 			b.Fail()
 			//b.Log("arr=", arr)
 			b.Error("size is ", len(dst))
@@ -290,7 +332,7 @@ func BenchmarkBlockSourceJoin(b *testing.B) {
 }
 
 func BenchmarkGoLinqJoin(b *testing.B) {
-	if count > 10000 {
+	if countForB > 10000 {
 		b.Fatal()
 		return
 	}
@@ -303,7 +345,7 @@ func BenchmarkGoLinqJoin(b *testing.B) {
 		}, func(u linq.T, v linq.T) linq.T {
 			return strconv.Itoa(u.(user).id) + "-" + v.(role).role
 		}).Results()
-		if len(dst) != count {
+		if len(dst) != countForB {
 			b.Fail()
 			b.Error("size is ", len(dst))
 		}
@@ -314,7 +356,7 @@ func BenchmarkGoLinqJoin(b *testing.B) {
 func BenchmarkBlockSourceUnion(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		dst, _ := From(arrUser).Union(arrUser2).Results()
-		if len(dst) != count+count/2 {
+		if len(dst) != countForB+countForB/2 {
 			b.Fail()
 			//b.Log("arr=", arr)
 			b.Error("size is ", len(dst))
@@ -326,7 +368,7 @@ func BenchmarkBlockSourceUnion(b *testing.B) {
 func BenchmarkGoLinqUnion(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		dst, _ := linq.From(arrUser).Union(arrUser2).Results()
-		if len(dst) != count+count/2 {
+		if len(dst) != countForB+countForB/2 {
 			b.Fail()
 			b.Error("size is ", len(dst))
 		}
@@ -337,7 +379,7 @@ func BenchmarkGoLinqUnion(b *testing.B) {
 func BenchmarkBlockSourceConcat(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		dst, _ := From(arrUser).Concat(arrUser2).Results()
-		if len(dst) != count+count {
+		if len(dst) != countForB+countForB {
 			b.Fail()
 			//b.Log("arr=", arr)
 			b.Error("size is ", len(dst))
@@ -350,7 +392,7 @@ func BenchmarkBlockSourceConcat(b *testing.B) {
 func BenchmarkBlockSourceIntersect(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		dst, _ := From(arrUser).Intersect(arrUser2).Results()
-		if len(dst) != count/2 {
+		if len(dst) != countForB/2 {
 			b.Fail()
 			//b.Log("arr=", arr)
 			b.Error("size is ", len(dst))
@@ -362,7 +404,7 @@ func BenchmarkBlockSourceIntersect(b *testing.B) {
 func BenchmarkGoLinqIntersect(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		dst, _ := linq.From(arrUser).Intersect(arrUser2).Results()
-		if len(dst) != count/2 {
+		if len(dst) != countForB/2 {
 			b.Fail()
 			b.Error("size is ", len(dst))
 		}
@@ -373,7 +415,7 @@ func BenchmarkGoLinqIntersect(b *testing.B) {
 func BenchmarkBlockSourceExcept(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		dst, _ := From(arrUser).Except(arrUser2).Results()
-		if len(dst) != count/2 {
+		if len(dst) != countForB/2 {
 			b.Fail()
 			//b.Log("arr=", arr)
 			b.Error("size is ", len(dst))
@@ -385,7 +427,7 @@ func BenchmarkBlockSourceExcept(b *testing.B) {
 func BenchmarkGoLinqExcept(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		dst, _ := linq.From(arrUser).Except(arrUser2).Results()
-		if len(dst) != count/2 {
+		if len(dst) != countForB/2 {
 			b.Fail()
 			b.Error("size is ", len(dst))
 		}
@@ -396,7 +438,7 @@ func BenchmarkGoLinqExcept(b *testing.B) {
 func BenchmarkBlockSourceReverse(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		dst, _ := From(arrUser).Reverse().Results()
-		if len(dst) != count {
+		if len(dst) != countForB {
 			b.Fail()
 			//b.Log("arr=", arr)
 			b.Error("size is ", len(dst))
@@ -408,7 +450,7 @@ func BenchmarkBlockSourceReverse(b *testing.B) {
 func BenchmarkGoLinqReverse(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		dst, _ := linq.From(arrUser).Reverse().Results()
-		if len(dst) != count {
+		if len(dst) != countForB {
 			b.Fail()
 			b.Error("size is ", len(dst))
 		}
@@ -430,7 +472,7 @@ func BenchmarkBlockSourceAggregate(b *testing.B) {
 			b.Fail()
 			b.Error(err)
 		}
-		//if len(dst) != count {
+		//if len(dst) != countForB {
 		//	b.Fail()
 		//	//b.Log("arr=", arr)
 		//	b.Error("size is ", len(dst))
@@ -450,7 +492,7 @@ func BenchmarkGoLinqAggregate(b *testing.B) {
 			b.Fail()
 			b.Error(err)
 		}
-		//if len(dst) != count {
+		//if len(dst) != countForB {
 		//	b.Fail()
 		//	b.Error("size is ", len(dst))
 		//}
@@ -591,4 +633,26 @@ func TestAvl(t *testing.T) {
 			}
 		})
 
+}
+
+func getChan(src []interface{}) chan interface{} {
+	chanSrc := make(chan interface{})
+	go func() {
+		for _, v := range src {
+			chanSrc <- v
+		}
+		close(chanSrc)
+	}()
+	return chanSrc
+}
+
+func getIntChan(src []int) chan int {
+	chanSrc := make(chan int)
+	go func() {
+		for _, v := range src {
+			chanSrc <- v
+		}
+		close(chanSrc)
+	}()
+	return chanSrc
 }
