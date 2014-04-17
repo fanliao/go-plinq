@@ -15,7 +15,7 @@ const (
 	ptrSize          = unsafe.Sizeof((*byte)(nil))
 	kindMask         = 0x7f
 	kindNoPointers   = 0x80
-	DEFAULTCHUNKSIZE = 200
+	DEFAULTCHUNKSIZE = 10
 )
 
 var (
@@ -36,6 +36,11 @@ var (
 func init() {
 	numCPU = runtime.NumCPU()
 	fmt.Println("ptrSize", ptrSize)
+
+	Sum = &AggregateOpr{0, sumOpr, sumOpr}
+	Count = &AggregateOpr{0, countOpr, sumOpr}
+	Min = &AggregateOpr{seed: nil}
+	Max = &AggregateOpr{seed: nil}
 }
 
 // the struct and interface about data DataSource---------------------------------------------------
@@ -61,6 +66,20 @@ type KeyValue struct {
 	key   interface{}
 	value interface{}
 }
+
+//Aggregate operation structs and functions-------------------------------
+type AggregateOpr struct {
+	seed      interface{}
+	action    func(interface{}, interface{}) interface{}
+	sumAction func(interface{}, interface{}) interface{}
+}
+
+var (
+	Sum   *AggregateOpr
+	Count *AggregateOpr
+	Min   *AggregateOpr
+	Max   *AggregateOpr
+)
 
 //the queryable struct-------------------------------------------------------------------------
 // A ParallelOption presents the options of the paralleliam algorithm.
@@ -172,7 +191,7 @@ func (this *Queryable) Results() (results []interface{}, err error) {
 	}
 }
 
-func (this *Queryable) Aggregate(aggregateFuncs ...func(interface{}, interface{}) interface{}) (result interface{}, err error) {
+func (this *Queryable) Aggregate(aggregateFuncs ...*AggregateOpr) (result interface{}, err error) {
 	if ds, e := this.get(); e == nil {
 
 		results, e := getAggregate(ds, aggregateFuncs, &(this.ParallelOption))
@@ -190,6 +209,47 @@ func (this *Queryable) Aggregate(aggregateFuncs ...func(interface{}, interface{}
 		return
 	} else {
 		return nil, e
+	}
+}
+
+func (this *Queryable) Average() (result interface{}, err error) {
+	aggregateOprs := make([]*AggregateOpr, 2)
+	aggregateOprs[0] = Sum
+	aggregateOprs[1] = Count
+	if results, err := this.Aggregate(aggregateOprs...); err == nil {
+		count := float64(results.([]interface{})[1].(int))
+		var r float64 = 0
+		switch val := results.([]interface{})[0].(type) {
+		case int:
+			r = float64(val) / count
+		case int8:
+			r = float64(val) / count
+		case int16:
+			r = float64(val) / count
+		case int32:
+			r = float64(val) / count
+		case int64:
+			r = float64(val) / count
+		case uint:
+			r = float64(val) / count
+		case uint8:
+			r = float64(val) / count
+		case uint16:
+			r = float64(val) / count
+		case uint32:
+			r = float64(val) / count
+		case uint64:
+			r = float64(val) / count
+		case float32:
+			r = float64(val) / count
+		case float64:
+			r = float64(val) / count
+		default:
+			panic(errors.New("unsupport aggregate type")) //reflect.NewAt(t, ptr).Elem().Interface()
+		}
+		return r, nil
+	} else {
+		return nil, err
 	}
 }
 
@@ -1159,7 +1219,7 @@ func getReverse() stepAction {
 	})
 }
 
-func getAggregate(src DataSource, aggregateFuncs []func(interface{}, interface{}) interface{}, option *ParallelOption) (result []interface{}, err error) {
+func getAggregate(src DataSource, aggregateFuncs []*AggregateOpr, option *ParallelOption) (result []interface{}, err error) {
 	keep := option.keepOrder
 
 	//try to use sequentail if the size of the data is less than size of chunk
@@ -1180,12 +1240,12 @@ func getAggregate(src DataSource, aggregateFuncs []func(interface{}, interface{}
 	agg := func(c *Chunk) {
 		if first {
 			for i := 0; i < len(rs); i++ {
-				rs[i] = c.data[i]
+				rs[i] = aggregateFuncs[i].seed
 			}
-		} else {
-			for i := 0; i < len(rs); i++ {
-				rs[i] = iif(first, c.data[i], aggregateFuncs[i](c.data[i], rs[i]))
-			}
+		}
+		first = false
+		for i := 0; i < len(rs); i++ {
+			rs[i] = aggregateFuncs[i].sumAction(c.data[i], rs[i])
 		}
 		first = false
 	}
@@ -1488,7 +1548,7 @@ func trySequentialMap(src DataSource, option *ParallelOption, mapChunk func(c *C
 
 }
 
-func trySequentialAggregate(src DataSource, option *ParallelOption, aggregateFuncs []func(interface{}, interface{}) interface{}) ([]interface{}, bool) {
+func trySequentialAggregate(src DataSource, option *ParallelOption, aggregateFuncs []*AggregateOpr) ([]interface{}, bool) {
 	if useSingle := singleDegree(src, option); useSingle {
 		rs := aggregateSlice(src.ToSlice(false), aggregateFuncs)
 		return rs, true
@@ -1637,7 +1697,7 @@ func mapSlice(src []interface{}, f func(interface{}) interface{}, out *[]interfa
 	return dst
 }
 
-func aggregateSlice(src []interface{}, fs []func(interface{}, interface{}) interface{}) []interface{} {
+func aggregateSlice(src []interface{}, fs []*AggregateOpr) []interface{} {
 	//fmt.Println("aggregateSlice0", src)
 	if len(src) == 0 {
 		return nil
@@ -1646,15 +1706,15 @@ func aggregateSlice(src []interface{}, fs []func(interface{}, interface{}) inter
 	//fmt.Println("aggregateSlice1", fs)
 	rs := make([]interface{}, len(fs))
 	for j := 0; j < len(fs); j++ {
-		rs[j] = src[0]
+		rs[j] = fs[j].seed
 	}
 
-	for i := 1; i < len(src); i++ {
+	for i := 0; i < len(src); i++ {
 		for j := 0; j < len(fs); j++ {
-			rs[j] = fs[j](src[i], rs[j])
+			rs[j] = fs[j].action(src[i], rs[j])
 		}
 	}
-	//fmt.Println("aggregateSlice2", rs)
+	//fmt.Println("aggregateSlice ", src, "return", rs)
 	return rs
 }
 
@@ -1762,4 +1822,63 @@ func getDegreeArg(degrees ...int) int {
 		}
 	}
 	return degree
+}
+
+func sumOpr(v interface{}, t interface{}) interface{} {
+	switch val := v.(type) {
+	case int:
+		return val + t.(int)
+	case int8:
+		return val + t.(int8)
+	case int16:
+		return val + t.(int16)
+	case int32:
+		return val + t.(int32)
+	case int64:
+		return val + t.(int64)
+	case uint:
+		return val + t.(uint)
+	case uint8:
+		return val + t.(uint8)
+	case uint16:
+		return val + t.(uint16)
+	case uint32:
+		return val + t.(uint32)
+	case uint64:
+		return val + t.(uint64)
+	case float32:
+		return val + t.(float32)
+	case float64:
+		return val + t.(float64)
+	case string:
+		return val + t.(string)
+	default:
+		panic(errors.New("unsupport aggregate type")) //reflect.NewAt(t, ptr).Elem().Interface()
+	}
+}
+
+func countOpr(v interface{}, t interface{}) interface{} {
+	return t.(int) + 1
+}
+
+func minOpr(v interface{}, t interface{}, less func(interface{}, interface{}) bool) interface{} {
+	if t == nil {
+		return v
+	}
+	if less(v, t) {
+		return v
+	} else {
+		return t
+	}
+}
+
+func maxOpr(v interface{}, t interface{}, less func(interface{}, interface{}) bool) interface{} {
+	if t == nil {
+		return v
+	}
+	if less(v, t) {
+		return t
+	} else {
+		return v
+	}
 }

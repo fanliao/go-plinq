@@ -261,14 +261,15 @@ func main() {
 		return q.Reverse()
 	})
 
-	sum := func(v interface{}, summary interface{}) interface{} {
-		return v.(int) + summary.(int)
-	}
-	//test Reverse
-	testLinqWithAllSource("aggregate opretions", src1, func(q *Queryable) *Queryable {
-		return q.Aggregate(sum)
+	//test Aggregate
+	testLinqAggWithAllSource("aggregate opretions", src1, func(q *Queryable) (interface{}, error) {
+		return q.Aggregate(Sum)
 	})
 
+	//test Average
+	testLinqAggWithAllSource("aggregate opretions", src1, func(q *Queryable) (interface{}, error) {
+		return q.Average()
+	})
 	fmt.Print("distinctKvs return:")
 	concats, _ := From(src1).Concat(src2).Results()
 	kvs, e := distinctKVs(concats, &ParallelOption{numCPU, DEFAULTCHUNKSIZE, false})
@@ -322,8 +323,7 @@ func testLinqOpr(title string, linqFunc func() ([]interface{}, error), rsHandler
 func testLinqAgg(title string, aggFunc func() (interface{}, error)) {
 	fmt.Print(title, " ")
 	if dst, err := aggFunc(); err == nil {
-		fmt.Print("return:")
-		rsHanlder(dst)
+		fmt.Printf("return:%v", dst)
 		fmt.Println("\n")
 	} else {
 		fmt.Println("get error:\n", err, "\n")
@@ -339,13 +339,13 @@ func testLinqWithAllSource(title string, listSrc []interface{}, query func(*Quer
 	}, rsHandlers...)
 }
 
-func testLinqAggWithAllSource(title string, listSrc []interface{}, agg func(*Queryable) (interface{}, error), rsHandlers ...func([]interface{})) {
-	testLinqOpr(title, func() ([]interface{}, error) {
-		return query(From(listSrc)).Results()
-	}, rsHandlers...)
-	testLinqOpr("Chan source use "+title, func() ([]interface{}, error) {
-		return query(From(getChanSrc(listSrc))).Results()
-	}, rsHandlers...)
+func testLinqAggWithAllSource(title string, listSrc []interface{}, agg func(*Queryable) (interface{}, error)) {
+	testLinqAgg(title, func() (interface{}, error) {
+		return agg(From(listSrc))
+	})
+	testLinqAgg("Chan source use "+title, func() (interface{}, error) {
+		return agg(From(getChanSrc(listSrc)))
+	})
 }
 
 func testAVL() {

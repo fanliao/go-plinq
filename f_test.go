@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	count         int = 1000
-	distinctcount int = 1100
+	count         int = 10000
+	distinctcount int = 11000
 	MAXPROCS      int = 4
 )
 
@@ -418,6 +418,49 @@ func BenchmarkGoLinqReverse(b *testing.B) {
 			b.Error("size is ", len(dst))
 		}
 	}
+}
+
+func sum(v interface{}, summary interface{}) interface{} {
+	return v.(int) + summary.(int)
+}
+
+////test reverse--------------------------------------------------------------------
+func BenchmarkBlockSourceAggregate(b *testing.B) {
+	var (
+		r   interface{}
+		err error
+	)
+	for i := 0; i < b.N; i++ {
+		if r, err = From(arr).Aggregate(Sum); err != nil {
+			b.Fail()
+			b.Error(err)
+		}
+		//if len(dst) != count {
+		//	b.Fail()
+		//	//b.Log("arr=", arr)
+		//	b.Error("size is ", len(dst))
+		//	b.Log("dst=", dst)
+		//}
+	}
+	b.Log(r)
+}
+
+func BenchmarkGoLinqAggregate(b *testing.B) {
+	var (
+		r   interface{}
+		err error
+	)
+	for i := 0; i < b.N; i++ {
+		if r, err = linq.From(arr).Sum(); err != nil {
+			b.Fail()
+			b.Error(err)
+		}
+		//if len(dst) != count {
+		//	b.Fail()
+		//	b.Error("size is ", len(dst))
+		//}
+	}
+	b.Log(r)
 }
 
 //func BencmarkQuickSort(b *testing.B) {
