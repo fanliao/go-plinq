@@ -311,6 +311,7 @@ func (this *Queryable) Where(predicate func(interface{}) bool, degrees ...int) *
 // 	})
 func (this *Queryable) Select(selectFunc func(interface{}) interface{}, degrees ...int) *Queryable {
 	isNotNil(selectFunc, ErrNilAction)
+
 	this.steps = append(this.steps, commonStep{ACT_SELECT, selectFunc, getDegreeArg(degrees...)})
 	return this
 }
@@ -333,6 +334,7 @@ func (this *Queryable) Distinct(degrees ...int) *Queryable {
 //		return p.(*Person).FirstName
 // 	})
 func (this *Queryable) DistinctBy(distinctFunc func(interface{}) interface{}, degrees ...int) *Queryable {
+	isNotNil(distinctFunc, ErrNilAction)
 	this.steps = append(this.steps, commonStep{ACT_DISTINCT, distinctFunc, getDegreeArg(degrees...)})
 	return this
 }
@@ -1104,17 +1106,12 @@ func getJoinImpl(inner interface{},
 		})
 
 		mapChunk := func(c *Chunk) (r *Chunk) {
-			defer func() {
-				if e := recover(); e != nil {
-					fmt.Println("mapChunk get error:", e)
-				}
-			}()
 			outerKVs := getKeyValues(c, outerKeySelector, nil)
 			results := make([]interface{}, 0, 10)
 
 			if r, err := innerKVtask.Get(); err != nil {
 				//todo:
-				fmt.Println("innerKV get error", err, r)
+				panic(err)
 			} else {
 				innerKVs := r.(map[interface{}]interface{})
 
@@ -1124,7 +1121,6 @@ func getJoinImpl(inner interface{},
 						//fmt.Println("outer", *outerkv, "inner", innerList)
 						matchSelector(outerkv, innerList.([]interface{}), &results)
 					} else if isLeftJoin {
-						//fmt.Println("outer", *outerkv)
 						unmatchSelector(outerkv, &results)
 					}
 				}
@@ -1550,14 +1546,17 @@ func parallelMapListToList(src DataSource, task func(*Chunk) *Chunk, option *Par
 }
 
 func parallelMapList(src DataSource, getAction func(*Chunk) func() (interface{}, error), option *ParallelOption) (f *promise.Future) {
-	fs := make([]*promise.Future, option.degree)
 	data := src.ToSlice(false)
+	if len(data) == 0 {
+		return promise.Wrap([]interface{}{})
+	}
 	lenOfData, size, j := len(data), ceilChunkSize(len(data), option.degree), 0
 
 	if size < option.chunkSize {
 		size = option.chunkSize
 	}
 
+	fs := make([]*promise.Future, option.degree)
 	for i := 0; i < option.degree && i*size < lenOfData; i++ {
 		end := (i + 1) * size
 		if end >= lenOfData {

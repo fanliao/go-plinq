@@ -4,6 +4,7 @@ import (
 	"github.com/ahmetalpbalkan/go-linq"
 	c "github.com/smartystreets/goconvey/convey"
 	//"math"
+	"errors"
 	"fmt"
 	"math/rand"
 	"reflect"
@@ -26,6 +27,7 @@ var (
 	arrUser2ForT   []interface{}       = make([]interface{}, count, count)
 	arrIntForT     []int               = make([]int, count, count)
 	mapForT        map[int]interface{} = make(map[int]interface{}, count)
+	arrRoleForT    []interface{}       = make([]interface{}, count, count)
 
 	arr        []interface{} = make([]interface{}, countForB, countForB)
 	arrUser    []interface{} = make([]interface{}, countForB, countForB)
@@ -46,6 +48,10 @@ func init() {
 	}
 	for i := 0; i < rptCount-count; i++ {
 		arrRptUserForT[count+i] = user{i, "user" + strconv.Itoa(count+i)}
+	}
+	for i := 0; i < count/2; i++ {
+		arrRoleForT[i*2] = role{i, "role" + strconv.Itoa(i)}
+		arrRoleForT[i*2+1] = role{i, "role" + strconv.Itoa(i+1)}
 	}
 
 	for i := 0; i < countForB; i++ {
@@ -114,6 +120,36 @@ func selectInt(v interface{}) interface{} {
 	return v.(int) * 10
 }
 
+func distinctUser(v interface{}) interface{} {
+	u := v.(user)
+	return u.id
+}
+
+func distinctUserPanic(v interface{}) interface{} {
+	var s []interface{}
+	_ = s[2]
+	u := v.(user)
+	return u.id
+}
+
+func userSelector(v interface{}) interface{} {
+	return v.(user).id
+}
+func roleSelector(v interface{}) interface{} {
+	r := v.(role)
+	return r.uid
+}
+func resultSelector(u interface{}, v interface{}) interface{} {
+	return strconv.Itoa(u.(user).id) + "-" + v.(role).role
+}
+func leftResultSelector(u interface{}, v interface{}) interface{} {
+	if v != nil {
+		return strconv.Itoa(u.(user).id) + "-" + v.(role).role
+	} else {
+		return strconv.Itoa(u.(user).id)
+	}
+}
+
 func TestWhere(t *testing.T) {
 	test := func(size int) {
 		c.Convey("When passed nil function, error be returned", func() {
@@ -157,13 +193,13 @@ func TestWhere(t *testing.T) {
 		//	c.So(err, c.ShouldBeNil)
 		//})
 
-		c.Convey("Filter a interface{} channel", func() {
+		c.Convey("Filter an interface{} channel", func() {
 			rs, err := From(getChan(arrUserForT)).SetSizeOfChunk(size).Where(whereUser).Results()
 			c.So(rs, shouldSlicesResemble, filteredUsers)
 			c.So(err, c.ShouldBeNil)
 		})
 
-		c.Convey("Filter a int channel", func() {
+		c.Convey("Filter an int channel", func() {
 			rs, err := From(getIntChan(arrIntForT)).SetSizeOfChunk(size).Where(whereInt).Results()
 			c.So(rs, shouldSlicesResemble, []interface{}{0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20})
 			c.So(err, c.ShouldBeNil)
@@ -222,13 +258,13 @@ func TestSelect(t *testing.T) {
 		//	c.So(err, c.ShouldBeNil)
 		//})
 
-		c.Convey("Select a interface{} channel", func() {
+		c.Convey("Select an interface{} channel", func() {
 			rs, err := From(getChan(arrUserForT)).SetSizeOfChunk(size).Select(selectUser).Results()
 			c.So(rs, shouldSlicesResemble, newUsers)
 			c.So(err, c.ShouldBeNil)
 		})
 
-		c.Convey("Select a int channel", func() {
+		c.Convey("Select an int channel", func() {
 			rs, err := From(getIntChan(arrIntForT)).SetSizeOfChunk(size).Select(selectInt).Results()
 			c.So(rs, shouldSlicesResemble, newInts)
 			c.So(err, c.ShouldBeNil)
@@ -238,6 +274,246 @@ func TestSelect(t *testing.T) {
 
 	c.Convey("Test Select Sequential", t, func() { test(30) })
 	c.Convey("Test Select parallel", t, func() { test(7) })
+}
+
+func TestDistinct(t *testing.T) {
+	test := func(size int) {
+		c.Convey("When passed nil function, error be returned", func() {
+			c.So(func() { From(arrIntForT).SetSizeOfChunk(size).DistinctBy(nil) }, c.ShouldPanicWith, ErrNilAction)
+		})
+
+		c.Convey("An error should be returned if the error appears in DistinctBy function", func() {
+			_, err := From(arrRptUserForT).SetSizeOfChunk(size).DistinctBy(distinctUserPanic).Results()
+			c.So(err, c.ShouldNotBeNil)
+		})
+
+		c.Convey("Distinct an empty slice", func() {
+			rs, err := From([]int{}).SetSizeOfChunk(size).Distinct().Results()
+			c.So(len(rs), c.ShouldEqual, 0)
+			c.So(err, c.ShouldBeNil)
+		})
+
+		rptInts := make([]int, count+2)
+		for i := 0; i < count; i++ {
+			rptInts[i] = i
+		}
+		rptInts[count] = 0
+		rptInts[count+1] = 1
+
+		c.Convey("Distinct an int slice", func() {
+			rs, err := From(rptInts).SetSizeOfChunk(size).Distinct().Results()
+			//TODO: cannot keep order, need more check
+			//c.So(rs, shouldSlicesResemble, arrIntForT)
+			c.So(len(rs), c.ShouldEqual, len(arrIntForT))
+			c.So(err, c.ShouldBeNil)
+		})
+
+		newUsers := make([]interface{}, count)
+		for i := 0; i < count; i++ {
+			newUsers[i] = strconv.Itoa(i) + "/" + "user" + strconv.Itoa(i)
+		}
+		c.Convey("DistinctBy an interface{} slice", func() {
+			rs, err := From(arrRptUserForT).SetSizeOfChunk(size).DistinctBy(distinctUser).Results()
+			//TODO: cannot keep order, need more check
+			//c.So(rs, shouldSlicesResemble, arrUserForT)
+			c.So(len(rs), c.ShouldEqual, len(arrUserForT))
+			c.So(err, c.ShouldBeNil)
+		})
+
+		c.Convey("Distinct an interface{} slice", func() {
+			rs, err := From(arrRptUserForT).SetSizeOfChunk(size).Distinct().Results()
+			//TODO: cannot keep order, need more check
+			//c.So(rs, shouldSlicesResemble, arrRptUserForT)
+			c.So(len(rs), c.ShouldEqual, len(arrRptUserForT))
+			c.So(err, c.ShouldBeNil)
+		})
+		//filteredKVs := make([]interface{}, count/2)
+		//for i := 0; i < count/2; i++ {
+		//	filteredKVs[i] = &KeyValue{i * 2, user{i * 2, "user" + strconv.Itoa(i*2)}}
+		//}
+		//c.Convey("Filter a map", t, func() {
+		//	rs, err := From(mapForT).Where(whereMap).Results()
+		//	c.So(rs, shouldSlicesResemble, filteredKVs)
+		//	c.So(err, c.ShouldBeNil)
+		//})
+
+		c.Convey("Distinct an interface{} channel", func() {
+			rs, err := From(getChan(arrRptUserForT)).SetSizeOfChunk(size).DistinctBy(distinctUser).Results()
+			//TODO: cannot keep order, need more check
+			//c.So(rs, shouldSlicesResemble, arrUserForT)
+			c.So(len(rs), c.ShouldEqual, len(arrUserForT))
+			c.So(err, c.ShouldBeNil)
+		})
+
+		c.Convey("Distinct an int channel", func() {
+			//TODO: cannot keep order, need more check
+			rs, err := From(getIntChan(rptInts)).SetSizeOfChunk(size).Distinct().Results()
+			//c.So(rs, shouldSlicesResemble, arrIntForT)
+			c.So(len(rs), c.ShouldEqual, len(arrIntForT))
+			c.So(err, c.ShouldBeNil)
+		})
+
+	}
+
+	c.Convey("Test Distinct Sequential", t, func() { test(30) })
+	c.Convey("Test Distinct parallel", t, func() { test(7) })
+}
+
+func TestGroupBy(t *testing.T) {
+	groupUser := func(v interface{}) interface{} {
+		return v.(user).id / 10
+	}
+	groupUserPanic := func(v interface{}) interface{} {
+		panic(errors.New("panic"))
+	}
+	test := func(size int) {
+		c.Convey("When passed nil function, error be returned", func() {
+			c.So(func() { From(arrIntForT).SetSizeOfChunk(size).GroupBy(nil) }, c.ShouldPanicWith, ErrNilAction)
+		})
+
+		c.Convey("An error should be returned if the error appears in GroupBy function", func() {
+			_, err := From(arrRptUserForT).SetSizeOfChunk(size).GroupBy(groupUserPanic).Results()
+			c.So(err, c.ShouldNotBeNil)
+		})
+
+		c.Convey("GroupBy an empty slice", func() {
+			rs, err := From([]int{}).SetSizeOfChunk(size).GroupBy(groupUserPanic).Results()
+			c.So(len(rs), c.ShouldEqual, 0)
+			c.So(err, c.ShouldBeNil)
+		})
+
+		c.Convey("groupBy an int slice", func() {
+			rs, err := From(arrIntForT).SetSizeOfChunk(size).GroupBy(func(v interface{}) interface{} {
+				return v.(int) / 10
+			}).Results()
+			c.So(len(rs), c.ShouldEqual, ceilChunkSize(len(arrIntForT), 10))
+			c.So(err, c.ShouldBeNil)
+		})
+
+		newUsers := make([]interface{}, count)
+		for i := 0; i < count; i++ {
+			newUsers[i] = strconv.Itoa(i) + "/" + "user" + strconv.Itoa(i)
+		}
+		c.Convey("groupBy an interface{} slice", func() {
+			rs, err := From(arrUserForT).SetSizeOfChunk(size).GroupBy(groupUser).Results()
+			c.So(len(rs), c.ShouldEqual, ceilChunkSize(len(arrUserForT), 10))
+			c.So(err, c.ShouldBeNil)
+		})
+
+		//filteredKVs := make([]interface{}, count/2)
+		//for i := 0; i < count/2; i++ {
+		//	filteredKVs[i] = &KeyValue{i * 2, user{i * 2, "user" + strconv.Itoa(i*2)}}
+		//}
+		//c.Convey("Filter a map", t, func() {
+		//	rs, err := From(mapForT).Where(whereMap).Results()
+		//	c.So(rs, shouldSlicesResemble, filteredKVs)
+		//	c.So(err, c.ShouldBeNil)
+		//})
+
+		c.Convey("groupBy an interface{} channel", func() {
+			rs, err := From(getChan(arrUserForT)).SetSizeOfChunk(size).GroupBy(groupUser).Results()
+			c.So(len(rs), c.ShouldEqual, ceilChunkSize(len(arrUserForT), 10))
+			c.So(err, c.ShouldBeNil)
+		})
+
+	}
+
+	c.Convey("Test groupBy Sequential", t, func() { test(30) })
+	c.Convey("Test groupBy parallel", t, func() { test(7) })
+}
+
+func TestJoin(t *testing.T) {
+	userSelectorPanic := func(v interface{}) interface{} {
+		panic(errors.New("panic"))
+	}
+	roleSelectorPanic := func(v interface{}) interface{} {
+		panic(errors.New("panic"))
+	}
+	resultSelectorPanic := func(u interface{}, v interface{}) interface{} {
+		panic(errors.New("panic"))
+	}
+
+	testJoin := func(size int) {
+		c.Convey("When passed nil inner, error be returned", func() {
+			c.So(func() { From(arrUserForT).SetSizeOfChunk(size).Join(nil, nil, nil, nil) }, c.ShouldPanicWith, ErrJoinNilSource)
+			c.So(func() { From(arrUserForT).SetSizeOfChunk(size).Join(arrRoleForT, nil, nil, nil) }, c.ShouldPanicWith, ErrOuterKeySelector)
+			c.So(func() { From(arrUserForT).SetSizeOfChunk(size).Join(arrUser2ForT, userSelector, nil, nil) }, c.ShouldPanicWith, ErrInnerKeySelector)
+			c.So(func() { From(arrUserForT).SetSizeOfChunk(size).Join(arrUser2ForT, userSelector, roleSelector, nil) }, c.ShouldPanicWith, ErrResultSelector)
+		})
+
+		c.Convey("An error should be returned if the error appears in Join function", func() {
+			_, err := From(arrUserForT).SetSizeOfChunk(size).Join(arrRoleForT, userSelectorPanic, roleSelector, resultSelector).Results()
+			c.So(err, c.ShouldNotBeNil)
+
+			_, err = From(arrUserForT).SetSizeOfChunk(size).Join(arrRoleForT, userSelector, roleSelectorPanic, resultSelector).Results()
+			c.So(err, c.ShouldNotBeNil)
+
+			_, err = From(arrUserForT).SetSizeOfChunk(size).Join(arrRoleForT, userSelector, roleSelector, resultSelectorPanic).Results()
+			c.So(err, c.ShouldNotBeNil)
+		})
+
+		c.Convey("Join an empty slice as outer source", func() {
+			rs, err := From([]int{}).SetSizeOfChunk(size).Join(arrUser2ForT, userSelector, roleSelector, resultSelector).Results()
+			c.So(len(rs), c.ShouldEqual, 0)
+			c.So(err, c.ShouldBeNil)
+		})
+
+		c.Convey("Join an empty slice as inner source", func() {
+			rs, err := From([]int{}).SetSizeOfChunk(size).Join([]interface{}{}, userSelector, roleSelector, resultSelector).Results()
+			c.So(len(rs), c.ShouldEqual, 0)
+			c.So(err, c.ShouldBeNil)
+		})
+
+		c.Convey("Join an interface{} slice as inner source", func() {
+			rs, err := From(arrUserForT).SetSizeOfChunk(size).Join(arrRoleForT, userSelector, roleSelector, resultSelector).Results()
+			//TODO: need test KeepOrder()
+			c.So(len(rs), c.ShouldEqual, count)
+			c.So(err, c.ShouldBeNil)
+		})
+
+	}
+	c.Convey("Test Join Sequential", t, func() { testJoin(30) })
+	c.Convey("Test Join parallel", t, func() { testJoin(7) })
+
+	testLeftJoin := func(size int) {
+		c.Convey("LeftJoin an empty slice as outer source", func() {
+			rs, err := From([]int{}).SetSizeOfChunk(size).LeftJoin(arrUser2ForT, userSelector, roleSelector, resultSelector).Results()
+			c.So(len(rs), c.ShouldEqual, 0)
+			c.So(err, c.ShouldBeNil)
+		})
+
+		c.Convey("LeftJoin an empty slice as inner source, but doesn't check if the inner is nil", func() {
+			rs, err := From(arrUserForT).SetSizeOfChunk(size).LeftJoin([]interface{}{}, userSelector, roleSelector, resultSelector).Results()
+			//TODO: need test KeepOrder()
+			c.So(len(rs), c.ShouldEqual, 0)
+			c.So(err, c.ShouldNotBeNil)
+		})
+
+		c.Convey("LeftJoin an interface{} slice as inner source, but doesn't check if the inner is nil", func() {
+			rs, err := From(arrUserForT).SetSizeOfChunk(size).LeftJoin(arrRoleForT, userSelector, roleSelector, resultSelector).Results()
+			//TODO: need test KeepOrder()
+			c.So(len(rs), c.ShouldEqual, 0)
+			c.So(err, c.ShouldNotBeNil)
+		})
+
+		c.Convey("LeftJoin an empty slice as inner source", func() {
+			rs, err := From(arrUserForT).SetSizeOfChunk(size).LeftJoin([]interface{}{}, userSelector, roleSelector, leftResultSelector).Results()
+			//TODO: need test KeepOrder()
+			c.So(len(rs), c.ShouldEqual, count)
+			c.So(err, c.ShouldBeNil)
+		})
+
+		c.Convey("LeftJoin an interface{} slice as inner source", func() {
+			rs, err := From(arrUserForT).SetSizeOfChunk(size).LeftJoin(arrRoleForT, userSelector, roleSelector, leftResultSelector).Results()
+			//TODO: need test KeepOrder()
+			c.So(len(rs), c.ShouldEqual, count+count/2)
+			c.So(err, c.ShouldBeNil)
+		})
+
+	}
+	c.Convey("Test LeftJoin Sequential", t, func() { testLeftJoin(30) })
+	c.Convey("Test LeftJoin parallel", t, func() { testLeftJoin(7) })
+
 }
 
 func BenchmarkBlockSourceWhere(b *testing.B) {
@@ -335,10 +611,6 @@ func BenchmarkBlockSourceGroupBy(b *testing.B) {
 }
 
 //test distinct-----------------------------------------------------------------------------
-func distinctUser(v interface{}) interface{} {
-	u := v.(user)
-	return u.id
-}
 func BenchmarkBlockSourceDistinct(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		dst, _ := From(arrRptUser).DistinctBy(distinctUser).Results()
@@ -422,17 +694,6 @@ func BenchmarkBlockSourceOrder(b *testing.B) {
 }
 
 //test join-----------------------------------------------------------------
-func userSelector(v interface{}) interface{} {
-	return v.(user).id
-}
-func roleSelector(v interface{}) interface{} {
-	r := v.(role)
-	return r.uid
-}
-func resultSelector(u interface{}, v interface{}) interface{} {
-	return strconv.Itoa(u.(user).id) + "-" + v.(role).role
-}
-
 func BenchmarkBlockSourceJoin(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		dst, _ := From(arrUser).Join(arrRole, userSelector, roleSelector, resultSelector).Results()
