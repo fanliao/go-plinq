@@ -1,120 +1,10 @@
-package main
+package plinq
 
 import (
 	"fmt"
 	"strconv"
 	"time"
 )
-
-//queryable-------------------------------------------------------------------------------------
-
-//type queryable struct {
-//	source  chan interface{}
-//	actions []func(chan interface{}) chan interface{}
-//	datas   []interface{}
-//}
-
-//func (this queryable) Where(sure func(interface{}) bool) queryable {
-//	action := func(src chan interface{}) chan interface{} {
-//		return forChan(src, func(v interface{}, dst chan interface{}) {
-//			if sure(v) {
-//				dst <- v
-//			}
-//		})
-//	}
-//	this.actions = append(this.actions, action)
-//	return this
-//}
-
-//func (this queryable) Select(f func(interface{}) interface{}) queryable {
-//	action := func(src chan interface{}) chan interface{} {
-//		return forChan(src, func(v interface{}, dst chan interface{}) {
-//			dst <- f(v)
-//		})
-
-//	}
-//	this.actions = append(this.actions, action)
-//	return this
-//}
-
-//func (this queryable) Get() chan interface{} {
-//	src := this.source
-//	datas := make([]interface{}, 0, 10000)
-//	startChan := make(chan Chunk, 10000)
-//	endChan := make(chan int)
-//	go func() {
-//		count, start, end := 0, 0, 0
-//		for v := range src {
-//			datas = append(datas, v)
-//			count++
-//			if count == BATCH_SIZE {
-//				end = len(datas) - 1
-//				startChan <- Chunk{start, end}
-//				fmt.Println("send", start, end, datas[start:end+1])
-//				count, start = 0, end+1
-//			}
-//		}
-//		endChan <- 1
-//		close(startChan)
-//	}()
-//	<-endChan
-//	for _, action := range this.actions {
-//		src = action(src)
-//	}
-//	return src
-//}
-
-//func forChan(src chan interface{}, f func(interface{}, chan interface{})) chan interface{} {
-//	dst := make(chan interface{}, 1)
-//	go func() {
-//		for v := range src {
-//			f(v, dst)
-//		}
-//		close(dst)
-//	}()
-//	return dst
-//}
-
-type queryableS struct {
-	source  []interface{}
-	actions []func([]interface{}) []interface{}
-}
-
-func (this queryableS) Where(sure func(interface{}) bool) queryableS {
-	action := func(src []interface{}) []interface{} {
-		//dst := make([]interface{}, 0, len(this.source))
-		//mapSlice(src, func(v interface{}, out *[]interface{}) {
-		//	if sure(v) {
-		//		*out = append(*out, v)
-		//	}
-		//}, &dst)
-		dst := filterSlice(src, sure)
-		return dst
-	}
-	this.actions = append(this.actions, action)
-	return this
-}
-
-func (this queryableS) Select(f func(interface{}) interface{}) queryableS {
-	action := func(src []interface{}) []interface{} {
-		//dst := make([]interface{}, 0, len(this.source))
-		//mapSlice(src, func(v interface{}, out *[]interface{}) {
-		//	*out = append(*out, f(v))
-		//}, &dst)
-		dst := mapSlice(src, f, nil)
-		return dst
-	}
-	this.actions = append(this.actions, action)
-	return this
-}
-
-func (this queryableS) Get() []interface{} {
-	data := this.source
-	for _, action := range this.actions {
-		data = action(data)
-	}
-	return data
-}
 
 type power struct {
 	i int
@@ -143,7 +33,7 @@ func getIntChanSrc(src []int) chan int {
 	return chanSrc
 }
 
-func main() {
+func TestLinq() {
 	time.Now()
 	count := 20
 

@@ -1,4 +1,4 @@
-package main
+package plinq
 
 import (
 	"github.com/ahmetalpbalkan/go-linq"
@@ -75,18 +75,6 @@ func select1(v interface{}) interface{} {
 
 func select2(v interface{}) interface{} {
 	return math.Sin(math.Cos(math.Pow(float64(v.(int)), 2)))
-}
-
-func BenchmarkSyncWhere(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		q := queryableS{arrUser, make([]func([]interface{}) []interface{}, 0, 1)}
-		dst := q.Where(whereUser).Get()
-
-		if len(dst) != count/2 {
-			b.Fail()
-			b.Error("size is ", len(dst))
-		}
-	}
 }
 
 func BenchmarkBlockSourceWhere(b *testing.B) {
