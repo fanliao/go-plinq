@@ -296,6 +296,14 @@ func (this *Queryable) Intersect(source2 interface{}, degrees ...int) *Queryable
 	return this
 }
 
+// Except returns a query includes the Except operation
+// Except operation returns set except of the source and the
+// provided secondary source using hash function comparer, hash(i)==hash(o). the secondary source must
+// be a valid linq data source.
+//
+// Example:
+// 	q := From(int[]{1,2,3,4,5}).Except(int[]{3,4,5,6})
+// 	// q.Results() returns {1,2}
 func (this *Queryable) Except(source2 interface{}, degrees ...int) *Queryable {
 	isNotNil(source2, ErrInterestNilSource)
 
@@ -1126,9 +1134,7 @@ func getSet(src DataSource, source2 interface{}, filter func(uint64, map[uint64]
 	f1, f2 := promise.Start(func() (interface{}, error) {
 		return distinctKvs(source2, option)
 	}), promise.Start(func() (interface{}, error) {
-		return newQueryable(src).Select(func(v interface{}) interface{} {
-			return &KeyValue{hash64(v), v}
-		}).Results()
+		return selectKVs(newQueryable(src))
 	})
 
 	if r1, err := f1.Get(); err != nil {
@@ -1157,47 +1163,12 @@ func getSet(src DataSource, source2 interface{}, filter func(uint64, map[uint64]
 
 		return results[0:i], resultKVs, nil
 	}
-	//allFutures := promise.WhenAll(promise.Start(func() (interface{}, error) {
-	//	return distinctKvs(source2, option)
-	//}), promise.Start(func() (interface{}, error) {
-	//	return newQueryable(src).Select(func(v interface{}) interface{} {
-	//		return &KeyValue{hash64(v), v}
-	//	}).Results()
-	//}))
-
-	//if r, err := allFutures.Get(); err == nil {
-	//	distKvs := r.([]interface{})[0].(map[uint64]interface{})
-	//	kvs := r.([]interface{})[1].([]interface{})
-
-	//	//filter src
-	//	i := 0
-	//	results, resultKVs := make([]interface{}, len(distKvs)),
-	//		make(map[uint64]interface{}, len(distKvs))
-	//	for _, v := range kvs {
-	//		kv := v.(*KeyValue)
-	//		k :=kv.key.(uint64)
-	//		if filter(k, distKvs) {
-	//			if _, ok := resultKVs[k]; !ok {
-	//				resultKVs[k] = kv.value
-	//				results[i] = kv.value
-	//				i++
-	//			}
-	//		}
-	//	}
-
-	//	return results[0:i], resultKVs, nil
-	//} else {
-	//	return nil, nil, NewLinqError("Set error", r)
-	//}
 }
 
 func distinctKvs(src interface{}, option *ParallelOption) (map[uint64]interface{}, error) {
 	distKvs := make(map[uint64]interface{})
-	q := From(src).Select(func(v interface{}) interface{} {
-		return &KeyValue{hash64(v), v}
-	})
 
-	if kvs, err := q.Results(); err != nil {
+	if kvs, err := selectKVs(From(src)); err != nil {
 		return nil, err
 	} else {
 		//get distinct values
@@ -1212,6 +1183,12 @@ func distinctKvs(src interface{}, option *ParallelOption) (map[uint64]interface{
 
 		return distKvs, nil
 	}
+}
+
+func selectKVs(q *Queryable) ([]interface{}, error) {
+	return q.Select(func(v interface{}) interface{} {
+		return &KeyValue{hash64(v), v}
+	}).Results()
 }
 
 //paralleliam functions------------------------------------------
