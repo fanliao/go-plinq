@@ -23,6 +23,7 @@ var (
 	ErrUnionNilSource    = errors.New("cannot union nil data source")
 	ErrConcatNilSource   = errors.New("cannot concat nil data source")
 	ErrInterestNilSource = errors.New("cannot interest nil data source")
+	ErrExceptNilSource   = errors.New("cannot Except nil data source")
 	ErrJoinNilSource     = errors.New("cannot join nil data source")
 	ErrNilAction         = errors.New("action cannot be nil")
 	ErrOuterKeySelector  = errors.New("outerKeySelector cannot be nil")
@@ -194,12 +195,14 @@ func (this *Queryable) Aggregate(aggregateFuncs ...*AggregateOpr) (result interf
 			close(this.errChan)
 		}
 
+		if e != nil {
+			return nil, e
+		}
 		if len(aggregateFuncs) == 1 {
 			result = results[0]
 		} else {
 			result = results
 		}
-		err = e
 		return
 	} else {
 		return nil, e
@@ -213,6 +216,20 @@ func (this *Queryable) Aggregate(aggregateFuncs ...*AggregateOpr) (result interf
 //	sum, err := From(arr).Sum() // sum is 18
 func (this *Queryable) Sum() (result interface{}, err error) {
 	aggregateOprs := []*AggregateOpr{Sum}
+
+	if result, err = this.Aggregate(aggregateOprs...); err == nil {
+		return result, nil
+	} else {
+		return nil, err
+	}
+}
+
+// Count returns number of elements in the data source.
+// Example:
+//	arr = []interface{}{0, 3, 6, 9}
+//	count, err := From(arr).Count() // count is 4
+func (this *Queryable) Count() (result interface{}, err error) {
+	aggregateOprs := []*AggregateOpr{Count}
 
 	if result, err = this.Aggregate(aggregateOprs...); err == nil {
 		return result, nil
@@ -246,12 +263,12 @@ func (this *Queryable) Average() (result interface{}, err error) {
 // Example:
 //	arr = []interface{}{0, 3, 6, 9}
 //	max, err := From(arr).Max() // max is 9
-func (this *Queryable) Max(lesss ...func(interface{}, interface{}) bool) (result interface{}, err error) {
+func (this *Queryable) Max(lesses ...func(interface{}, interface{}) bool) (result interface{}, err error) {
 	var less func(interface{}, interface{}) bool
-	if lesss == nil || len(lesss) == 0 {
+	if lesses == nil || len(lesses) == 0 {
 		less = defLess
 	} else {
-		less = lesss[0]
+		less = lesses[0]
 	}
 
 	aggregateOprs := []*AggregateOpr{getMaxOpr(less)}
@@ -270,12 +287,12 @@ func (this *Queryable) Max(lesss ...func(interface{}, interface{}) bool) (result
 // Example:
 //	arr = []interface{}{0, 3, 6, 9}
 //	min, err := From(arr).Max() // min is 0
-func (this *Queryable) Min(lesss ...func(interface{}, interface{}) bool) (result interface{}, err error) {
+func (this *Queryable) Min(lesses ...func(interface{}, interface{}) bool) (result interface{}, err error) {
 	var less func(interface{}, interface{}) bool
-	if lesss == nil || len(lesss) == 0 {
+	if lesses == nil || len(lesses) == 0 {
 		less = defLess
 	} else {
-		less = lesss[0]
+		less = lesses[0]
 	}
 
 	aggregateOprs := []*AggregateOpr{getMinOpr(less)}
@@ -350,6 +367,9 @@ func (this *Queryable) DistinctBy(distinctFunc func(interface{}) interface{}, de
 //		return this.(*User).Age < that.(*User).Age
 // 	})
 func (this *Queryable) OrderBy(compare func(interface{}, interface{}) int) *Queryable {
+	if compare == nil {
+		compare = defCompare
+	}
 	this.steps = append(this.steps, commonStep{ACT_ORDERBY, compare, this.degree})
 	return this
 }
@@ -422,7 +442,7 @@ func (this *Queryable) Intersect(source2 interface{}, degrees ...int) *Queryable
 // 	q := From(int[]{1,2,3,4,5}).Except(int[]{3,4,5,6})
 // 	// q.Results() returns {1,2}
 func (this *Queryable) Except(source2 interface{}, degrees ...int) *Queryable {
-	isNotNil(source2, ErrInterestNilSource)
+	isNotNil(source2, ErrExceptNilSource)
 
 	this.steps = append(this.steps, commonStep{ACT_EXCEPT, source2, getDegreeArg(degrees...)})
 	return this
@@ -964,6 +984,11 @@ func getWhere(predicate func(interface{}) bool) stepAction {
 
 func getOrder(compare func(interface{}, interface{}) int) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption) (dst DataSource, sf *promise.Future, keep bool, e error) {
+		defer func() {
+			if err := recover(); err != nil {
+				e = newErrorWithStacks(err)
+			}
+		}()
 		//order operation be sequentail
 		option.degree = 1
 
@@ -1259,6 +1284,9 @@ func getReverse() stepAction {
 }
 
 func getAggregate(src DataSource, aggregateFuncs []*AggregateOpr, option *ParallelOption) (result []interface{}, err error) {
+	if aggregateFuncs == nil || len(aggregateFuncs) == 0 {
+		return nil, newErrorWithStacks(errors.New("Aggregation function cannot be nil"))
+	}
 	keep := option.keepOrder
 
 	//var (
@@ -1317,7 +1345,11 @@ func getAggregate(src DataSource, aggregateFuncs []*AggregateOpr, option *Parall
 		}
 	}
 
-	return rs, err
+	if first {
+		return rs, newErrorWithStacks(errors.New("cannot aggregate an empty slice"))
+	} else {
+		return rs, err
+	}
 
 }
 
@@ -1338,8 +1370,8 @@ func filterSet(src DataSource, source2 interface{}, filter func(uint64, map[uint
 
 		//filter src
 		i := 0
-		results, resultKVs := make([]interface{}, len(distKVs)),
-			make(map[uint64]interface{}, len(distKVs))
+		results, resultKVs := make([]interface{}, len(kvs)),
+			make(map[uint64]interface{}, len(kvs))
 		for _, v := range kvs {
 			kv := v.(*KeyValue)
 			k := kv.key.(uint64)
@@ -1604,14 +1636,21 @@ func trySequentialMap(src DataSource, option *ParallelOption, mapChunk func(c *C
 
 }
 
-func trySequentialAggregate(src DataSource, option *ParallelOption, aggregateFuncs []*AggregateOpr) (rs []interface{}, err error, ok bool) {
+func trySequentialAggregate(src DataSource, option *ParallelOption, aggregateFuncs []*AggregateOpr) (rs []interface{}, err error, handled bool) {
 	defer func() {
 		if e := recover(); e != nil {
 			err = newErrorWithStacks(e)
+			handled = true
 			//return nil, newErrorWithStacks(e), true
 		}
 	}()
 	if useSingle := singleDegree(src, option); useSingle || ifMustSequential(aggregateFuncs) {
+		if len(aggregateFuncs) == 1 && aggregateFuncs[0] == Count {
+			//for count operation, do not need to range the slice
+			rs = []interface{}{len(src.ToSlice(false))}
+			return rs, nil, true
+		}
+
 		rs = aggregateSlice(src.ToSlice(false), aggregateFuncs, true, true)
 		return rs, nil, true
 	} else {
@@ -1772,10 +1811,9 @@ func mapSlice(src []interface{}, f func(interface{}) interface{}, out *[]interfa
 func aggregateSlice(src []interface{}, fs []*AggregateOpr, asSequential bool, asParallel bool) []interface{} {
 	//fmt.Println("aggregateSlice0", src)
 	if len(src) == 0 {
-		return nil
+		panic(errors.New("Cannot aggregate empty slice"))
 	}
 
-	//fmt.Println("aggregateSlice1", fs)
 	rs := make([]interface{}, len(fs))
 	for j := 0; j < len(fs); j++ {
 		if (asSequential && fs[j].ReduceAction == nil) || (asParallel && fs[j].ReduceAction != nil) {
@@ -2004,6 +2042,125 @@ func defLess(a interface{}, b interface{}) bool {
 		return val < b.(string)
 	case time.Time:
 		return val.Before(b.(time.Time))
+	default:
+		panic(errors.New("unsupport aggregate type")) //reflect.NewAt(t, ptr).Elem().Interface()
+	}
+}
+
+func defCompare(a interface{}, b interface{}) int {
+	switch val := a.(type) {
+	case int:
+		if val < b.(int) {
+			return -1
+		} else if val == b.(int) {
+			return 0
+		} else {
+			return 1
+		}
+	case int8:
+		if val < b.(int8) {
+			return -1
+		} else if val == b.(int8) {
+			return 0
+		} else {
+			return 1
+		}
+	case int16:
+		if val < b.(int16) {
+			return -1
+		} else if val == b.(int16) {
+			return 0
+		} else {
+			return 1
+		}
+	case int32:
+		if val < b.(int32) {
+			return -1
+		} else if val == b.(int32) {
+			return 0
+		} else {
+			return 1
+		}
+	case int64:
+		if val < b.(int64) {
+			return -1
+		} else if val == b.(int64) {
+			return 0
+		} else {
+			return 1
+		}
+	case uint:
+		if val < b.(uint) {
+			return -1
+		} else if val == b.(uint) {
+			return 0
+		} else {
+			return 1
+		}
+	case uint8:
+		if val < b.(uint8) {
+			return -1
+		} else if val == b.(uint8) {
+			return 0
+		} else {
+			return 1
+		}
+	case uint16:
+		if val < b.(uint16) {
+			return -1
+		} else if val == b.(uint16) {
+			return 0
+		} else {
+			return 1
+		}
+	case uint32:
+		if val < b.(uint32) {
+			return -1
+		} else if val == b.(uint32) {
+			return 0
+		} else {
+			return 1
+		}
+	case uint64:
+		if val < b.(uint64) {
+			return -1
+		} else if val == b.(uint64) {
+			return 0
+		} else {
+			return 1
+		}
+	case float32:
+		if val < b.(float32) {
+			return -1
+		} else if val == b.(float32) {
+			return 0
+		} else {
+			return 1
+		}
+	case float64:
+		if val < b.(float64) {
+			return -1
+		} else if val == b.(float64) {
+			return 0
+		} else {
+			return 1
+		}
+	case string:
+		if val < b.(string) {
+			return -1
+		} else if val == b.(string) {
+			return 0
+		} else {
+			return 1
+		}
+	case time.Time:
+		if val.Before(b.(time.Time)) {
+			return -1
+		} else if val.After(b.(time.Time)) {
+			return 1
+		} else {
+			return 0
+		}
 	default:
 		panic(errors.New("unsupport aggregate type")) //reflect.NewAt(t, ptr).Elem().Interface()
 	}
