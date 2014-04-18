@@ -238,6 +238,23 @@ func (this *Queryable) Count() (result interface{}, err error) {
 	}
 }
 
+// Count returns number of elements in the data source.
+// Example:
+//	arr = []interface{}{0, 3, 6, 9}
+//	count, err := From(arr).Countby(func(i interface{}) bool {return i < 9}) // count is 3
+func (this *Queryable) CountBy(predicate func(interface{}) bool) (result interface{}, err error) {
+	if predicate == nil {
+		predicate = func(interface{}) bool { return true }
+	}
+	aggregateOprs := []*AggregateOpr{getCountByOpr(predicate)}
+
+	if result, err = this.Aggregate(aggregateOprs...); err == nil {
+		return result, nil
+	} else {
+		return nil, err
+	}
+}
+
 // Average computes average of numeric values in the data source.
 // TODO: If sequence has non-numeric types or nil, should returns an error.
 // Example:
@@ -2010,6 +2027,16 @@ func getMaxOpr(less func(interface{}, interface{}) bool) *AggregateOpr {
 		return maxOpr(a, b, less)
 	}
 	return &AggregateOpr{0, fun, fun}
+}
+
+func getCountByOpr(predicate func(interface{}) bool) *AggregateOpr {
+	fun := func(v interface{}, t interface{}) interface{} {
+		if predicate(v) {
+			t = t.(int) + 1
+		}
+		return t
+	}
+	return &AggregateOpr{0, fun, sumOpr}
 }
 
 func defLess(a interface{}, b interface{}) bool {
