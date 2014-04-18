@@ -4,14 +4,16 @@ import (
 	"github.com/ahmetalpbalkan/go-linq"
 	c "github.com/smartystreets/goconvey/convey"
 	//"math"
+	"fmt"
 	"math/rand"
+	"reflect"
 	"runtime"
 	"strconv"
 	"testing"
 )
 
 const (
-	count        int = 20
+	count        int = 22
 	rptCount     int = 24
 	countForB    int = 10000
 	rptCountForB int = 11000
@@ -22,7 +24,7 @@ var (
 	arrUserForT    []interface{}       = make([]interface{}, count, count)
 	arrRptUserForT []interface{}       = make([]interface{}, rptCount, rptCount)
 	arrUser2ForT   []interface{}       = make([]interface{}, count, count)
-	arrInt         []int               = make([]int, count, count)
+	arrIntForT     []int               = make([]int, count, count)
 	mapForT        map[int]interface{} = make(map[int]interface{}, count)
 
 	arr        []interface{} = make([]interface{}, countForB, countForB)
@@ -36,7 +38,7 @@ var (
 func init() {
 	runtime.GOMAXPROCS(MAXPROCS)
 	for i := 0; i < count; i++ {
-		arrInt[i] = i
+		arrIntForT[i] = i
 		arrUserForT[i] = user{i, "user" + strconv.Itoa(i)}
 		arrRptUserForT[i] = user{i, "user" + strconv.Itoa(i)}
 		arrUser2ForT[i] = user{i + countForB/2, "user" + strconv.Itoa(i+count/2)}
@@ -90,40 +92,152 @@ func whereUser(v interface{}) bool {
 	return u.id%2 == 0
 }
 
+func whereMap(v interface{}) bool {
+	u := v.(*KeyValue)
+	//time.Sleep(10 * time.Nanosecond)
+	return u.key.(int)%2 == 0
+}
+
+func selectPanic(v interface{}) interface{} {
+	var s []interface{}
+	_ = s[2]
+	u := v.(user)
+	return strconv.Itoa(u.id) + "/" + u.name
+}
+
 func selectUser(v interface{}) interface{} {
 	u := v.(user)
 	return strconv.Itoa(u.id) + "/" + u.name
 }
 
 func selectInt(v interface{}) interface{} {
-	return v.(int) + 9999
+	return v.(int) * 10
 }
 
 func TestWhere(t *testing.T) {
-	c.Convey("When passed nil function, error be returned", t, func() {
-		c.So(func() { From(arrInt).Where(nil) }, c.ShouldPanicWith, ErrNilAction)
-	})
+	test := func(size int) {
+		c.Convey("When passed nil function, error be returned", func() {
+			c.So(func() { From(arrIntForT).SetSizeOfChunk(size).Where(nil) }, c.ShouldPanicWith, ErrNilAction)
+		})
 
-	c.Convey("An error should be returned if the error appears in where function", t, func() {
-		_, err := From(arrInt).Where(wherePanic).Results()
-		c.So(err, c.ShouldNotBeNil)
-	})
+		c.Convey("An error should be returned if the error appears in where function", func() {
+			_, err := From(arrIntForT).SetSizeOfChunk(size).Where(wherePanic).Results()
+			c.So(err, c.ShouldNotBeNil)
+		})
 
-	c.Convey("Filter an empty slice", t, func() {
-	})
+		c.Convey("Filter an empty slice", func() {
+			rs, err := From([]int{}).SetSizeOfChunk(size).Where(wherePanic).Results()
+			c.So(len(rs), c.ShouldEqual, 0)
+			c.So(err, c.ShouldBeNil)
+		})
 
-	c.Convey("Filter an int slice", t, func() {
-	})
+		c.Convey("Filter an int slice", func() {
+			rs, err := From(arrIntForT).SetSizeOfChunk(size).Where(whereInt).Results()
+			c.So(rs, shouldSlicesResemble, []interface{}{0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20})
+			c.So(err, c.ShouldBeNil)
+		})
 
-	c.Convey("Filter an interface{} slice", t, func() {
-	})
+		filteredUsers := make([]interface{}, count/2)
+		for i := 0; i < count/2; i++ {
+			filteredUsers[i] = user{i * 2, "user" + strconv.Itoa(i*2)}
+		}
+		c.Convey("Filter an interface{} slice", func() {
+			rs, err := From(arrUserForT).SetSizeOfChunk(size).Where(whereUser).Results()
+			c.So(rs, shouldSlicesResemble, filteredUsers)
+			c.So(err, c.ShouldBeNil)
+		})
 
-	c.Convey("Filter a map", t, func() {
-	})
+		//filteredKVs := make([]interface{}, count/2)
+		//for i := 0; i < count/2; i++ {
+		//	filteredKVs[i] = &KeyValue{i * 2, user{i * 2, "user" + strconv.Itoa(i*2)}}
+		//}
+		//c.Convey("Filter a map", t, func() {
+		//	rs, err := From(mapForT).Where(whereMap).Results()
+		//	c.So(rs, shouldSlicesResemble, filteredKVs)
+		//	c.So(err, c.ShouldBeNil)
+		//})
 
-	c.Convey("Filter a channel", t, func() {
-	})
+		c.Convey("Filter a interface{} channel", func() {
+			rs, err := From(getChan(arrUserForT)).SetSizeOfChunk(size).Where(whereUser).Results()
+			c.So(rs, shouldSlicesResemble, filteredUsers)
+			c.So(err, c.ShouldBeNil)
+		})
 
+		c.Convey("Filter a int channel", func() {
+			rs, err := From(getIntChan(arrIntForT)).SetSizeOfChunk(size).Where(whereInt).Results()
+			c.So(rs, shouldSlicesResemble, []interface{}{0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20})
+			c.So(err, c.ShouldBeNil)
+		})
+
+	}
+
+	c.Convey("Test Where Sequential", t, func() { test(30) })
+	c.Convey("Test Where parallel", t, func() { test(7) })
+}
+
+func TestSelect(t *testing.T) {
+	test := func(size int) {
+		c.Convey("When passed nil function, error be returned", func() {
+			c.So(func() { From(arrIntForT).SetSizeOfChunk(size).Select(nil) }, c.ShouldPanicWith, ErrNilAction)
+		})
+
+		c.Convey("An error should be returned if the error appears in select function", func() {
+			_, err := From(arrIntForT).SetSizeOfChunk(size).Select(selectPanic).Results()
+			c.So(err, c.ShouldNotBeNil)
+		})
+
+		c.Convey("Select an empty slice", func() {
+			rs, err := From([]int{}).SetSizeOfChunk(size).Select(selectPanic).Results()
+			c.So(len(rs), c.ShouldEqual, 0)
+			c.So(err, c.ShouldBeNil)
+		})
+
+		newInts := make([]interface{}, count)
+		for i := 0; i < count; i++ {
+			newInts[i] = i * 10
+		}
+		c.Convey("select an int slice", func() {
+			rs, err := From(arrIntForT).SetSizeOfChunk(size).Select(selectInt).Results()
+			c.So(rs, shouldSlicesResemble, newInts)
+			c.So(err, c.ShouldBeNil)
+		})
+
+		newUsers := make([]interface{}, count)
+		for i := 0; i < count; i++ {
+			newUsers[i] = strconv.Itoa(i) + "/" + "user" + strconv.Itoa(i)
+		}
+		c.Convey("Select an interface{} slice", func() {
+			rs, err := From(arrUserForT).SetSizeOfChunk(size).Select(selectUser).Results()
+			c.So(rs, shouldSlicesResemble, newUsers)
+			c.So(err, c.ShouldBeNil)
+		})
+
+		//filteredKVs := make([]interface{}, count/2)
+		//for i := 0; i < count/2; i++ {
+		//	filteredKVs[i] = &KeyValue{i * 2, user{i * 2, "user" + strconv.Itoa(i*2)}}
+		//}
+		//c.Convey("Filter a map", t, func() {
+		//	rs, err := From(mapForT).Where(whereMap).Results()
+		//	c.So(rs, shouldSlicesResemble, filteredKVs)
+		//	c.So(err, c.ShouldBeNil)
+		//})
+
+		c.Convey("Select a interface{} channel", func() {
+			rs, err := From(getChan(arrUserForT)).SetSizeOfChunk(size).Select(selectUser).Results()
+			c.So(rs, shouldSlicesResemble, newUsers)
+			c.So(err, c.ShouldBeNil)
+		})
+
+		c.Convey("Select a int channel", func() {
+			rs, err := From(getIntChan(arrIntForT)).SetSizeOfChunk(size).Select(selectInt).Results()
+			c.So(rs, shouldSlicesResemble, newInts)
+			c.So(err, c.ShouldBeNil)
+		})
+
+	}
+
+	c.Convey("Test Select Sequential", t, func() { test(30) })
+	c.Convey("Test Select parallel", t, func() { test(7) })
 }
 
 func BenchmarkBlockSourceWhere(b *testing.B) {
@@ -655,4 +769,27 @@ func getIntChan(src []int) chan int {
 		close(chanSrc)
 	}()
 	return chanSrc
+}
+
+func shouldSlicesResemble(actual interface{}, expected ...interface{}) string {
+	actualSlice, expectedSlice := reflect.ValueOf(actual), reflect.ValueOf(expected[0])
+	if actualSlice.Kind() != expectedSlice.Kind() {
+		return fmt.Sprintf("Expected1: '%v'\nActual:   '%v'\n", expected[0], actual)
+	}
+
+	if actualSlice.Kind() != reflect.Slice {
+		return fmt.Sprintf("Expected2: '%v'\nActual:   '%v'\n", expected[0], actual)
+	}
+
+	if actualSlice.Len() != expectedSlice.Len() {
+		return fmt.Sprintf("Expected3: '%v'\nActual:   '%v'\n", expected[0], actual)
+	}
+
+	for i := 0; i < actualSlice.Len(); i++ {
+		if !reflect.DeepEqual(actualSlice.Index(i).Interface(), expectedSlice.Index(i).Interface()) {
+			return fmt.Sprintf("Expected4: '%v'\nActual:   '%v'\n", expected[0], actual)
+			//return fmt.Sprintf("Expected4: '%v'\nActual:   '%v'\n", actualSlice.Index(i).Interface(), expectedSlice.Index(i).Interface())
+		}
+	}
+	return ""
 }

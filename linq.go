@@ -906,8 +906,8 @@ func getSelect(selectFunc func(interface{}) interface{}) stepAction {
 		}
 
 		//try to use sequentail if the size of the data is less than size of chunk
-		if list, handled := trySequentialMap(src, option, mapChunk); handled {
-			return list, nil, option.keepOrder, nil
+		if list, err, handled := trySequentialMap(src, option, mapChunk); handled {
+			return list, nil, option.keepOrder, err
 		}
 
 		switch s := src.(type) {
@@ -948,8 +948,8 @@ func getWhere(predicate func(interface{}) bool) stepAction {
 		}
 
 		//try to use sequentail if the size of the data is less than size of chunk
-		if list, handled := trySequentialMap(src, option, mapChunk); handled {
-			return list, nil, option.keepOrder, nil
+		if list, err, handled := trySequentialMap(src, option, mapChunk); handled {
+			return list, nil, option.keepOrder, err
 		}
 
 		//always use channel mode in Where operation
@@ -1247,8 +1247,8 @@ func getReverse() stepAction {
 		reverseSrc := &listSource{srcSlice}
 
 		//try to use sequentail if the size of the data is less than size of chunk
-		if _, handled := trySequentialMap(reverseSrc, option, mapChunk); handled {
-			return &listSource{wholeSlice}, nil, option.keepOrder, nil
+		if _, err, handled := trySequentialMap(reverseSrc, option, mapChunk); handled {
+			return &listSource{wholeSlice}, nil, option.keepOrder, err
 		}
 
 		f := parallelMapListToList(reverseSrc, func(c *Chunk) *Chunk {
@@ -1270,8 +1270,8 @@ func getAggregate(src DataSource, aggregateFuncs []*AggregateOpr, option *Parall
 	//	handled bool
 	//)
 	//try to use sequentail if the size of the data is less than size of chunk
-	if rs, handled := trySequentialAggregate(src, option, aggregateFuncs); handled {
-		return rs, nil
+	if rs, err, handled := trySequentialAggregate(src, option, aggregateFuncs); handled {
+		return rs, err
 	}
 
 	rs := make([]interface{}, len(aggregateFuncs))
@@ -1588,33 +1588,35 @@ func singleDegree(src DataSource, option *ParallelOption) bool {
 	}
 }
 
-func trySequentialMap(src DataSource, option *ParallelOption, mapChunk func(c *Chunk) (r *Chunk)) (DataSource, error, bool) {
+func trySequentialMap(src DataSource, option *ParallelOption, mapChunk func(c *Chunk) (r *Chunk)) (ds DataSource, err error, ok bool) {
 	defer func() {
 		if e := recover(); e != nil {
-			return nil, newErrorWithStacks(e), true
+			err = newErrorWithStacks(e)
+			//return nil, newErrorWithStacks(e), true
 		}
 	}()
 	if useSingle := singleDegree(src, option); useSingle {
 		c := &Chunk{src.ToSlice(false), 0}
 		r := mapChunk(c)
-		return &listSource{r.Data}, true
+		return &listSource{r.Data}, nil, true
 	} else {
-		return nil, false
+		return nil, nil, false
 	}
 
 }
 
-func trySequentialAggregate(src DataSource, option *ParallelOption, aggregateFuncs []*AggregateOpr) ([]interface{}, error, bool) {
+func trySequentialAggregate(src DataSource, option *ParallelOption, aggregateFuncs []*AggregateOpr) (rs []interface{}, err error, ok bool) {
 	defer func() {
 		if e := recover(); e != nil {
-			return nil, newErrorWithStacks(e), true
+			err = newErrorWithStacks(e)
+			//return nil, newErrorWithStacks(e), true
 		}
 	}()
 	if useSingle := singleDegree(src, option); useSingle || ifMustSequential(aggregateFuncs) {
-		rs := aggregateSlice(src.ToSlice(false), aggregateFuncs, true, true)
-		return rs, true
+		rs = aggregateSlice(src.ToSlice(false), aggregateFuncs, true, true)
+		return rs, nil, true
 	} else {
-		return nil, false
+		return nil, nil, false
 	}
 
 }
@@ -1727,8 +1729,8 @@ func addCloseChanCallback(f *promise.Future, out chan *Chunk) {
 func getFutureResult(f *promise.Future, dataSourceFunc func([]interface{}) DataSource) (DataSource, error) {
 	if results, err := f.Get(); err != nil {
 		//todo
-		fmt.Println("getFutureResult get", err)
-		return nil, nil
+		//fmt.Println("getFutureResult get", err)
+		return nil, err
 	} else {
 		//fmt.Println("(results)=", (results))
 		return dataSourceFunc(results.([]interface{})), nil
