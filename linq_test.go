@@ -43,7 +43,7 @@ func init() {
 		arrIntForT[i] = i
 		arrUserForT[i] = user{i, "user" + strconv.Itoa(i)}
 		arrRptUserForT[i] = user{i, "user" + strconv.Itoa(i)}
-		arrUser2ForT[i] = user{i + countForB/2, "user" + strconv.Itoa(i+count/2)}
+		arrUser2ForT[i] = user{i + count/2, "user" + strconv.Itoa(i+count/2)}
 		mapForT[i] = user{i, "user" + strconv.Itoa(i)}
 	}
 	for i := 0; i < rptCount-count; i++ {
@@ -471,6 +471,20 @@ func TestJoin(t *testing.T) {
 			c.So(err, c.ShouldBeNil)
 		})
 
+		c.Convey("Join an interface{} channel as outer source", func() {
+			rs, err := From(getChan(arrUserForT)).SetSizeOfChunk(size).Join(arrRoleForT, userSelector, roleSelector, resultSelector).Results()
+			//TODO: need test KeepOrder()
+			c.So(len(rs), c.ShouldEqual, count)
+			c.So(err, c.ShouldBeNil)
+		})
+
+		c.Convey("Join an interface{} channel as inner source", func() {
+			rs, err := From(arrUserForT).SetSizeOfChunk(size).Join(getChan(arrRoleForT), userSelector, roleSelector, resultSelector).Results()
+			//TODO: need test KeepOrder()
+			c.So(len(rs), c.ShouldEqual, count)
+			c.So(err, c.ShouldBeNil)
+		})
+
 	}
 	c.Convey("Test Join Sequential", t, func() { testJoin(30) })
 	c.Convey("Test Join parallel", t, func() { testJoin(7) })
@@ -513,6 +527,138 @@ func TestJoin(t *testing.T) {
 	}
 	c.Convey("Test LeftJoin Sequential", t, func() { testLeftJoin(30) })
 	c.Convey("Test LeftJoin parallel", t, func() { testLeftJoin(7) })
+
+}
+
+func TestUnion(t *testing.T) {
+	test := func(size int) {
+		c.Convey("When passed nil source, error be returned", func() {
+			c.So(func() { From(arrUserForT).SetSizeOfChunk(size).Union(nil) }, c.ShouldPanicWith, ErrUnionNilSource)
+		})
+
+		c.Convey("Union an empty slice as first source", func() {
+			rs, err := From([]int{}).SetSizeOfChunk(size).Union(arrUser2ForT).Results()
+			c.So(len(rs), c.ShouldEqual, count)
+			c.So(err, c.ShouldBeNil)
+		})
+
+		c.Convey("Union an empty slice as secondary source", func() {
+			rs, err := From(arrUserForT).SetSizeOfChunk(size).Union([]interface{}{}).Results()
+			c.So(len(rs), c.ShouldEqual, count)
+			c.So(err, c.ShouldBeNil)
+		})
+
+		c.Convey("Union an interface{} slice as secondary source", func() {
+			rs, err := From(arrUserForT).SetSizeOfChunk(size).Union(arrUser2ForT).Results()
+			//TODO: need test KeepOrder()
+			c.So(len(rs), c.ShouldEqual, count+count/2)
+			c.So(err, c.ShouldBeNil)
+		})
+
+		c.Convey("Union an interface{} channel as first source", func() {
+			rs, err := From(getChan(arrUserForT)).SetSizeOfChunk(size).Union(arrUser2ForT).Results()
+			//TODO: need test KeepOrder()
+			c.So(len(rs), c.ShouldEqual, count+count/2)
+			c.So(err, c.ShouldBeNil)
+		})
+
+		c.Convey("Union an interface{} channel as secondary source", func() {
+			rs, err := From(arrUserForT).SetSizeOfChunk(size).Union(getChan(arrUser2ForT)).Results()
+			//TODO: need test KeepOrder()
+			c.So(len(rs), c.ShouldEqual, count+count/2)
+			c.So(err, c.ShouldBeNil)
+		})
+	}
+	c.Convey("Test Union Sequential", t, func() { test(30) })
+	c.Convey("Test Union parallel", t, func() { test(7) })
+
+}
+
+func TestConcat(t *testing.T) {
+	test := func(size int) {
+		c.Convey("When passed nil source, error be returned", func() {
+			c.So(func() { From(arrUserForT).SetSizeOfChunk(size).Concat(nil) }, c.ShouldPanicWith, ErrConcatNilSource)
+		})
+
+		c.Convey("Concat an empty slice as first source", func() {
+			rs, err := From([]int{}).SetSizeOfChunk(size).Concat(arrUser2ForT).Results()
+			c.So(len(rs), c.ShouldEqual, count)
+			c.So(err, c.ShouldBeNil)
+		})
+
+		c.Convey("Concat an empty slice as secondary source", func() {
+			rs, err := From(arrUserForT).SetSizeOfChunk(size).Concat([]interface{}{}).Results()
+			c.So(len(rs), c.ShouldEqual, count)
+			c.So(err, c.ShouldBeNil)
+		})
+
+		c.Convey("Concat an interface{} slice as secondary source", func() {
+			rs, err := From(arrUserForT).SetSizeOfChunk(size).Concat(arrUser2ForT).Results()
+			//TODO: need test KeepOrder()
+			c.So(len(rs), c.ShouldEqual, count*2)
+			c.So(err, c.ShouldBeNil)
+		})
+
+		c.Convey("Concat an interface{} channel as first source", func() {
+			rs, err := From(getChan(arrUserForT)).SetSizeOfChunk(size).Concat(arrUser2ForT).Results()
+			//TODO: need test KeepOrder()
+			c.So(len(rs), c.ShouldEqual, count*2)
+			c.So(err, c.ShouldBeNil)
+		})
+
+		c.Convey("Union an interface{} channel as secondary source", func() {
+			rs, err := From(arrUserForT).SetSizeOfChunk(size).Concat(getChan(arrUser2ForT)).Results()
+			//TODO: need test KeepOrder()
+			c.So(len(rs), c.ShouldEqual, count*2)
+			c.So(err, c.ShouldBeNil)
+		})
+	}
+	c.Convey("Test Concat Sequential", t, func() { test(30) })
+	c.Convey("Test Concat parallel", t, func() { test(7) })
+
+}
+
+func TestInterest(t *testing.T) {
+	test := func(size int) {
+		c.Convey("When passed nil source, error be returned", func() {
+			c.So(func() { From(arrUserForT).SetSizeOfChunk(size).Concat(nil) }, c.ShouldPanicWith, ErrConcatNilSource)
+		})
+
+		c.Convey("Concat an empty slice as first source", func() {
+			rs, err := From([]int{}).SetSizeOfChunk(size).Concat(arrUser2ForT).Results()
+			c.So(len(rs), c.ShouldEqual, count)
+			c.So(err, c.ShouldBeNil)
+		})
+
+		c.Convey("Concat an empty slice as secondary source", func() {
+			rs, err := From(arrUserForT).SetSizeOfChunk(size).Concat([]interface{}{}).Results()
+			c.So(len(rs), c.ShouldEqual, count)
+			c.So(err, c.ShouldBeNil)
+		})
+
+		c.Convey("Concat an interface{} slice as secondary source", func() {
+			rs, err := From(arrUserForT).SetSizeOfChunk(size).Concat(arrUser2ForT).Results()
+			//TODO: need test KeepOrder()
+			c.So(len(rs), c.ShouldEqual, count*2)
+			c.So(err, c.ShouldBeNil)
+		})
+
+		c.Convey("Concat an interface{} channel as first source", func() {
+			rs, err := From(getChan(arrUserForT)).SetSizeOfChunk(size).Concat(arrUser2ForT).Results()
+			//TODO: need test KeepOrder()
+			c.So(len(rs), c.ShouldEqual, count*2)
+			c.So(err, c.ShouldBeNil)
+		})
+
+		c.Convey("Union an interface{} channel as secondary source", func() {
+			rs, err := From(arrUserForT).SetSizeOfChunk(size).Concat(getChan(arrUser2ForT)).Results()
+			//TODO: need test KeepOrder()
+			c.So(len(rs), c.ShouldEqual, count*2)
+			c.So(err, c.ShouldBeNil)
+		})
+	}
+	c.Convey("Test Concat Sequential", t, func() { test(30) })
+	c.Convey("Test Concat parallel", t, func() { test(7) })
 
 }
 
