@@ -570,6 +570,7 @@ func TestGroupJoin(t *testing.T) {
 			c.So(err, c.ShouldNotBeNil)
 
 			_, err = From(arrUserForT).SetSizeOfChunk(size).GroupJoin(arrRoleForT, userSelector, roleSelectorPanic, groupResultSelector).Results()
+			//TODO: This case failed once, need more checking
 			c.So(err, c.ShouldNotBeNil)
 
 			_, err = From(arrUserForT).SetSizeOfChunk(size).GroupJoin(arrRoleForT, userSelector, roleSelector, resultSelectorPanic).Results()
@@ -965,14 +966,16 @@ func TestAggregate(t *testing.T) {
 		c.Convey("Aggregate an interface{} slice", func() {
 			r, err := From(arrUserForT).SetSizeOfChunk(size).Aggregate(myAgg)
 			c.So(err, c.ShouldBeNil)
-			fmt.Println("\n", "Aggregate an interface{} slice return: ", r)
+			_ = r
+			//fmt.Println("\n", "Aggregate an interface{} slice return: ", r)
 		})
 
 		c.Convey("Aggregate an interface{} channel", func() {
 			r, err := From(getChan(arrUserForT)).SetSizeOfChunk(size).Aggregate(myAgg)
 			//TODO: need test keep order
 			c.So(err, c.ShouldBeNil)
-			fmt.Println("\n", "Aggregate an interface{} channel return: ", r)
+			_ = r
+			//fmt.Println("\n", "Aggregate an interface{} channel return: ", r)
 		})
 	}
 	c.Convey("Test Aggregate Sequential", t, func() { test(30) })
@@ -1305,12 +1308,8 @@ func sum(v interface{}, summary interface{}) interface{} {
 
 ////test reverse--------------------------------------------------------------------
 func BenchmarkBlockSourceAggregate(b *testing.B) {
-	var (
-		r   interface{}
-		err error
-	)
 	for i := 0; i < b.N; i++ {
-		if r, err = From(arr).Aggregate(Sum); err != nil {
+		if _, err := From(arr).Aggregate(Sum); err != nil {
 			b.Fail()
 			b.Error(err)
 		}
@@ -1321,16 +1320,11 @@ func BenchmarkBlockSourceAggregate(b *testing.B) {
 		//	b.Log("dst=", dst)
 		//}
 	}
-	b.Log(r)
 }
 
 func BenchmarkGoLinqAggregate(b *testing.B) {
-	var (
-		r   interface{}
-		err error
-	)
 	for i := 0; i < b.N; i++ {
-		if r, err = linq.From(arr).Sum(); err != nil {
+		if _, err := linq.From(arr).Sum(); err != nil {
 			b.Fail()
 			b.Error(err)
 		}
@@ -1339,7 +1333,6 @@ func BenchmarkGoLinqAggregate(b *testing.B) {
 		//	b.Error("size is ", len(dst))
 		//}
 	}
-	b.Log(r)
 }
 
 //func BencmarkQuickSort(b *testing.B) {
