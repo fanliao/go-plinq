@@ -330,3 +330,19 @@ func testHash() {
 func printHash(data interface{}) {
 	fmt.Println("hash", data, hash64(data))
 }
+
+func TestSortChunks() {
+	cs := []interface{}{&Chunk{nil, 7}, &Chunk{nil, 14}, &Chunk{nil, 21}, &Chunk{nil, 0}}
+	fmt.Println("\nbefore expandChunks(),", true, ":")
+	for _, v := range cs {
+		fmt.Print(v.(*Chunk).Order, ", ")
+	}
+	fmt.Println()
+	result := expandChunks(cs, true)
+	fmt.Println("\nafter expandChunks():")
+	for _, v := range result {
+		fmt.Print(v.(*Chunk).Order, ", ")
+	}
+	fmt.Println()
+
+}

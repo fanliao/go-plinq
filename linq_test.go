@@ -292,6 +292,9 @@ func TestDistinct(t *testing.T) {
 
 		c.Convey("An error should be returned if the error appears in DistinctBy function", func() {
 			_, err := From(arrRptUserForT).SetSizeOfChunk(size).DistinctBy(distinctUserPanic).Results()
+			if err == nil {
+				fmt.Println("\nDistinct An error should be returned:", err)
+			}
 			c.So(err, c.ShouldNotBeNil)
 		})
 
@@ -381,6 +384,9 @@ func TestGroupBy(t *testing.T) {
 
 		c.Convey("An error should be returned if the error appears in GroupBy function", func() {
 			_, err := From(arrRptUserForT).SetSizeOfChunk(size).GroupBy(groupUserPanic).Results()
+			if err == nil {
+				fmt.Println("\nGroup An error should be returned:", err)
+			}
 			c.So(err, c.ShouldNotBeNil)
 		})
 
@@ -479,6 +485,9 @@ func TestJoin(t *testing.T) {
 			c.So(err, c.ShouldNotBeNil)
 
 			_, err = From(arrUserForT).SetSizeOfChunk(size).Join(arrRoleForT, userSelector, roleSelectorPanic, resultSelector).Results()
+			if err == nil {
+				fmt.Println("\nJoin An error should be returned:", err)
+			}
 			c.So(err, c.ShouldNotBeNil)
 
 			_, err = From(arrUserForT).SetSizeOfChunk(size).Join(arrRoleForT, userSelector, roleSelector, resultSelectorPanic).Results()

@@ -1091,7 +1091,17 @@ func getDistinct(distinctFunc func(interface{}) interface{}) stepAction {
 		//reduce the keyValue map to get distinct values
 		if chunks, err := reduceDistinctVals(f, reduceSrcChan); err == nil {
 			//get distinct values
+			fmt.Println("\nbefore expandChunks(),", option.keepOrder, ":")
+			for _, v := range chunks {
+				fmt.Print(v.(*Chunk).Order, ", ")
+			}
+			fmt.Println()
 			result := expandChunks(chunks, option.keepOrder)
+			fmt.Println("\nafter expandChunks():")
+			for _, v := range result {
+				fmt.Print(v, ", ")
+			}
+			fmt.Println()
 			return &listSource{result}, nil, option.keepOrder, nil
 		} else {
 			return nil, nil, option.keepOrder, err
