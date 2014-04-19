@@ -91,10 +91,10 @@ type ParallelOption struct {
 // All query functions will return Queryable.
 // For getting the result slice of the query, use Results().
 type Queryable struct {
-	data     DataSource
-	steps    []step
-	stepErrs []interface{}
-	errChan  chan *stepErr
+	data  DataSource
+	steps []step
+	//stepErrs []interface{}
+	errChan chan []stepErr
 	ParallelOption
 }
 
@@ -143,7 +143,7 @@ func newQueryable(ds DataSource) (q *Queryable) {
 	q.steps = make([]step, 0, 4)
 	q.degree = numCPU
 	q.chunkSize = DEFAULTCHUNKSIZE
-	q.errChan = make(chan *stepErr)
+	q.errChan = make(chan []stepErr)
 
 	q.data = ds
 	return
@@ -157,16 +157,13 @@ func newQueryable(ds DataSource) (q *Queryable) {
 func (this *Queryable) Results() (results []interface{}, err error) {
 	if ds, e := this.get(); e == nil {
 		results = ds.ToSlice(this.keepOrder)
-		if len(this.stepErrs) > 0 {
-			err = NewLinqError("Aggregate errors", this.stepErrs)
-		}
-		if this.errChan != nil {
-			close(this.errChan)
-		}
-		return
-	} else {
-		return nil, e
 	}
+	//if len(this.stepErrs) > 0 {
+	//	err = NewLinqError("Aggregate errors", this.stepErrs)
+	//}
+	err = this.stepErrs()
+
+	return
 }
 
 // Aggregate returns the results of aggregation operation
@@ -188,13 +185,17 @@ func (this *Queryable) Results() (results []interface{}, err error) {
 // TODO: the customized aggregation function
 func (this *Queryable) Aggregate(aggregateFuncs ...*AggregateOpr) (result interface{}, err error) {
 	if ds, e := this.get(); e == nil {
-
-		results, e := getAggregate(ds, aggregateFuncs, &(this.ParallelOption))
-
-		if this.errChan != nil {
-			close(this.errChan)
+		//if errs := <-this.errChan; len(errs) > 0 {
+		//	err = NewLinqError("Aggregate errors", errs)
+		//}
+		//if this.errChan != nil {
+		//	close(this.errChan)
+		//}
+		if err = this.stepErrs(); err != nil {
+			return nil, err
 		}
 
+		results, e := getAggregate(ds, aggregateFuncs, &(this.ParallelOption))
 		if e != nil {
 			return nil, e
 		}
@@ -610,32 +611,54 @@ func (this *Queryable) makeCopiedSrc() DataSource {
 // and return the result
 func (this *Queryable) get() (data DataSource, err error) {
 	//create a goroutines to collect the errors for the pipeline mode step
-	//errChan := make(chan *stepErr)
+	errsChan := make(chan *stepErr)
 	go func() {
-		//fmt.Println("start receive errors")
-		for e := range this.errChan {
-			this.stepErrs = appendSlice(this.stepErrs, e)
+		stepFutures := make([]stepErr, 0, len(this.steps))
+		if len(this.steps) == 0 {
+			this.errChan <- stepFutures
+			return
 		}
-		//fmt.Println("end receive errors")
+
+		i := 0
+		//fmt.Println("start receive errors")
+		for e := range errsChan {
+			if !reflect.ValueOf(e).IsNil() {
+				stepFutures = append(stepFutures, *e)
+			}
+			i++
+			if i >= len(this.steps) {
+				this.errChan <- stepFutures
+				return
+			}
+		}
 	}()
 
 	data = this.makeCopiedSrc() //data
 	pOption, keepOrder := this.ParallelOption, this.ParallelOption.keepOrder
 
-	for _, step := range this.steps {
+	for i, step := range this.steps {
 		var f *promise.Future
 		step1 := step
 
 		//execute the step
 		if data, f, keepOrder, err = step.Action()(data, step.POption(pOption)); err != nil {
+			errsChan <- NewStepError(i, step1.Typ(), err)
+			for j := i + 1; j < len(this.steps); j++ {
+				errsChan <- nil
+			}
 			return nil, err
 		} else if f != nil {
+			j := i
 			//add a fail callback to collect the errors in pipeline mode
 			//because the steps will be paralle in piplline mode,
 			//so cannot use return value of the function
 			f.Fail(func(results interface{}) {
-				this.errChan <- NewStepError(step1.Typ(), results)
+				errsChan <- NewStepError(j, step1.Typ(), results)
+			}).Done(func(results interface{}) {
+				errsChan <- nil
 			})
+		} else {
+			errsChan <- nil
 		}
 
 		//set the keepOrder for next step
@@ -645,6 +668,17 @@ func (this *Queryable) get() (data DataSource, err error) {
 	}
 
 	return data, nil
+}
+
+func (this *Queryable) stepErrs() (err error) {
+	if errs := <-this.errChan; len(errs) > 0 {
+		err = NewLinqError("Aggregate errors", errs)
+	}
+	if this.errChan != nil {
+		close(this.errChan)
+		this.errChan = make(chan []stepErr)
+	}
+	return
 }
 
 //The listsource and chanSource structs----------------------------------

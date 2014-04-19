@@ -596,6 +596,7 @@ func (e *errorLinq) Error() string {
 }
 
 type stepErr struct {
+	stepIdx int
 	stepTyp int
 	errs    []interface{}
 }
@@ -643,7 +644,7 @@ func stepTypToString(typ int) string {
 }
 
 // NewLinqError returns an error that formats as the given text and includes the given inner errors.
-func NewStepError(stepTyp int, innerErrs interface{}) *stepErr {
+func NewStepError(stepIdx int, stepTyp int, innerErrs interface{}) *stepErr {
 	if ies, ok := innerErrs.([]interface{}); ok {
 		rs := make([]interface{}, 0, len(ies))
 		if len(ies) > 0 {
@@ -661,9 +662,11 @@ func NewStepError(stepTyp int, innerErrs interface{}) *stepErr {
 			rs = ies
 			//}
 		}
-		return &stepErr{stepTyp, rs}
+		return &stepErr{stepIdx, stepTyp, rs}
+	} else if err := innerErrs.(error); err != nil {
+		return &stepErr{stepIdx, stepTyp, []interface{}{innerErrs}}
 	} else {
-		return &stepErr{stepTyp, []interface{}{innerErrs}}
+		return nil
 	}
 }
 
