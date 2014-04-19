@@ -94,7 +94,7 @@ type Queryable struct {
 	data  DataSource
 	steps []step
 	//stepErrs []interface{}
-	errChan chan []stepErr
+	errChan chan []error
 	ParallelOption
 }
 
@@ -143,7 +143,7 @@ func newQueryable(ds DataSource) (q *Queryable) {
 	q.steps = make([]step, 0, 4)
 	q.degree = numCPU
 	q.chunkSize = DEFAULTCHUNKSIZE
-	q.errChan = make(chan []stepErr)
+	q.errChan = make(chan []error)
 
 	q.data = ds
 	return
@@ -162,6 +162,9 @@ func (this *Queryable) Results() (results []interface{}, err error) {
 	//	err = NewLinqError("Aggregate errors", this.stepErrs)
 	//}
 	err = this.stepErrs()
+	if err != nil {
+		results = nil
+	}
 
 	return
 }
@@ -615,9 +618,9 @@ func (this *Queryable) makeCopiedSrc() DataSource {
 // and return the result
 func (this *Queryable) get() (data DataSource, err error) {
 	//create a goroutines to collect the errors for the pipeline mode step
-	errsChan := make(chan *stepErr)
+	errsChan := make(chan error)
 	go func() {
-		stepFutures := make([]stepErr, 0, len(this.steps))
+		stepFutures := make([]error, 0, len(this.steps))
 		if len(this.steps) == 0 {
 			this.errChan <- stepFutures
 			return
@@ -626,8 +629,8 @@ func (this *Queryable) get() (data DataSource, err error) {
 		i := 0
 		//fmt.Println("start receive errors")
 		for e := range errsChan {
-			if !reflect.ValueOf(e).IsNil() {
-				stepFutures = append(stepFutures, *e)
+			if e != nil && !reflect.ValueOf(e).IsNil() {
+				stepFutures = append(stepFutures, e)
 				//fmt.Println("get a step error", e.errs)
 			}
 			i++
@@ -681,7 +684,7 @@ func (this *Queryable) stepErrs() (err error) {
 	}
 	if this.errChan != nil {
 		close(this.errChan)
-		this.errChan = make(chan []stepErr)
+		this.errChan = make(chan []error)
 	}
 	return
 }
@@ -1028,13 +1031,13 @@ func getSelect(selectFunc func(interface{}) interface{}) stepAction {
 			//	//fmt.Println("results=", results)
 			//	return &listSource{results}
 			//})
-			sf, dst, e = f, &chanSource{chunkChan: out, future: f}, nil
+			sf, dst, e = f, &chanSource{chunkChan: out}, nil
 			return
 		case *chanSource:
 			//use channel mode if the source is a channel
 			f, out := parallelMapChanToChan(s, nil, mapChunk, option)
 
-			sf, dst, e = f, &chanSource{chunkChan: out, future: f}, nil
+			sf, dst, e = f, &chanSource{chunkChan: out}, nil
 			//noted when use pipeline mode to start next step, the future of current step must be returned
 			//otherwise the errors in current step will be missed
 			return
@@ -1061,7 +1064,7 @@ func getWhere(predicate func(interface{}) bool) stepAction {
 		f, reduceSrc := parallelMapToChan(src, nil, mapChunk, option)
 
 		//fmt.Println("return where")
-		return &chanSource{chunkChan: reduceSrc, future: f}, f, option.keepOrder, nil
+		return &chanSource{chunkChan: reduceSrc}, f, option.keepOrder, nil
 	})
 }
 
@@ -1106,6 +1109,7 @@ func getDistinct(distinctFunc func(interface{}) interface{}) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption) (DataSource, *promise.Future, bool, error) {
 		mapChunk := func(c *Chunk) (r *Chunk) {
 			r = &Chunk{getKeyValues(c, distinctFunc, nil), c.Order}
+			//fmt.Println("distinct map chunk, from", len(c.Data), "to", len(r.Data))
 			return
 		}
 
@@ -1121,23 +1125,25 @@ func getDistinct(distinctFunc func(interface{}) interface{}) stepAction {
 		f, reduceSrcChan := parallelMapToChan(src, nil, mapChunk, option)
 
 		//reduce the keyValue map to get distinct values
-		if chunks, err := reduceDistinctVals(f, reduceSrcChan); err == nil {
-			//get distinct values
-			//fmt.Println("\nbefore expandChunks(),", option.keepOrder, ":")
-			//for _, v := range chunks {
-			//	fmt.Print(v.(*Chunk).Order, ", ")
-			//}
-			//fmt.Println()
-			result := expandChunks(chunks, false)
-			//fmt.Println("\nafter expandChunks():")
-			//for _, v := range result {
-			//	fmt.Print(v, ", ")
-			//}
-			//fmt.Println()
-			return &listSource{result}, nil, option.keepOrder, nil
-		} else {
-			return nil, nil, option.keepOrder, err
-		}
+		//if chunks, err := reduceDistinctVals(f, reduceSrcChan); err == nil {
+		//	//get distinct values
+		//	//fmt.Println("\nbefore expandChunks(),", option.keepOrder, ":")
+		//	//for _, v := range chunks {
+		//	//	fmt.Print(v.(*Chunk).Order, ", ")
+		//	//}
+		//	//fmt.Println()
+		//	result := expandChunks(chunks, false)
+		//	//fmt.Println("\nafter expandChunks():")
+		//	//for _, v := range result {
+		//	//	fmt.Print(v, ", ")
+		//	//}
+		//	//fmt.Println()
+		//	return &listSource{result}, nil, option.keepOrder, nil
+		//} else {
+		//	return nil, nil, option.keepOrder, err
+		//}
+		f1, out := reduceDistinctVals(f, reduceSrcChan, option)
+		return &chanSource{chunkChan: out}, f1, option.keepOrder, nil
 	})
 }
 
@@ -1247,24 +1253,28 @@ func getJoinImpl(inner interface{},
 			return &Chunk{results, c.Order}
 		}
 
-		switch s := src.(type) {
-		case *listSource:
-			//Todo:
-			//can use channel mode like Where operation?
-			outerKeySelectorFuture := parallelMapListToList(s, mapChunk, option)
+		//switch s := src.(type) {
+		//case *listSource:
+		//	//Todo:
+		//	//can use channel mode like Where operation?
+		//	outerKeySelectorFuture := parallelMapListToList(s, mapChunk, option)
 
-			dst, e = getFutureResult(outerKeySelectorFuture, func(results []interface{}) DataSource {
-				result := expandChunks(results, option.keepOrder)
-				return &listSource{result}
-			})
-			return
-		case *chanSource:
-			f, out := parallelMapChanToChan(s, nil, mapChunk, option)
-			dst, sf, e = &chanSource{chunkChan: out, future: f}, f, nil
-			return
-		}
+		//	dst, e = getFutureResult(outerKeySelectorFuture, func(results []interface{}) DataSource {
+		//		result := expandChunks(results, option.keepOrder)
+		//		return &listSource{result}
+		//	})
+		//	return
+		//case *chanSource:
+		//	f, out := parallelMapChanToChan(s, nil, mapChunk, option)
+		//	dst, sf, e = &chanSource{chunkChan: out}, f, nil
+		//	return
+		//}
 
-		panic(ErrUnsupportSource)
+		//always use channel mode in Where operation
+		f, out := parallelMapToChan(src, nil, mapChunk, option)
+		dst, sf, e = &chanSource{chunkChan: out}, f, nil
+		return
+		//panic(ErrUnsupportSource)
 	})
 }
 
@@ -1285,20 +1295,22 @@ func getUnion(source2 interface{}) stepAction {
 
 		//reduce the KeyValue slices to get distinct slice
 		//get key with group values values
-		if chunks, err := reduceDistinctVals(mapFuture, reduceSrcChan); err == nil {
-			//get distinct values
-			result := expandChunks(chunks, false)
+		//if chunks, err := reduceDistinctVals(mapFuture, reduceSrcChan); err == nil {
+		//	//get distinct values
+		//	result := expandChunks(chunks, false)
 
-			return &listSource{result}, nil, option.keepOrder, nil
-		} else {
-			return nil, nil, option.keepOrder, err
-		}
-
+		//	return &listSource{result}, nil, option.keepOrder, nil
+		//} else {
+		//	return nil, nil, option.keepOrder, err
+		//}
+		f3, out := reduceDistinctVals(mapFuture, reduceSrcChan, option)
+		return &chanSource{chunkChan: out}, f3, option.keepOrder, nil
 	})
 }
 
 func getConcat(source2 interface{}) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption) (DataSource, *promise.Future, bool, error) {
+		//TODO: if the source is channel source, should use channel mode
 		slice1 := src.ToSlice(option.keepOrder)
 		if slice2, err2 := From(source2).KeepOrder(option.keepOrder).Results(); err2 == nil {
 			result := make([]interface{}, len(slice1)+len(slice2))
@@ -1607,7 +1619,7 @@ func parallelMapChanToChan(src *chanSource, out chan *Chunk, task func(*Chunk) *
 		chEndFlag = nil
 		//close(chEndFlag)
 		//TODO: it still need be updated
-		fmt.Println("make a temp future")
+		//fmt.Println("make a temp future")
 	} else {
 		chEndFlag = src.future.GetChan()
 	}
@@ -1628,8 +1640,8 @@ func parallelMapChanToChan(src *chanSource, out chan *Chunk, task func(*Chunk) *
 					//fmt.Println("return reduceChan")
 					if r != nil && r.Typ != promise.RESULT_SUCCESS {
 						//return r.Result
-						//fmt.Println("return parallelMapChanToChan 1")
-						return nil, nil
+						//fmt.Println("return parallelMapChanToChan 1", r.Result)
+						return nil, r.Result.(error)
 					} else if cap(srcChan) == 0 {
 						//return nil
 						//fmt.Println("return parallelMapChanToChan 2")
@@ -1713,7 +1725,7 @@ func parallelMapListToChan(src DataSource, out chan *Chunk, task func(*Chunk) *C
 			r := task(c)
 			if out != nil {
 				out <- r
-				//fmt.Println("\n send", r.Order, len(r.Data))
+				//fmt.Println("\n parallelMapListToChan send", r.Order, len(r.Data))
 			}
 			return nil, nil
 		}
@@ -1721,7 +1733,7 @@ func parallelMapListToChan(src DataSource, out chan *Chunk, task func(*Chunk) *C
 	if createOutChan {
 		addCloseChanCallback(f, out)
 	}
-	//fmt.Println("return f")
+	//fmt.Println("parallelMapListToChan return f")
 	return f, out
 }
 
@@ -1882,21 +1894,24 @@ func reduceChan(chEndFlag chan *promise.PromiseResult, src chan *Chunk, reduce f
 }
 
 //the functions reduces the paralleliam map result----------------------------------------------------------
-func reduceDistinctVals(mapFuture *promise.Future, reduceSrcChan chan *Chunk) ([]interface{}, error) {
+func reduceDistinctVals(mapFuture *promise.Future, reduceSrcChan chan *Chunk, option *ParallelOption) (f *promise.Future, out chan *Chunk) {
 	//get distinct values
-	chunks := make([]interface{}, 0, 2)
+	//chunks := make([]interface{}, 0, 2)
 	distKVs := make(map[uint64]int)
-	errs := reduceChan(mapFuture.GetChan(), reduceSrcChan, func(c *Chunk) {
-		chunks = appendSlice(chunks, distinctChunkVals(c, distKVs))
-	})
-	if errs == nil {
-		return chunks, nil
-	} else {
-		return nil, NewLinqError("reduceDistinctVals error", errs)
-	}
-	parallelMapChanToChan(&chanSource{data: reduceSrcChan, future: f}, nil, func (c *Chunk) *Chunk{
-		return distinctChunkVals(c, distKVs))
-	}, )
+	//errs := reduceChan(mapFuture.GetChan(), reduceSrcChan, func(c *Chunk) {
+	//	chunks = appendSlice(chunks, distinctChunkVals(c, distKVs))
+	//})
+	//if errs == nil {
+	//	return chunks, nil
+	//} else {
+	//	return nil, NewLinqError("reduceDistinctVals error", errs)
+	//}\
+	option.degree = 1
+	return parallelMapChanToChan(&chanSource{chunkChan: reduceSrcChan, future: mapFuture}, nil, func(c *Chunk) *Chunk {
+		r := distinctChunkVals(c, distKVs)
+		//fmt.Println("reduceDistinctVals map chunk, from", len(c.Data), "to", len(r.Data))
+		return r
+	}, option)
 }
 
 //util functions--------------------------------------------------------
@@ -1926,9 +1941,9 @@ func addCloseChanCallback(f *promise.Future, out chan *Chunk) {
 				if cap(out) == 0 {
 					close(out)
 				} else {
-					//fmt.Println("begin send nil")
+					//fmt.Println("close chan begin send nil")
 					out <- nil
-					//fmt.Println("send nil")
+					//fmt.Println("close chan sent nil")
 				}
 			}
 		}()

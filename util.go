@@ -560,27 +560,36 @@ func getError(i interface{}) (e error) {
 // NewLinqError returns an error that formats as the given text and includes the given inner errors.
 func NewLinqError(text string, err interface{}) error {
 	if aggErr, ok := err.(*promise.AggregateError); ok {
-		errs := make([]interface{}, len(aggErr.InnerErrs))
-		for i, e := range aggErr.InnerErrs {
-			errs[i] = e
-		}
-		return &errorLinq{text, errs}
-	} else if errs, ok := err.([]interface{}); ok {
-		//for _, e := range errs {
-		//fmt.Println("get Aggregate errors2", e)
+		//errs := make([]interface{}, len(aggErr.InnerErrs))
+		//for i, e := range aggErr.InnerErrs {
+		//	errs[i] = e
 		//}
+		return &errorLinq{text, aggErr.InnerErrs}
+	} else if errs, ok := err.([]interface{}); ok {
+		errs1 := make([]error, len(errs))
+		for i, e := range errs {
+			fmt.Println("get Aggregate errors2", e)
+			errs1[i] = errors.New(fmt.Sprintf("%v", e))
+		}
+		return &errorLinq{text, errs1}
+	} else if errs, ok := err.([]error); ok {
+		//v := reflect.ValueOf(err)
+		//fmt.Println("\nget Aggregate errors3", len(errs))
+		//for i := 0; i < v.Len(); i++ {
+		//	se := v.Index(i).Interface().(stepErr)
+		//	fmt.Println("item", i, "=", (&se).Error())
+		//}
+
 		return &errorLinq{text, errs}
 	} else {
-		//fmt.Println("get Aggregate errors3", err)
-
-		return &errorLinq{text, []interface{}{err}}
+		panic(errors.New("unsupport error type"))
 	}
 }
 
 // errorLinq is a trivial implementation of error.
 type errorLinq struct {
 	s         string
-	innerErrs []interface{}
+	innerErrs []error
 }
 
 func (e *errorLinq) Error() string {
@@ -590,7 +599,7 @@ func (e *errorLinq) Error() string {
 		var str string
 		str += e.s + "\n"
 		for _, ie := range e.innerErrs {
-			if se, ok := ie.(*stepErr); ok {
+			if se, ok := ie.(error); ok {
 				str += se.Error() + "\n"
 			} else {
 				str += fmt.Sprintf("%v", ie) + "\n"
