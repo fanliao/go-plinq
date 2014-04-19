@@ -6,7 +6,7 @@ import (
 	//"math"
 	"errors"
 	"fmt"
-	//"math/rand"
+	"math/rand"
 	"reflect"
 	"runtime"
 	"strconv"
@@ -611,8 +611,11 @@ func TestGroupJoin(t *testing.T) {
 			_, err := From(arrUserForT).SetSizeOfChunk(size).GroupJoin(arrRoleForT, userSelectorPanic, roleSelector, groupResultSelector).Results()
 			c.So(err, c.ShouldNotBeNil)
 
-			_, err = From(arrUserForT).SetSizeOfChunk(size).GroupJoin(arrRoleForT, userSelector, roleSelectorPanic, groupResultSelector).Results()
+			rs, err := From(arrUserForT).SetSizeOfChunk(size).GroupJoin(arrRoleForT, userSelector, roleSelectorPanic, groupResultSelector).Results()
 			//TODO: This case failed once, need more checking
+			if err == nil {
+				fmt.Println("/nif the error appears in GroupJoin function, return", rs)
+			}
 			c.So(err, c.ShouldNotBeNil)
 
 			_, err = From(arrUserForT).SetSizeOfChunk(size).GroupJoin(arrRoleForT, userSelector, roleSelector, resultSelectorPanic).Results()
@@ -1177,33 +1180,33 @@ func BenchmarkGoLinqDistinct(b *testing.B) {
 
 //test order-----------------------------------------------------------------------------
 
-//func randomList(list []interface{}) {
-//	rand.Seed(10)
-//	for i := 0; i < len(list); i++ {
-//		swapIndex := rand.Intn(len(list))
-//		t := list[swapIndex]
-//		list[swapIndex] = list[i]
-//		list[i] = t
-//	}
-//}
+func randomList(list []interface{}) {
+	rand.Seed(10)
+	for i := 0; i < len(list); i++ {
+		swapIndex := rand.Intn(len(list))
+		t := list[swapIndex]
+		list[swapIndex] = list[i]
+		list[i] = t
+	}
+}
 
-//func BenchmarkBlockSourceOrder(b *testing.B) {
-//	b.StopTimer()
-//	randoms := make([]interface{}, 0, len(arrRptUser))
-//	_ = copy(randoms, arrRptUser)
-//	randomList(randoms)
-//	b.StartTimer()
+func BenchmarkBlockSourceOrder(b *testing.B) {
+	b.StopTimer()
+	randoms := make([]interface{}, 0, len(arrRptUser))
+	_ = copy(randoms, arrRptUser)
+	randomList(randoms)
+	b.StartTimer()
 
-//	for i := 0; i < b.N; i++ {
-//		dst, _ := From(arrRptUser).OrderBy(orderUserById).Results()
-//		if len(dst) != len(arrRptUser) || dst[0].(user).id != 0 || dst[10].(user).id != 5 {
-//			b.Fail()
-//			//b.Log("arr=", arr)
-//			b.Error("size is ", len(dst))
-//			b.Log("dst=", dst)
-//		}
-//	}
-//}
+	for i := 0; i < b.N; i++ {
+		dst, _ := From(arrRptUser).OrderBy(orderUserById).Results()
+		if len(dst) != len(arrRptUser) || dst[0].(user).id != 0 || dst[10].(user).id != 5 {
+			b.Fail()
+			//b.Log("arr=", arr)
+			b.Error("size is ", len(dst))
+			b.Log("dst=", dst)
+		}
+	}
+}
 
 //test join-----------------------------------------------------------------
 func BenchmarkBlockSourceJoin(b *testing.B) {
