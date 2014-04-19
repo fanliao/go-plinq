@@ -110,6 +110,11 @@ func TestLinq() {
 		}
 	})
 
+	//test group
+	testLinqWithAllSource("Distinct opretions", src1, func(q *Queryable) *Queryable {
+		return q.Distinct()
+	})
+
 	//test left join
 	testLinqWithAllSource("LeftJoin opretions", src1, func(q *Queryable) *Queryable {
 		return q.LeftJoin(powers,
@@ -261,10 +266,10 @@ func testLinqAgg(title string, aggFunc func() (interface{}, error)) {
 
 func testLinqWithAllSource(title string, listSrc []interface{}, query func(*Queryable) *Queryable, rsHandlers ...func([]interface{})) {
 	testLinqOpr(title, func() ([]interface{}, error) {
-		return query(From(listSrc)).Results()
+		return query(From(listSrc)).SetSizeOfChunk(9).Results()
 	}, rsHandlers...)
 	testLinqOpr("Chan source use "+title, func() ([]interface{}, error) {
-		return query(From(getChanSrc(listSrc))).Results()
+		return query(From(getChanSrc(listSrc))).SetSizeOfChunk(9).Results()
 	}, rsHandlers...)
 }
 

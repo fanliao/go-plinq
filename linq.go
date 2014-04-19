@@ -1091,7 +1091,7 @@ func getDistinct(distinctFunc func(interface{}) interface{}) stepAction {
 		//reduce the keyValue map to get distinct values
 		if chunks, err := reduceDistinctVals(f, reduceSrcChan); err == nil {
 			//get distinct values
-			result := expandChunks(chunks, false)
+			result := expandChunks(chunks, option.keepOrder)
 			return &listSource{result}, nil, option.keepOrder, nil
 		} else {
 			return nil, nil, option.keepOrder, err
@@ -1212,7 +1212,7 @@ func getJoinImpl(inner interface{},
 			outerKeySelectorFuture := parallelMapListToList(s, mapChunk, option)
 
 			dst, e = getFutureResult(outerKeySelectorFuture, func(results []interface{}) DataSource {
-				result := expandChunks(results, false)
+				result := expandChunks(results, option.keepOrder)
 				return &listSource{result}
 			})
 			return
@@ -1607,7 +1607,7 @@ func parallelMapListToChan(src DataSource, out chan *Chunk, task func(*Chunk) *C
 			r := task(c)
 			if out != nil {
 				out <- r
-				//fmt.Println("send", len(r.Data))
+				//fmt.Println("\n send", r.Order, len(r.Data))
 			}
 			return nil, nil
 		}
