@@ -404,7 +404,7 @@ func TestGroupBy(t *testing.T) {
 			c.So(err, c.ShouldBeNil)
 			for i, v := range rs {
 				kv := v.(*KeyValue)
-				fmt.Println(kv)
+				t.Log(kv)
 				c.So(kv.key, c.ShouldEqual, i)
 			}
 		})

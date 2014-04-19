@@ -364,6 +364,8 @@ func (this *Queryable) Distinct(degrees ...int) *Queryable {
 // DistinctBy operation returns distinct elements from the data source using the
 // provided key selector function.
 //
+// Noted: The before element may be filter in parallel mode, so cannot keep order
+//
 // Example:
 // 	q := From(user).DistinctBy(func (p interface{}) interface{}{
 //		return p.(*Person).FirstName
@@ -695,6 +697,11 @@ func (this listSource) Typ() int {
 func (this listSource) ToSlice(keepOrder bool) []interface{} {
 	switch data := this.data.(type) {
 	case []interface{}:
+		if data != nil && len(data) > 0 {
+			if _, ok := data[0].(*Chunk); ok {
+				return expandChunks(data, keepOrder)
+			}
+		}
 		return data
 	case map[interface{}]interface{}:
 		i := 0
@@ -1091,17 +1098,17 @@ func getDistinct(distinctFunc func(interface{}) interface{}) stepAction {
 		//reduce the keyValue map to get distinct values
 		if chunks, err := reduceDistinctVals(f, reduceSrcChan); err == nil {
 			//get distinct values
-			fmt.Println("\nbefore expandChunks(),", option.keepOrder, ":")
-			for _, v := range chunks {
-				fmt.Print(v.(*Chunk).Order, ", ")
-			}
-			fmt.Println()
-			result := expandChunks(chunks, option.keepOrder)
-			fmt.Println("\nafter expandChunks():")
-			for _, v := range result {
-				fmt.Print(v, ", ")
-			}
-			fmt.Println()
+			//fmt.Println("\nbefore expandChunks(),", option.keepOrder, ":")
+			//for _, v := range chunks {
+			//	fmt.Print(v.(*Chunk).Order, ", ")
+			//}
+			//fmt.Println()
+			result := expandChunks(chunks, false)
+			//fmt.Println("\nafter expandChunks():")
+			//for _, v := range result {
+			//	fmt.Print(v, ", ")
+			//}
+			//fmt.Println()
 			return &listSource{result}, nil, option.keepOrder, nil
 		} else {
 			return nil, nil, option.keepOrder, err
