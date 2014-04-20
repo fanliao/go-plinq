@@ -566,8 +566,13 @@ func NewLinqError(text string, err interface{}) error {
 		}
 		return &errorLinq{text, errs}
 	} else if errs, ok := err.([]interface{}); ok {
+		//for _, e := range errs {
+		//fmt.Println("get Aggregate errors2", e)
+		//}
 		return &errorLinq{text, errs}
 	} else {
+		//fmt.Println("get Aggregate errors3", err)
+
 		return &errorLinq{text, []interface{}{err}}
 	}
 }

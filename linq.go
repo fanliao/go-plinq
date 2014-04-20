@@ -129,7 +129,7 @@ func newDataSource(data interface{}) DataSource {
 	} else if s, ok := data.(chan *Chunk); ok {
 		ds = &chanSource{chunkChan: s}
 	} else if k == reflect.Chan {
-		ds = &chanSource{new(sync.Once), data, nil}
+		ds = &chanSource{new(sync.Once), data, nil, nil}
 	} else {
 		panic(ErrUnsupportSource)
 	}
@@ -414,6 +414,8 @@ func (this *Queryable) GroupBy(keySelector func(interface{}) interface{}, degree
 // secondary source using hash function comparer, hash(i)==hash(o). the secondary source must
 // be a valid linq data source
 //
+// Noted: GroupBy will returns an unordered sequence.
+//
 // Example:
 // 	q := From(int[]{1,2,3,4,5}).Union(int[]{3,4,5,6})
 // 	// q.Results() returns {1,2,3,4,5,6}
@@ -626,6 +628,7 @@ func (this *Queryable) get() (data DataSource, err error) {
 		for e := range errsChan {
 			if !reflect.ValueOf(e).IsNil() {
 				stepFutures = append(stepFutures, *e)
+				//fmt.Println("get a step error", e.errs)
 			}
 			i++
 			if i >= len(this.steps) {
@@ -754,6 +757,7 @@ type chanSource struct {
 	once      *sync.Once
 	data      interface{}
 	chunkChan chan *Chunk
+	future    *promise.Future
 	//chunkSize int
 }
 
@@ -773,13 +777,21 @@ func (this *chanSource) makeChunkChanSure(chunkSize int) {
 			srcChan := reflect.ValueOf(this.data)
 			this.chunkChan = make(chan *Chunk)
 
-			go func() {
+			this.future = promise.Start(func() (r interface{}, e error) {
+				defer func() {
+					if err := recover(); err != nil {
+						//fmt.Println("chunk source get error", e)
+						e = newErrorWithStacks(err)
+					}
+				}()
 				chunkData := make([]interface{}, 0, chunkSize)
 				i := 0
 				for {
 					if v, ok := srcChan.Recv(); ok {
+						//fmt.Println("chunk source receie", v.Interface())
 						chunkData = append(chunkData, v.Interface())
 						if len(chunkData) == cap(chunkData) {
+							//fmt.Println("chunk source send", chunkData)
 							this.chunkChan <- &Chunk{chunkData, i}
 							i++
 							chunkData = make([]interface{}, 0, chunkSize)
@@ -790,11 +802,15 @@ func (this *chanSource) makeChunkChanSure(chunkSize int) {
 				}
 
 				if len(chunkData) > 0 {
+					//fmt.Println("chunk source send", chunkData)
 					this.chunkChan <- &Chunk{chunkData, i}
 				}
 
 				this.chunkChan <- nil
-			}()
+				return nil, nil
+			})
+
+			//fmt.Println("this.future=", this.future)
 		})
 	}
 }
@@ -808,6 +824,12 @@ func (this *chanSource) Itr(chunkSize int) func() (*Chunk, bool) {
 		//fmt.Println("chanSource receive", c)
 		return c, ok
 	}
+}
+
+//Itr returns a function that returns a pointer of chunk every be called
+func (this *chanSource) ChunkChan(chunkSize int) chan *Chunk {
+	this.makeChunkChanSure(chunkSize)
+	return this.chunkChan
 }
 
 //Close closes the channel of the chunk
@@ -992,24 +1014,27 @@ func getSelect(selectFunc func(interface{}) interface{}) stepAction {
 
 		switch s := src.(type) {
 		case *listSource:
-			size := len(s.ToSlice(false))
-			results := make([]interface{}, size)
-			f := parallelMapListToList(s, func(c *Chunk) *Chunk {
-				out := results[c.Order : c.Order+len(c.Data)]
-				mapSlice(c.Data, selectFunc, &out)
-				return nil
-			}, option)
+			//size := len(s.ToSlice(false))
+			//results := make([]interface{}, size)
+			//results := s.ToSlice(false)
+			//f := parallelMapListToList(s, func(c *Chunk) *Chunk {
+			//	out := results[c.Order : c.Order+len(c.Data)]
+			//	mapSlice(c.Data, selectFunc, &out)
+			//	return nil
+			//}, option)
 
-			dst, e = getFutureResult(f, func(r []interface{}) DataSource {
-				//fmt.Println("results=", results)
-				return &listSource{results}
-			})
+			f, out := parallelMapListToChan(s, nil, mapChunk, option)
+			//dst, e = getFutureResult(f, func(r []interface{}) DataSource {
+			//	//fmt.Println("results=", results)
+			//	return &listSource{results}
+			//})
+			sf, dst, e = f, &chanSource{chunkChan: out, future: f}, nil
 			return
 		case *chanSource:
 			//use channel mode if the source is a channel
 			f, out := parallelMapChanToChan(s, nil, mapChunk, option)
 
-			sf, dst, e = f, &chanSource{chunkChan: out}, nil
+			sf, dst, e = f, &chanSource{chunkChan: out, future: f}, nil
 			//noted when use pipeline mode to start next step, the future of current step must be returned
 			//otherwise the errors in current step will be missed
 			return
@@ -1036,7 +1061,7 @@ func getWhere(predicate func(interface{}) bool) stepAction {
 		f, reduceSrc := parallelMapToChan(src, nil, mapChunk, option)
 
 		//fmt.Println("return where")
-		return &chanSource{chunkChan: reduceSrc}, f, option.keepOrder, nil
+		return &chanSource{chunkChan: reduceSrc, future: f}, f, option.keepOrder, nil
 	})
 }
 
@@ -1235,7 +1260,7 @@ func getJoinImpl(inner interface{},
 			return
 		case *chanSource:
 			f, out := parallelMapChanToChan(s, nil, mapChunk, option)
-			dst, sf, e = &chanSource{chunkChan: out}, f, nil
+			dst, sf, e = &chanSource{chunkChan: out, future: f}, f, nil
 			return
 		}
 
@@ -1575,28 +1600,63 @@ func parallelMapChanToChan(src *chanSource, out chan *Chunk, task func(*Chunk) *
 		createOutChan = true
 	}
 
-	itr := src.Itr(option.chunkSize)
+	srcChan := src.ChunkChan(option.chunkSize)
+
+	var chEndFlag chan *promise.PromiseResult
+	if src.future == nil {
+		chEndFlag = nil
+		//close(chEndFlag)
+		//TODO: it still need be updated
+		fmt.Println("make a temp future")
+	} else {
+		chEndFlag = src.future.GetChan()
+	}
+
 	fs := make([]*promise.Future, option.degree)
 	for i := 0; i < option.degree; i++ {
-		f := promise.Start(func() (interface{}, error) {
+		f := promise.Start(func() (r interface{}, e error) {
+			//TODO: promise.Start seems cannot capture the error stack?
+			defer func() {
+				if err := recover(); err != nil {
+					e = newErrorWithStacks(err)
+					//fmt.Println("parallelMapChanToChan", e)
+				}
+			}()
 			for {
-				//fmt.Println("begin select receive")
-				if c, ok := itr(); ok {
-					//fmt.Println("select receive", c)
-					if reflect.ValueOf(c).IsNil() {
-						src.Close()
-						//fmt.Println("select receive a nil-----------------")
-						break
+				select {
+				case r := <-chEndFlag:
+					//fmt.Println("return reduceChan")
+					if r != nil && r.Typ != promise.RESULT_SUCCESS {
+						//return r.Result
+						//fmt.Println("return parallelMapChanToChan 1")
+						return nil, nil
+					} else if cap(srcChan) == 0 {
+						//return nil
+						//fmt.Println("return parallelMapChanToChan 2")
+						return nil, nil
 					}
-					//fmt.Println("select receive", *c)
-					d := task(c)
-					if out != nil && d != nil {
-						out <- d
-						//fmt.Println("end select send", *d)
+				case c, ok := <-srcChan:
+					//fmt.Println("begin select receive")
+					//if c, ok := itr(); ok {
+					if ok {
+						//fmt.Println("select receive", c)
+						if !reflect.ValueOf(c).IsNil() {
+							//fmt.Println("select receive", c)
+							d := task(c)
+							if out != nil && d != nil {
+								out <- d
+								//fmt.Println("parallelMapChanToChan end select send", *d)
+							}
+						} else if cap(srcChan) > 0 {
+							src.Close()
+							//fmt.Println("select receive a nil-----------------")
+							return nil, nil
+
+						}
+					} else {
+						//fmt.Println("parallelMapChanToChan end receive--------------")
+						return nil, nil
 					}
-				} else {
-					//fmt.Println("end receive--------------")
-					break
 				}
 			}
 			return nil, nil
@@ -1611,6 +1671,35 @@ func parallelMapChanToChan(src *chanSource, out chan *Chunk, task func(*Chunk) *
 	}
 	return f, out
 }
+
+//func reduceChan(chEndFlag chan *promise.PromiseResult, src chan *Chunk, reduce func(*Chunk)) interface{} {
+//	//if cap(src) == 0 {
+//	//for no buffer channel,
+//	//receiving the end flag from the chEndFlag presents the the all data be sent
+//	for {
+//		select {
+//		case r := <-chEndFlag:
+//			//fmt.Println("return reduceChan")
+//			if r != nil && r.Typ != promise.RESULT_SUCCESS {
+//				return r.Result
+//			} else if cap(src) == 0 {
+//				return nil
+//			}
+//		case v, ok := <-src:
+//			//if ok && v != nil {
+//			//	reduce(v)
+//			//}
+//			if ok {
+//				if v != nil {
+//					reduce(v)
+//				} else if cap(src) > 0 {
+//					close(src)
+//					return nil
+//				}
+//			}
+//		}
+//	}
+//}
 
 func parallelMapListToChan(src DataSource, out chan *Chunk, task func(*Chunk) *Chunk, option *ParallelOption) (*promise.Future, chan *Chunk) {
 	var createOutChan bool
@@ -1738,49 +1827,61 @@ func ifMustSequential(aggregateFuncs []*AggregateOpr) bool {
 
 //the functions reduces the paralleliam map result----------------------------------------------------------
 func reduceChan(chEndFlag chan *promise.PromiseResult, src chan *Chunk, reduce func(*Chunk)) interface{} {
-	if cap(src) == 0 {
-		//for no buffer channel,
-		//receiving the end flag from the chEndFlag presents the the all data be sent
-		for {
-			select {
-			case r := <-chEndFlag:
-				//fmt.Println("return reduceChan")
-				if r.Typ != promise.RESULT_SUCCESS {
-					return r.Result
-				} else {
-					return nil
-				}
-			case v, ok := <-src:
-				if ok && v != nil {
-					reduce(v)
-				}
+	//if cap(src) == 0 {
+	//for no buffer channel,
+	//receiving the end flag from the chEndFlag presents the the all data be sent
+	for {
+		select {
+		case r := <-chEndFlag:
+			if r != nil && r.Typ != promise.RESULT_SUCCESS {
+				//fmt.Println("return reduceChan 1")
+				return r.Result
+			} else if cap(src) == 0 {
+				//fmt.Println("return reduceChan 2")
+				return nil
 			}
-		}
-	} else {
-		//for buffer channel,
-		//receiving a nil presents the all data be sent
-		for {
-			select {
-			case r := <-chEndFlag:
-				if r != nil && r.Typ != promise.RESULT_SUCCESS {
-					//the future tasks related to source channel gets the error
-					return r.Result
-				}
-			case v, ok := <-src:
-				if ok {
-					if v != nil {
-						reduce(v)
-					} else {
-						close(src)
-						return nil
-					}
+		case v, ok := <-src:
+			//if ok && v != nil {
+			//	reduce(v)
+			//}
+			if ok {
+				if v != nil {
+					//fmt.Println("reduceChan receive", v)
+					reduce(v)
+				} else if cap(src) > 0 {
+					close(src)
+					//fmt.Println("return reduceChan 3")
+					return nil
 				}
 			}
 		}
 	}
+	//} else {
+	//	//for buffer channel,
+	//	//receiving a nil presents the all data be sent
+	//	for {
+	//		select {
+	//		case r := <-chEndFlag:
+	//			if r != nil && r.Typ != promise.RESULT_SUCCESS {
+	//				//the future tasks related to source channel gets the error
+	//				return r.Result
+	//			}
+	//		case v, ok := <-src:
+	//			if ok {
+	//				if v != nil {
+	//					reduce(v)
+	//				} else {
+	//					close(src)
+	//					return nil
+	//				}
+	//			}
+	//		}
+	//	}
+	//}
 
 }
 
+//the functions reduces the paralleliam map result----------------------------------------------------------
 func reduceDistinctVals(mapFuture *promise.Future, reduceSrcChan chan *Chunk) ([]interface{}, error) {
 	//get distinct values
 	chunks := make([]interface{}, 0, 2)
@@ -1793,6 +1894,9 @@ func reduceDistinctVals(mapFuture *promise.Future, reduceSrcChan chan *Chunk) ([
 	} else {
 		return nil, NewLinqError("reduceDistinctVals error", errs)
 	}
+	parallelMapChanToChan(&chanSource{data: reduceSrcChan, future: f}, nil, func (c *Chunk) *Chunk{
+		return distinctChunkVals(c, distKVs))
+	}, )
 }
 
 //util functions--------------------------------------------------------

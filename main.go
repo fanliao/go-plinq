@@ -224,6 +224,7 @@ func TestLinq() {
 		chunkSrc <- &Chunk{src1[2*size : 3*size], 2 * size}
 		chunkSrc <- &Chunk{src1[3*size : 4*size], 3 * size}
 		chunkSrc <- nil
+		close(chunkSrc)
 		fmt.Println("close src------------------", chunkSrc)
 	}()
 	dst, err := From(chunkSrc).Where(whereFunc).Select(selectFunc).KeepOrder(true).Results()
