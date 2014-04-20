@@ -627,14 +627,15 @@ func (this *Queryable) get() (data DataSource, err error) {
 		}
 
 		i := 0
-		//fmt.Println("start receive errors")
+		//fmt.Println("\nstart receive errors-----------")
 		for e := range errsChan {
 			if e != nil && !reflect.ValueOf(e).IsNil() {
 				stepFutures = append(stepFutures, e)
-				//fmt.Println("get a step error", e.errs)
+				//fmt.Println("get a step error---------")
 			}
 			i++
 			if i >= len(this.steps) {
+				//fmt.Println("send step errors---------", i, len(this.steps))
 				this.errChan <- stepFutures
 				return
 			}
@@ -650,6 +651,7 @@ func (this *Queryable) get() (data DataSource, err error) {
 
 		//execute the step
 		if data, f, keepOrder, err = step.Action()(data, step.POption(pOption)); err != nil {
+			//fmt.Println("get errors when execute1---------", i, step.Typ())
 			errsChan <- NewStepError(i, step1.Typ(), err)
 			for j := i + 1; j < len(this.steps); j++ {
 				errsChan <- nil
@@ -661,11 +663,14 @@ func (this *Queryable) get() (data DataSource, err error) {
 			//because the steps will be paralle in piplline mode,
 			//so cannot use return value of the function
 			f.Fail(func(results interface{}) {
+				//fmt.Println("get errors when execute2----------", i, step.Typ())
 				errsChan <- NewStepError(j, step1.Typ(), results)
 			}).Done(func(results interface{}) {
+				//fmt.Println("get errors when execute3-----------", i, step.Typ())
 				errsChan <- nil
 			})
 		} else {
+			//fmt.Println("get errors when execute4-----------", i, step.Typ())
 			errsChan <- nil
 		}
 
@@ -680,6 +685,7 @@ func (this *Queryable) get() (data DataSource, err error) {
 
 func (this *Queryable) stepErrs() (err error) {
 	if errs := <-this.errChan; len(errs) > 0 {
+		//fmt.Println("get steperrs-------------")
 		err = NewLinqError("Aggregate errors", errs)
 	}
 	if this.errChan != nil {
@@ -809,7 +815,8 @@ func (this *chanSource) makeChunkChanSure(chunkSize int) {
 					this.chunkChan <- &Chunk{chunkData, i}
 				}
 
-				this.chunkChan <- nil
+				//this.chunkChan <- nil
+				close(this.chunkChan)
 				return nil, nil
 			})
 
@@ -1123,6 +1130,11 @@ func getDistinct(distinctFunc func(interface{}) interface{}) stepAction {
 
 		//map the element to a keyValue that key is hash value and value is element
 		f, reduceSrcChan := parallelMapToChan(src, nil, mapChunk, option)
+		//f.Done(func(v interface{}) {
+		//	fmt.Println("distinct map return----", v)
+		//}).Fail(func(v interface{}) {
+		//	fmt.Println("distinct map get error----", v)
+		//})
 
 		//reduce the keyValue map to get distinct values
 		//if chunks, err := reduceDistinctVals(f, reduceSrcChan); err == nil {
@@ -1172,7 +1184,7 @@ func getGroupBy(groupFunc func(interface{}) interface{}, hashAsKey bool) stepAct
 
 		//reduce the keyValue map to get grouped slice
 		//get key with group values values
-		errs := reduceChan(f.GetChan(), reduceSrc, func(c *Chunk) {
+		errs := reduceChan(f, reduceSrc, func(c *Chunk) {
 			for _, v := range c.Data {
 				groupKV(v)
 			}
@@ -1292,6 +1304,7 @@ func getUnion(source2 interface{}) stepAction {
 		f2, reduceSrcChan := parallelMapToChan(From(source2).data, reduceSrcChan, mapChunk, option)
 
 		mapFuture := promise.WhenAll(f1, f2)
+		addCloseChanCallback(mapFuture, reduceSrcChan)
 
 		//reduce the KeyValue slices to get distinct slice
 		//get key with group values values
@@ -1431,7 +1444,7 @@ func getAggregate(src DataSource, aggregateFuncs []*AggregateOpr, option *Parall
 	}
 
 	avl := newChunkAvlTree()
-	if errs := reduceChan(f.GetChan(), reduceSrc, func(c *Chunk) {
+	if errs := reduceChan(f, reduceSrc, func(c *Chunk) {
 		if !keep {
 			//datas := c.Data
 			agg(c)
@@ -1614,15 +1627,15 @@ func parallelMapChanToChan(src *chanSource, out chan *Chunk, task func(*Chunk) *
 
 	srcChan := src.ChunkChan(option.chunkSize)
 
-	var chEndFlag chan *promise.PromiseResult
-	if src.future == nil {
-		chEndFlag = nil
-		//close(chEndFlag)
-		//TODO: it still need be updated
-		//fmt.Println("make a temp future")
-	} else {
-		chEndFlag = src.future.GetChan()
-	}
+	//var chEndFlag chan *promise.PromiseResult
+	//if src.future == nil {
+	//	chEndFlag = nil
+	//	//close(chEndFlag)
+	//	//TODO: it still need be updated
+	//	//fmt.Println("make a temp future")
+	//} else {
+	//	chEndFlag = src.future.GetChan()
+	//}
 
 	fs := make([]*promise.Future, option.degree)
 	for i := 0; i < option.degree; i++ {
@@ -1631,48 +1644,58 @@ func parallelMapChanToChan(src *chanSource, out chan *Chunk, task func(*Chunk) *
 			defer func() {
 				if err := recover(); err != nil {
 					e = newErrorWithStacks(err)
-					//fmt.Println("parallelMapChanToChan", e)
+					//fmt.Println("parallelMapChanToChan-----", e)
 				}
 			}()
 			for {
-				select {
-				case r := <-chEndFlag:
-					//fmt.Println("return reduceChan")
-					if r != nil && r.Typ != promise.RESULT_SUCCESS {
-						//return r.Result
-						//fmt.Println("return parallelMapChanToChan 1", r.Result)
-						return nil, r.Result.(error)
-					} else if cap(srcChan) == 0 {
-						//return nil
-						//fmt.Println("return parallelMapChanToChan 2")
-						return nil, nil
-					}
-				case c, ok := <-srcChan:
-					//fmt.Println("begin select receive")
-					//if c, ok := itr(); ok {
-					if ok {
+				//select {
+				//case r := <-chEndFlag:
+				//	//fmt.Println("return reduceChan")
+				//	if r != nil && r.Typ != promise.RESULT_SUCCESS {
+				//		//return r.Result
+				//		fmt.Println("return parallelMapChanToChan 1--------", r.Result)
+				//		return nil, r.Result.(error)
+				//	} else if cap(srcChan) == 0 {
+				//		//return nil
+				//		fmt.Println("return parallelMapChanToChan 2---------")
+				//		return nil, nil
+				//	}
+				//case c, ok := <-srcChan:
+				//fmt.Println("start receive", i)
+				if c, ok := <-srcChan; ok {
+					//fmt.Println("select receive", c)
+					if c != nil && !reflect.ValueOf(c).IsNil() {
 						//fmt.Println("select receive", c)
-						if !reflect.ValueOf(c).IsNil() {
-							//fmt.Println("select receive", c)
-							d := task(c)
-							if out != nil && d != nil {
-								out <- d
-								//fmt.Println("parallelMapChanToChan end select send", *d)
-							}
-						} else if cap(srcChan) > 0 {
-							src.Close()
-							//fmt.Println("select receive a nil-----------------")
-							return nil, nil
-
+						d := task(c)
+						if out != nil && d != nil {
+							out <- d
+							//fmt.Println("parallelMapChanToChan send", i, "get", *c, "\nsend", *d)
 						}
-					} else {
-						//fmt.Println("parallelMapChanToChan end receive--------------")
-						return nil, nil
+					} else if cap(srcChan) > 0 {
+						src.Close()
+						//fmt.Println("select receive a nil-----------------")
+						//return nil, nil
+						break
 					}
+				} else {
+					//fmt.Println("parallelMapChanToChan end receive--------------")
+					//return nil, nil
+					break
+				}
+
+			}
+			if src.future != nil {
+				if _, err := src.future.Get(); err != nil {
+					//fmt.Println("return reduceChan")
+					//if r != nil && r.Typ != promise.RESULT_SUCCESS {
+					//return r.Result
+					//fmt.Println("return parallelMapChanToChan 1 get error--------")
+					return nil, err
+					//}
 				}
 			}
+			//fmt.Println("exit parallelMapChanToChan")
 			return nil, nil
-			//fmt.Println("r=", r)
 		})
 		fs[i] = f
 	}
@@ -1792,6 +1815,7 @@ func trySequentialMap(src DataSource, option *ParallelOption, mapChunk func(c *C
 	defer func() {
 		if e := recover(); e != nil {
 			err = newErrorWithStacks(e)
+			//fmt.Println("trySequentialMap get error,------", err)
 			//return nil, newErrorWithStacks(e), true
 		}
 	}()
@@ -1838,36 +1862,53 @@ func ifMustSequential(aggregateFuncs []*AggregateOpr) bool {
 }
 
 //the functions reduces the paralleliam map result----------------------------------------------------------
-func reduceChan(chEndFlag chan *promise.PromiseResult, src chan *Chunk, reduce func(*Chunk)) interface{} {
+func reduceChan(f *promise.Future, src chan *Chunk, reduce func(*Chunk)) interface{} {
 	//if cap(src) == 0 {
 	//for no buffer channel,
 	//receiving the end flag from the chEndFlag presents the the all data be sent
-	for {
-		select {
-		case r := <-chEndFlag:
-			if r != nil && r.Typ != promise.RESULT_SUCCESS {
-				//fmt.Println("return reduceChan 1")
-				return r.Result
-			} else if cap(src) == 0 {
-				//fmt.Println("return reduceChan 2")
-				return nil
-			}
-		case v, ok := <-src:
-			//if ok && v != nil {
-			//	reduce(v)
-			//}
-			if ok {
-				if v != nil {
-					//fmt.Println("reduceChan receive", v)
-					reduce(v)
-				} else if cap(src) > 0 {
-					close(src)
-					//fmt.Println("return reduceChan 3")
-					return nil
-				}
-			}
+	//for {
+	//	select {
+	//	case r := <-chEndFlag:
+	//		if r != nil && r.Typ != promise.RESULT_SUCCESS {
+	//			fmt.Println("return reduceChan 1")
+	//			return r.Result
+	//		} else if cap(src) == 0 {
+	//			fmt.Println("return reduceChan 2")
+	//			return nil
+	//		}
+	//	case v, ok := <-src:
+	//		//if ok && v != nil {
+	//		//	reduce(v)
+	//		//}
+	//		if ok {
+	//			if v != nil {
+	//				//fmt.Println("reduceChan receive", v)
+	//				reduce(v)
+	//			} else if cap(src) > 0 {
+	//				close(src)
+	//				fmt.Println("return reduceChan 3")
+	//				return nil
+	//			}
+	//		}
+	//	}
+	//}
+	for v := range src {
+		if v != nil {
+			//fmt.Println("reduceChan receive", v)
+			reduce(v)
+		} else if cap(src) > 0 {
+			close(src)
+			//fmt.Println("return reduceChan 3")
+			break
 		}
 	}
+	if f != nil {
+		if _, err := f.Get(); err != nil {
+			//fmt.Println("return reduceChan 1")
+			return err
+		}
+	}
+	return nil
 	//} else {
 	//	//for buffer channel,
 	//	//receiving a nil presents the all data be sent

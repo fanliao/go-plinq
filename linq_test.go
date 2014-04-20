@@ -1,11 +1,10 @@
 package plinq
 
 import (
-	"github.com/ahmetalpbalkan/go-linq"
-	c "github.com/smartystreets/goconvey/convey"
-	//"math"
 	"errors"
 	"fmt"
+	"github.com/ahmetalpbalkan/go-linq"
+	c "github.com/smartystreets/goconvey/convey"
 	"math/rand"
 	"reflect"
 	"runtime"
@@ -90,6 +89,28 @@ func wherePanic(v interface{}) bool {
 	var s []interface{}
 	_ = s[2]
 	return true
+}
+
+func getChan(src []interface{}) chan interface{} {
+	chanSrc := make(chan interface{})
+	go func() {
+		for _, v := range src {
+			chanSrc <- v
+		}
+		close(chanSrc)
+	}()
+	return chanSrc
+}
+
+func getIntChan(src []int) chan int {
+	chanSrc := make(chan int)
+	go func() {
+		for _, v := range src {
+			chanSrc <- v
+		}
+		close(chanSrc)
+	}()
+	return chanSrc
 }
 
 func whereInt(v interface{}) bool {
@@ -385,9 +406,9 @@ func TestGroupBy(t *testing.T) {
 		})
 
 		c.Convey("An error should be returned if the error appears in GroupBy function", func() {
-			_, err := From(arrRptUserForT).SetSizeOfChunk(size).GroupBy(groupUserPanic).Results()
+			rs, err := From(arrRptUserForT).SetSizeOfChunk(size).GroupBy(groupUserPanic).Results()
 			if err == nil {
-				fmt.Println("\nGroup An error should be returned:", err)
+				fmt.Println("\nGroup An error should be returned----------:", rs)
 			}
 			c.So(err, c.ShouldNotBeNil)
 		})
@@ -614,7 +635,7 @@ func TestGroupJoin(t *testing.T) {
 			rs, err := From(arrUserForT).SetSizeOfChunk(size).GroupJoin(arrRoleForT, userSelector, roleSelectorPanic, groupResultSelector).Results()
 			//TODO: This case failed once, need more checking
 			if err == nil {
-				fmt.Println("/nif the error appears in GroupJoin function, return", rs)
+				fmt.Println("/nif the error appears in GroupJoin function, return----", rs)
 			}
 			c.So(err, c.ShouldNotBeNil)
 
@@ -1513,28 +1534,6 @@ func TestAvl(t *testing.T) {
 			}
 		})
 
-}
-
-func getChan(src []interface{}) chan interface{} {
-	chanSrc := make(chan interface{})
-	go func() {
-		for _, v := range src {
-			chanSrc <- v
-		}
-		close(chanSrc)
-	}()
-	return chanSrc
-}
-
-func getIntChan(src []int) chan int {
-	chanSrc := make(chan int)
-	go func() {
-		for _, v := range src {
-			chanSrc <- v
-		}
-		close(chanSrc)
-	}()
-	return chanSrc
 }
 
 func shouldSlicesResemble(actual interface{}, expected ...interface{}) string {
