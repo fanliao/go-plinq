@@ -30,6 +30,19 @@ ElementAt, First, FirstBy, Last, LastBy, Single,
 2. Doc
 
 ## Performance testing result
+
+<table>
+  <tr>
+    <th>The size of chunk</th><th> where </th><th> select </th><th> groupby </th><th> distinct </th><th> join   </th><th> union  </th><th> except </th><th> reverse </th><th> aggregate</th>
+  </tr>
+  <tr>
+    <td>1</td><td>Tom Preston-Werner</td><td>Awesome</td>
+  </tr>
+  <tr>
+    <td>2</td><td>Albert Einstein</td><td>Nearly as awesome</td>
+  </tr>
+</table>
+
 Count 100
 
    | where | select | groupby | distinct | join   | union  | except | reverse | aggregate
