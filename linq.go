@@ -1531,21 +1531,56 @@ func parallelMapListToChan(src DataSource, out chan *Chunk, task func(*Chunk) *C
 		createOutChan = true
 	}
 
-	f := parallelMapList(src, func(c *Chunk) func() (interface{}, error) {
-		return func() (interface{}, error) {
-			r := task(c)
-			if out != nil {
-				out <- r
-				//fmt.Println("\n parallelMapListToChan send", r.Order, len(r.Data))
-			}
-			return nil, nil
+	var f *promise.Future
+	data := src.ToSlice(false)
+	if len(data) == 0 {
+		f = promise.Wrap([]interface{}{})
+		if createOutChan {
+			addCloseChanCallback(f, out)
 		}
-	}, option)
-	if createOutChan {
-		addCloseChanCallback(f, out)
+		return f, out
+	} else {
+		size, lenOfData := option.chunkSize, len(data)
+		ch := make(chan *Chunk)
+		go func() {
+			for i := 0; i*size < lenOfData; i++ {
+				end := (i + 1) * size
+				if end >= lenOfData {
+					end = lenOfData
+				}
+				c := &Chunk{data[i*size : end], i * size} //, end}
+				ch <- c
+			}
+			close(ch)
+		}()
+
+		cs := &chanSource{chunkChan: ch}
+		//always use channel mode in Where operation
+		f, out = parallelMapChanToChan(cs, out, task, option)
+
+		if createOutChan {
+			addCloseChanCallback(f, out)
+		}
+		//fmt.Println("return where")
+		return f, out
+
 	}
-	//fmt.Println("parallelMapListToChan return f")
-	return f, out
+
+	//f := parallelMapList(src, func(c *Chunk) func() (interface{}, error) {
+	//	return func() (interface{}, error) {
+	//		r := task(c)
+	//		if out != nil {
+	//			out <- r
+	//			//fmt.Println("\n parallelMapListToChan send", r.Order, len(r.Data))
+	//		}
+	//		return nil, nil
+	//	}
+	//}, option)
+	//if createOutChan {
+	//	addCloseChanCallback(f, out)
+	//}
+	////fmt.Println("parallelMapListToChan return f")
+	//return f, out
 }
 
 func parallelMapListToList(src DataSource, task func(*Chunk) *Chunk, option *ParallelOption) *promise.Future {
