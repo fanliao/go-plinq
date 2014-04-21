@@ -6,6 +6,15 @@ PLINQ library for go, support the lazy evaluated and can use channel as source
 ## 主要特性
 
 * 延迟查询
+
+    pSrc := &src
+	q := From(pSrc).Where(whereFunc).Select(selectFunc)
+	for i := count; i < count+10; i++ {
+		src = append(src, i)
+	}
+	rs, err := q1.Results()
+	fmt.Println("Result are", rs, err)
+
 * 并行查询
 * 支持Channel作为查询数据源
 * 支持返回Channel作为查询结果（未完成。。。）
