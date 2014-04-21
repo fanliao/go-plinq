@@ -16,9 +16,9 @@ import (
 const (
 	count        int  = 22
 	rptCount     int  = 24
-	countForB    int  = 10000
-	rptCountForB int  = 11000
-	testGoLinq   bool = false
+	countForB    int  = 100
+	rptCountForB int  = 110
+	testGoLinq   bool = true
 )
 
 var (
