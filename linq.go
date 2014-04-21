@@ -124,11 +124,18 @@ func newDataSource(data interface{}) DataSource {
 	isNotNil(data, ErrNilSource)
 
 	var ds DataSource
-	if k := reflect.ValueOf(data).Kind(); k == reflect.Slice || k == reflect.Map {
+	if v := reflect.ValueOf(data); v.Kind() == reflect.Slice || v.Kind() == reflect.Map {
 		ds = &listSource{data: data}
+	} else if v.Kind() == reflect.Ptr {
+		ov := v.Elem()
+		if ov.Kind() == reflect.Slice || ov.Kind() == reflect.Map {
+			ds = &listSource{data: data}
+		} else {
+			panic(ErrUnsupportSource)
+		}
 	} else if s, ok := data.(chan *Chunk); ok {
 		ds = &chanSource{chunkChan: s}
-	} else if k == reflect.Chan {
+	} else if v.Kind() == reflect.Chan {
 		ds = &chanSource{new(sync.Once), data, nil, nil}
 	} else {
 		panic(ErrUnsupportSource)
@@ -719,23 +726,9 @@ func (this listSource) ToSlice(keepOrder bool) []interface{} {
 		return results
 	default:
 		value := reflect.ValueOf(this.data)
-		switch value.Kind() {
-		case reflect.Slice:
-			size := value.Len()
-			results := make([]interface{}, size)
-			for i := 0; i < size; i++ {
-				results[i] = value.Index(i).Interface()
-			}
-			return results
-		case reflect.Map:
-			size := value.Len()
-			results := make([]interface{}, size)
-			for i, k := range value.MapKeys() {
-				results[i] = &KeyValue{k.Interface(), value.MapIndex(k).Interface()}
-			}
-			return results
-		}
-		return nil
+		return getSlice(value)
+
+		//return nil
 
 	}
 	return nil
@@ -751,6 +744,29 @@ func (this listSource) ToSlice(keepOrder bool) []interface{} {
 //	}()
 //	return out
 //}
+
+func getSlice(v reflect.Value) []interface{} {
+	switch v.Kind() {
+	case reflect.Slice:
+		size := v.Len()
+		results := make([]interface{}, size)
+		for i := 0; i < size; i++ {
+			results[i] = v.Index(i).Interface()
+		}
+		return results
+	case reflect.Map:
+		size := v.Len()
+		results := make([]interface{}, size)
+		for i, k := range v.MapKeys() {
+			results[i] = &KeyValue{k.Interface(), v.MapIndex(k).Interface()}
+		}
+		return results
+	case reflect.Ptr:
+		ov := v.Elem()
+		return getSlice(ov)
+	}
+	return nil
+}
 
 // chanSource presents the channel source
 // note: the channel must be closed by caller of linq,

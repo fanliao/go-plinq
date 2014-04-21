@@ -92,6 +92,14 @@ func TestLinq() {
 		return q.Where(whereFunc).Select(selectFunc)
 	})
 
+	pSrc := &src1
+	q1 := From(pSrc).Where(whereFunc).Select(selectFunc)
+	for i := count; i < count+10; i++ {
+		src1 = append(src1, i)
+	}
+	rs1, err1 := q1.Results()
+	fmt.Println("Where and Select from Pointer returns", rs1, err1, "\n")
+
 	//test where and select with int slice
 	dst, _ := From(arrInts).Where(whereFunc).Select(selectFunc).Results()
 	fmt.Println("Int slice where select return", dst, "\n")
