@@ -1,4 +1,4 @@
-﻿##go-linq的并发模型
+##go-linq的并发模型
 1. linq的处理被分为不同的步骤，步骤类型包括：
 
    * select （映射）
@@ -48,5 +48,25 @@
 
 4. 数据并行处理模式总结：
    1. 数据源可以为list或者channel
-   2. 每个数据源都可以转为list或channel，可以是并行或者单线程模式，这个过程类似于MapReduce中的Map
-   3. 数据收集是另一种处理模式，
+   2. 每个数据源都可以转为list或channel，可以采取并行或者单线程模式，这个过程类似于MapReduce中的Map
+
+
+## 尚未实现的linq查询运算符:
+* 过滤操作符：
+Skip, SkipWhile, Take, TakeWhile
+
+* 选择：
+SeleteMany
+
+* 量词/Quantifiers：
+Contains
+All, Any, AnyWith, 
+SequenceEqual
+
+* 生成器方法
+Range， Repeat
+
+* 元素运算符/Element Operators
+ElementAt, First, FirstBy, Last, LastBy, Single, 
+
+

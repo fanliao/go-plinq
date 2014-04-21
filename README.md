@@ -19,23 +19,22 @@ rs, err := q1.Results()
 * 支持返回Channel作为查询结果（未完成。。。）
 
 
-## 尚未实现的linq查询运算符:
-* 过滤操作符：
-Skip, SkipWhile, Take, TakeWhile
+## 已经实现的linq查询运算符:
+* 排序运算符：OrderBy, Reverse
 
-* 选择：
-SeleteMany
+* Set运算符：Distinct, Except, Intersect, Union
 
-* 量词/Quantifiers：
-Contains
-All, Any, AnyWith, 
-SequenceEqual
+* 筛选运算符：Where
 
-* 生成器方法
-Range， Repeat
+* 投影运算符：Select
 
-* 元素运算符/Element Operators
-ElementAt, First, FirstBy, Last, LastBy, Single, 
+* 连接运算符：Join, LeftJoin, GroupJoin, LeftGroupJoin
+
+* 分组运算符：GroupBy
+
+* 串联运算符：Concat
+
+* 聚合运算符：Aggregate, Average, Count, Max, Min, Sum
 
 ## 文档（未完成。。。）:
 
@@ -46,6 +45,8 @@ ElementAt, First, FirstBy, Last, LastBy, Single,
 Chunk Size是指plinq内部分割数据的数据块的大小，如果Chunk Size>=N，那将退化为串行的linq查询。
 
 go-linq的并行模式太过简陋，所以在这里没有进行比较。绝大多数情况下，go-linq的并行模式比串行更慢。
+
+下面的时间单位是ns。
 
 ### 性能测试结果
 

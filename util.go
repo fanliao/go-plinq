@@ -11,7 +11,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"unsafe"
 )
 
@@ -282,21 +281,6 @@ func (this *sHash) WriteUInt32(data uint32) {
 
 func NewSHash() *sHash {
 	return &sHash{NewBKDR32(), NewDJB32()}
-}
-
-type tMap struct {
-	lock *sync.Mutex
-	m    map[uint64]interface{}
-}
-
-func (this tMap) add(k uint64, v interface{}) {
-	this.lock.Lock()
-	defer func() {
-		this.lock.Unlock()
-	}()
-	if _, ok := this.m[k]; !ok {
-		this.m[k] = v
-	}
 }
 
 //sort util func-------------------------------------------------------------------------------------------

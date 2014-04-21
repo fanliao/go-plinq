@@ -125,19 +125,25 @@ func newDataSource(data interface{}) DataSource {
 
 	var ds DataSource
 	if v := reflect.ValueOf(data); v.Kind() == reflect.Slice || v.Kind() == reflect.Map {
+		fmt.Println("slice")
 		ds = &listSource{data: data}
 	} else if v.Kind() == reflect.Ptr {
+		fmt.Println("ptr")
 		ov := v.Elem()
 		if ov.Kind() == reflect.Slice || ov.Kind() == reflect.Map {
 			ds = &listSource{data: data}
 		} else {
+			fmt.Println("unsupport")
 			panic(ErrUnsupportSource)
 		}
 	} else if s, ok := data.(chan *Chunk); ok {
+		fmt.Println("chan")
 		ds = &chanSource{chunkChan: s}
 	} else if v.Kind() == reflect.Chan {
+		fmt.Println("chan2")
 		ds = &chanSource{new(sync.Once), data, nil, nil}
 	} else {
+		fmt.Println("unsupport")
 		panic(ErrUnsupportSource)
 	}
 	return ds
