@@ -31,15 +31,19 @@ ElementAt, First, FirstBy, Last, LastBy, Single,
 
 ## Performance testing result
 
+N = 100
 <table>
   <tr>
     <th>The size of chunk</th><th> where </th><th> select </th><th> groupby </th><th> distinct </th><th> join   </th><th> union  </th><th> except </th><th> reverse </th><th> aggregate</th>
   </tr>
   <tr>
-    <td>1</td><td>Tom Preston-Werner</td><td>Awesome</td>
+    <td>20 </td><td>128488 </td><td>178262  </td><td>742692   </td><td>383964    </td><td>831622  </td><td>587263  </td><td>602084  </td><td>76692    </td><td>117172</td>
   </tr>
   <tr>
-    <td>2</td><td>Albert Einstein</td><td>Nearly as awesome</td>
+    <td>100</td><td>42081  </td><td>137802  </td><td>1250438  </td><td>1069072   </td><td>2088570 </td><td>585460  </td><td>578650  </td><td>26158    </td><td>25207</td>
+  </tr>
+  <tr>
+    <td>go-linq</td><td>41636  </td><td>139851  </td><td>None         </td><td>936898    </td><td>4019915 </td><td>228010  </td><td>168172  </td><td>24150    </td><td>22684</td>
   </tr>
 </table>
 
