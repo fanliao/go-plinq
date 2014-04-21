@@ -121,7 +121,7 @@ func filterUser(v interface{}) bool {
 
 func filterMap(v interface{}) bool {
 	u := v.(*KeyValue)
-	return u.key.(int)%2 == 0
+	return u.Key.(int)%2 == 0
 }
 
 func selectWithPanic(v interface{}) interface{} {
@@ -189,6 +189,8 @@ func TestFrom(t *testing.T) {
 	c.Convey("Nil as data source", t, func() {
 		c.So(func() { _ = From(nil) }, c.ShouldPanicWith, ErrNilSource)
 		c.So(func() { _ = From(1) }, c.ShouldPanicWith, ErrUnsupportSource)
+		var pSlice *[]interface{} = nil
+		c.So(func() { _ = From(pSlice) }, c.ShouldPanicWith, ErrNilSource)
 	})
 }
 

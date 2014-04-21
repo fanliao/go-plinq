@@ -692,8 +692,22 @@ func writeStrings(buf *bytes.Buffer, strings []string) {
 }
 
 //Asset function--------------------------------------
-func isNotNil(v interface{}, err error) {
-	if v == nil || reflect.ValueOf(v).IsNil() {
+func mustNotNil(v interface{}, err error) {
+	if isNil(v) {
 		panic(err)
 	}
+}
+
+func isNil(v interface{}) bool {
+	if v == nil {
+		return true
+	}
+	if val := reflect.ValueOf(v); val.Kind() == reflect.Chan ||
+		val.Kind() == reflect.Ptr || val.Kind() == reflect.Slice ||
+		val.Kind() == reflect.Func || val.Kind() == reflect.Interface {
+		if val.IsNil() {
+			return true
+		}
+	}
+	return false
 }

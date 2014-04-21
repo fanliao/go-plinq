@@ -114,7 +114,7 @@ func TestLinq() {
 		fmt.Println()
 		for _, o := range dst {
 			kv := o.(*KeyValue)
-			fmt.Println("group get k=", kv.key, ";v=", kv.value, " ")
+			fmt.Println("group get k=", kv.Key, ";v=", kv.Value, " ")
 		}
 	})
 
@@ -189,6 +189,26 @@ func TestLinq() {
 		return q.Aggregate(Sum, Count, Max, Min)
 	})
 
+	//test Skip
+	testLinqWithAllSource("Skip opretions", src1, func(q *Queryable) *Queryable {
+		return q.Skip(6)
+	})
+
+	//test Take
+	testLinqWithAllSource("Take opretions", src1, func(q *Queryable) *Queryable {
+		return q.Take(6)
+	})
+
+	//test SkipWhile
+	testLinqWithAllSource("SkipWhile opretions", src1, func(q *Queryable) *Queryable {
+		return q.SkipWhile(func(v interface{}) bool { return v.(int) <= 11 })
+	})
+
+	//test TakeWhile
+	testLinqWithAllSource("TakeWhile opretions", src1, func(q *Queryable) *Queryable {
+		return q.TakeWhile(func(v interface{}) bool { return v.(int) <= 11 })
+	})
+
 	//TODO: don't support the mixed type in aggregate
 	////test aggregate multiple operation
 	//testLinqAggWithAllSource("aggregate multiple opretions with mixed type", src1, func(q *Queryable) (interface{}, error) {
@@ -235,7 +255,7 @@ func TestLinq() {
 		close(chunkSrc)
 		fmt.Println("close src------------------", chunkSrc)
 	}()
-	dst, err := From(chunkSrc).Where(whereFunc).Select(selectFunc).KeepOrder(true).Results()
+	dst, err := From(chunkSrc).Where(whereFunc).Select(selectFunc).SetKeepOrder(true).Results()
 	if err == nil {
 		fmt.Println("chunkchansource where select return", dst)
 		fmt.Println()
