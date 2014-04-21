@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	DEFAULTCHUNKSIZE     = 200
+	DEFAULTCHUNKSIZE     = 500
 	SOURCE_LIST      int = iota //presents the list source
 	SOURCE_CHUNK                //presents the channel source
 )

@@ -1,0 +1,55 @@
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+<style type="text/css">
+@media print {pre,code {word-wrap: break-word;}
+</style>
+<title>README.md</title>
+</head>
+<body>
+<h1>go-plinq</h1>
+
+<p>PLINQ library for go, support the lazy evaluated and can use channel as source</p>
+
+<h2>Outstanding Linq operatoin:</h2>
+
+<ul>
+<li><p>过滤操作符：
+Skip, SkipWhile, Take, TakeWhile</p></li>
+<li><p>选择：
+SeleteMany</p></li>
+<li><p>量词/Quantifiers：
+Contains
+All, Any, AnyWith, 
+SequenceEqual</p></li>
+<li><p>生成器方法
+Range， Repeat</p></li>
+<li><p>元素运算符/Element Operators
+ElementAt, First, FirstBy, Last, LastBy, Single, </p></li>
+</ul>
+
+<h2>outstanding issue:</h2>
+
+<ol>
+<li>KeepOrder() cannot correctly run in all operation</li>
+</ol>
+
+<h2>outstanding items:</h2>
+
+<ol>
+<li>performance testing</li>
+<li>Doc</li>
+</ol>
+
+<h2>Performance testing result</h2>
+
+<p>Count 500
+   | where | select | groupby | distinct | join  | union | except | reverse | aggregate
+---|-------|--------|---------|----------|-------|-------|--------|---------|----------
+100|154026 |339498  |3894728  |2263331   |2410543|1582325|1961883 |95840    |108058
+200|161737 |385967  |3603801  |2841179   |2555757|1572811|1983917 |91033    |107057
+500|109160 |578851  |4027921  |4632809   |7226622|1966892|2166186 |42242    |77313
+   |</p>
+
+</body>
+</html>

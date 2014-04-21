@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"github.com/ahmetalpbalkan/go-linq"
 	c "github.com/smartystreets/goconvey/convey"
-	"math/rand"
+	//"math/rand"
 	"reflect"
 	"runtime"
 	"strconv"
@@ -14,10 +14,11 @@ import (
 )
 
 const (
-	count        int = 22
-	rptCount     int = 24
-	countForB    int = 100000
-	rptCountForB int = 110000
+	count        int  = 22
+	rptCount     int  = 24
+	countForB    int  = 10000
+	rptCountForB int  = 11000
+	testGoLinq   bool = false
 )
 
 var (
@@ -38,6 +39,8 @@ var (
 )
 
 func init() {
+	fmt.Println("DEFAULTCHUNKSIZE=", DEFAULTCHUNKSIZE)
+	fmt.Println("countForB=", countForB)
 	MAXPROCS = numCPU
 	runtime.GOMAXPROCS(MAXPROCS)
 	for i := 0; i < count; i++ {
@@ -1117,6 +1120,10 @@ func BenchmarkBlockSourceWhere(b *testing.B) {
 }
 
 func BenchmarkGoLinqWhere(b *testing.B) {
+	if !testGoLinq {
+		b.SkipNow()
+		return
+	}
 	for i := 0; i < b.N; i++ {
 		dst, _ := linq.From(arrUser).Where(func(i linq.T) (bool, error) {
 			v := i.(user)
@@ -1129,10 +1136,10 @@ func BenchmarkGoLinqWhere(b *testing.B) {
 	}
 }
 
-func BenchmarkBlockSourceSelectWhere(b *testing.B) {
+func BenchmarkBlockSourceSelect(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		dst, _ := From(arrUser).Where(whereUser).Select(selectUser).Results()
-		if len(dst) != countForB/2 {
+		dst, _ := From(arrUser).Select(selectUser).Results()
+		if len(dst) != countForB {
 			b.Fail()
 			//b.Log("arr=", arr)
 			b.Error("size is ", len(dst))
@@ -1141,21 +1148,54 @@ func BenchmarkBlockSourceSelectWhere(b *testing.B) {
 	}
 }
 
-func BenchmarkGoLinqSelectWhere(b *testing.B) {
+func BenchmarkGoLinqSelect(b *testing.B) {
+	if !testGoLinq {
+		b.SkipNow()
+		return
+	}
 	for i := 0; i < b.N; i++ {
-		dst, _ := linq.From(arrUser).Where(func(i linq.T) (bool, error) {
-			v := i.(user)
-			return v.id%2 == 0, nil
-		}).Select(func(v linq.T) (linq.T, error) {
+		dst, _ := linq.From(arrUser).Select(func(v linq.T) (linq.T, error) {
 			u := v.(user)
 			return strconv.Itoa(u.id) + "/" + u.name, nil
 		}).Results()
-		if len(dst) != countForB/2 {
+		if len(dst) != countForB {
 			b.Fail()
 			b.Error("size is ", len(dst))
 		}
 	}
 }
+
+//func BenchmarkBlockSourceSelectWhere(b *testing.B) {
+//	for i := 0; i < b.N; i++ {
+//		dst, _ := From(arrUser).Where(whereUser).Select(selectUser).Results()
+//		if len(dst) != countForB/2 {
+//			b.Fail()
+//			//b.Log("arr=", arr)
+//			b.Error("size is ", len(dst))
+//			b.Log("dst=", dst)
+//		}
+//	}
+//}
+
+//func BenchmarkGoLinqSelectWhere(b *testing.B) {
+//	if !testGoLinq {
+//		b.SkipNow()
+//		return
+//	}
+//	for i := 0; i < b.N; i++ {
+//		dst, _ := linq.From(arrUser).Where(func(i linq.T) (bool, error) {
+//			v := i.(user)
+//			return v.id%2 == 0, nil
+//		}).Select(func(v linq.T) (linq.T, error) {
+//			u := v.(user)
+//			return strconv.Itoa(u.id) + "/" + u.name, nil
+//		}).Results()
+//		if len(dst) != countForB/2 {
+//			b.Fail()
+//			b.Error("size is ", len(dst))
+//		}
+//	}
+//}
 
 func BenchmarkBlockSourceGroupBy(b *testing.B) {
 	for i := 0; i < b.N; i++ {
@@ -1183,6 +1223,10 @@ func BenchmarkBlockSourceDistinct(b *testing.B) {
 }
 
 func BenchmarkGoLinqDistinct(b *testing.B) {
+	if !testGoLinq {
+		b.SkipNow()
+		return
+	}
 	if countForB > 10000 {
 		b.Fatal()
 		return
@@ -1201,33 +1245,33 @@ func BenchmarkGoLinqDistinct(b *testing.B) {
 
 //test order-----------------------------------------------------------------------------
 
-func randomList(list []interface{}) {
-	rand.Seed(10)
-	for i := 0; i < len(list); i++ {
-		swapIndex := rand.Intn(len(list))
-		t := list[swapIndex]
-		list[swapIndex] = list[i]
-		list[i] = t
-	}
-}
+//func randomList(list []interface{}) {
+//	rand.Seed(10)
+//	for i := 0; i < len(list); i++ {
+//		swapIndex := rand.Intn(len(list))
+//		t := list[swapIndex]
+//		list[swapIndex] = list[i]
+//		list[i] = t
+//	}
+//}
 
-func BenchmarkBlockSourceOrder(b *testing.B) {
-	b.StopTimer()
-	randoms := make([]interface{}, 0, len(arrRptUser))
-	_ = copy(randoms, arrRptUser)
-	randomList(randoms)
-	b.StartTimer()
+//func BenchmarkBlockSourceOrder(b *testing.B) {
+//	b.StopTimer()
+//	randoms := make([]interface{}, 0, len(arrRptUser))
+//	_ = copy(randoms, arrRptUser)
+//	randomList(randoms)
+//	b.StartTimer()
 
-	for i := 0; i < b.N; i++ {
-		dst, _ := From(arrRptUser).OrderBy(orderUserById).Results()
-		if len(dst) != len(arrRptUser) || dst[0].(user).id != 0 || dst[10].(user).id != 5 {
-			b.Fail()
-			//b.Log("arr=", arr)
-			b.Error("size is ", len(dst))
-			b.Log("dst=", dst)
-		}
-	}
-}
+//	for i := 0; i < b.N; i++ {
+//		dst, _ := From(arrRptUser).OrderBy(orderUserById).Results()
+//		if len(dst) != len(arrRptUser) || dst[0].(user).id != 0 || dst[10].(user).id != 5 {
+//			b.Fail()
+//			//b.Log("arr=", arr)
+//			b.Error("size is ", len(dst))
+//			b.Log("dst=", dst)
+//		}
+//	}
+//}
 
 //test join-----------------------------------------------------------------
 func BenchmarkBlockSourceJoin(b *testing.B) {
@@ -1243,6 +1287,10 @@ func BenchmarkBlockSourceJoin(b *testing.B) {
 }
 
 func BenchmarkGoLinqJoin(b *testing.B) {
+	if !testGoLinq {
+		b.SkipNow()
+		return
+	}
 	if countForB > 10000 {
 		b.Fatal()
 		return
@@ -1277,6 +1325,10 @@ func BenchmarkBlockSourceUnion(b *testing.B) {
 }
 
 func BenchmarkGoLinqUnion(b *testing.B) {
+	if !testGoLinq {
+		b.SkipNow()
+		return
+	}
 	for i := 0; i < b.N; i++ {
 		dst, _ := linq.From(arrUser).Union(arrUser2).Results()
 		if len(dst) != countForB+countForB/2 {
@@ -1287,40 +1339,44 @@ func BenchmarkGoLinqUnion(b *testing.B) {
 }
 
 ////test concat--------------------------------------------------------------------
-func BenchmarkBlockSourceConcat(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		dst, _ := From(arrUser).Concat(arrUser2).Results()
-		if len(dst) != countForB+countForB {
-			b.Fail()
-			//b.Log("arr=", arr)
-			b.Error("size is ", len(dst))
-			b.Log("dst=", dst)
-		}
-	}
-}
+//func BenchmarkBlockSourceConcat(b *testing.B) {
+//	for i := 0; i < b.N; i++ {
+//		dst, _ := From(arrUser).Concat(arrUser2).Results()
+//		if len(dst) != countForB+countForB {
+//			b.Fail()
+//			//b.Log("arr=", arr)
+//			b.Error("size is ", len(dst))
+//			b.Log("dst=", dst)
+//		}
+//	}
+//}
 
 ////test intersect--------------------------------------------------------------------
-func BenchmarkBlockSourceIntersect(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		dst, _ := From(arrUser).Intersect(arrUser2).Results()
-		if len(dst) != countForB/2 {
-			b.Fail()
-			//b.Log("arr=", arr)
-			b.Error("size is ", len(dst))
-			b.Log("dst=", dst)
-		}
-	}
-}
+//func BenchmarkBlockSourceIntersect(b *testing.B) {
+//	for i := 0; i < b.N; i++ {
+//		dst, _ := From(arrUser).Intersect(arrUser2).Results()
+//		if len(dst) != countForB/2 {
+//			b.Fail()
+//			//b.Log("arr=", arr)
+//			b.Error("size is ", len(dst))
+//			b.Log("dst=", dst)
+//		}
+//	}
+//}
 
-func BenchmarkGoLinqIntersect(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		dst, _ := linq.From(arrUser).Intersect(arrUser2).Results()
-		if len(dst) != countForB/2 {
-			b.Fail()
-			b.Error("size is ", len(dst))
-		}
-	}
-}
+//func BenchmarkGoLinqIntersect(b *testing.B) {
+//	if !testGoLinq {
+//		b.SkipNow()
+//		return
+//	}
+//	for i := 0; i < b.N; i++ {
+//		dst, _ := linq.From(arrUser).Intersect(arrUser2).Results()
+//		if len(dst) != countForB/2 {
+//			b.Fail()
+//			b.Error("size is ", len(dst))
+//		}
+//	}
+//}
 
 ////test except--------------------------------------------------------------------
 func BenchmarkBlockSourceExcept(b *testing.B) {
@@ -1336,6 +1392,10 @@ func BenchmarkBlockSourceExcept(b *testing.B) {
 }
 
 func BenchmarkGoLinqExcept(b *testing.B) {
+	if !testGoLinq {
+		b.SkipNow()
+		return
+	}
 	for i := 0; i < b.N; i++ {
 		dst, _ := linq.From(arrUser).Except(arrUser2).Results()
 		if len(dst) != countForB/2 {
@@ -1359,6 +1419,10 @@ func BenchmarkBlockSourceReverse(b *testing.B) {
 }
 
 func BenchmarkGoLinqReverse(b *testing.B) {
+	if !testGoLinq {
+		b.SkipNow()
+		return
+	}
 	for i := 0; i < b.N; i++ {
 		dst, _ := linq.From(arrUser).Reverse().Results()
 		if len(dst) != countForB {
@@ -1389,6 +1453,10 @@ func BenchmarkBlockSourceAggregate(b *testing.B) {
 }
 
 func BenchmarkGoLinqAggregate(b *testing.B) {
+	if !testGoLinq {
+		b.SkipNow()
+		return
+	}
 	for i := 0; i < b.N; i++ {
 		if _, err := linq.From(arr).Sum(); err != nil {
 			b.Fail()
