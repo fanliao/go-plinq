@@ -247,10 +247,10 @@ func TestLinq() {
 	size := count / 4
 	chunkSrc := make(chan *Chunk)
 	go func() {
-		chunkSrc <- &Chunk{src1[0:size], 0}
-		chunkSrc <- &Chunk{src1[size : 2*size], size}
-		chunkSrc <- &Chunk{src1[2*size : 3*size], 2 * size}
-		chunkSrc <- &Chunk{src1[3*size : 4*size], 3 * size}
+		chunkSrc <- &Chunk{src1[0:size], 0, 0}
+		chunkSrc <- &Chunk{src1[size : 2*size], size, size}
+		chunkSrc <- &Chunk{src1[2*size : 3*size], 2 * size, 2 * size}
+		chunkSrc <- &Chunk{src1[3*size : 4*size], 3 * size, 2 * size}
 		chunkSrc <- nil
 		close(chunkSrc)
 		fmt.Println("close src------------------", chunkSrc)
@@ -361,7 +361,7 @@ func printHash(data interface{}) {
 }
 
 func TestSortChunks() {
-	cs := []interface{}{&Chunk{nil, 7}, &Chunk{nil, 14}, &Chunk{nil, 21}, &Chunk{nil, 0}}
+	cs := []interface{}{&Chunk{nil, 7, 7}, &Chunk{nil, 14, 14}, &Chunk{nil, 21, 21}, &Chunk{nil, 0, 0}}
 	fmt.Println("\nbefore expandChunks(),", true, ":")
 	for _, v := range cs {
 		fmt.Print(v.(*Chunk).Order, ", ")

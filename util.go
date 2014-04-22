@@ -469,7 +469,6 @@ func (this *avlTree) Insert(node interface{}) {
 	var taller bool
 	InsertAVL(&(this.root), node, &taller, this.compare)
 	this.count++
-
 }
 
 func (this *avlTree) ToSlice() []interface{} {
