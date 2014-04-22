@@ -1047,11 +1047,11 @@ func (this commonStep) Action() (act stepAction) {
 		//case ACT_AGGREGATE:
 		//	act = getAggregate(this.act.([]func(interface{}, interface{}) interface{}))
 	case ACT_SKIP:
-		act = getSkip(this.act.(int))
+		act = getSkipTake(this.act.(int), false)
 	case ACT_SKIPWHILE:
 		act = getSkipWhile(this.act.(func(interface{}) bool))
 	case ACT_TAKE:
-		act = getTake(this.act.(int))
+		act = getSkipTake(this.act.(int), true)
 	case ACT_TAKEWHILE:
 		act = getTakeWhile(this.act.(func(interface{}) bool))
 	}
@@ -1390,28 +1390,92 @@ func getReverse() stepAction {
 	})
 }
 
-func getTake(count int) stepAction {
+//func getTake(count int) stepAction {
+//	return stepAction(func(src DataSource, option *ParallelOption) (dst DataSource, sf *promise.Future, keep bool, e error) {
+//		switch s := src.(type) {
+//		case *listSource:
+//			return &listSource{s.ToSlice(false)[0:count]}, nil, option.KeepOrder, nil
+//		case *chanSource:
+//			srcChan := s.ChunkChan(option.ChunkSize)
+//			out := make(chan *Chunk)
+//			i := 0
+//			f := promise.Start(func() (interface{}, error) {
+//				for {
+//					//fmt.Println("start receive", i)
+//					if c, ok := <-srcChan; ok {
+//						//fmt.Println("select receive", c)
+//						if c != nil && !reflect.ValueOf(c).IsNil() {
+//							if i+len(c.Data) < count {
+//								out <- c
+//								i += len(c.Data)
+//							} else {
+//								out <- &Chunk{c.Data[0 : count-i], c.Order}
+//								s.Close()
+//								break
+//							}
+//						} else if cap(srcChan) > 0 {
+//							s.Close()
+//							break
+//						}
+//					} else {
+//						break
+//					}
+
+//				}
+//				if s.future != nil {
+//					if _, err := s.future.Get(); err != nil {
+//						return nil, err
+//					}
+//				}
+//				return nil, nil
+//			})
+//			addCloseChanCallback(f, out)
+
+//			return &chanSource{chunkChan: out}, f, option.KeepOrder, nil
+//		}
+//		panic(ErrUnsupportSource)
+//	})
+//}
+
+func getSkipTake(count int, isTake bool) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption) (dst DataSource, sf *promise.Future, keep bool, e error) {
 		switch s := src.(type) {
 		case *listSource:
-			return &listSource{s.ToSlice(false)[0:count]}, nil, option.KeepOrder, nil
+			if isTake {
+				return &listSource{s.ToSlice(false)[0:count]}, nil, option.KeepOrder, nil
+			} else {
+				return &listSource{s.ToSlice(false)[count:]}, nil, option.KeepOrder, nil
+			}
+
 		case *chanSource:
 			srcChan := s.ChunkChan(option.ChunkSize)
 			out := make(chan *Chunk)
-			i := 0
+			i, found := 0, false
 			f := promise.Start(func() (interface{}, error) {
 				for {
 					//fmt.Println("start receive", i)
 					if c, ok := <-srcChan; ok {
 						//fmt.Println("select receive", c)
 						if c != nil && !reflect.ValueOf(c).IsNil() {
-							if i+len(c.Data) < count {
-								out <- c
-								i += len(c.Data)
+							if !found {
+								if i+len(c.Data) < count {
+									if isTake {
+										out <- c
+									}
+									i += len(c.Data)
+								} else {
+									if isTake {
+										out <- &Chunk{c.Data[0 : count-i], c.Order}
+										s.Close()
+										break
+									} else {
+										out <- &Chunk{c.Data[count-i:], c.Order}
+									}
+
+									found = true
+								}
 							} else {
-								out <- &Chunk{c.Data[0 : count-i], c.Order}
-								s.Close()
-								break
+								out <- &Chunk{c.Data[:], c.Order}
 							}
 						} else if cap(srcChan) > 0 {
 							s.Close()
@@ -1466,55 +1530,6 @@ func getTakeWhile(predicate func(interface{}) bool) stepAction {
 								}
 							}
 							out <- c
-						} else if cap(srcChan) > 0 {
-							s.Close()
-							break
-						}
-					} else {
-						break
-					}
-
-				}
-				if s.future != nil {
-					if _, err := s.future.Get(); err != nil {
-						return nil, err
-					}
-				}
-				return nil, nil
-			})
-			addCloseChanCallback(f, out)
-
-			return &chanSource{chunkChan: out}, f, option.KeepOrder, nil
-		}
-		panic(ErrUnsupportSource)
-	})
-}
-
-func getSkip(count int) stepAction {
-	return stepAction(func(src DataSource, option *ParallelOption) (dst DataSource, sf *promise.Future, keep bool, e error) {
-		switch s := src.(type) {
-		case *listSource:
-			return &listSource{s.ToSlice(false)[count:]}, nil, option.KeepOrder, nil
-		case *chanSource:
-			srcChan := s.ChunkChan(option.ChunkSize)
-			out := make(chan *Chunk)
-			i, willSent := 0, false
-			f := promise.Start(func() (interface{}, error) {
-				for {
-					//fmt.Println("start receive", i)
-					if c, ok := <-srcChan; ok {
-						//fmt.Println("select receive", c)
-						if c != nil && !reflect.ValueOf(c).IsNil() {
-							if !willSent {
-								if i+len(c.Data) < count {
-									i += len(c.Data)
-								} else {
-									out <- &Chunk{c.Data[count-i:], c.Order}
-									willSent = true
-								}
-							} else {
-								out <- &Chunk{c.Data[:], c.Order}
-							}
 						} else if cap(srcChan) > 0 {
 							s.Close()
 							break
