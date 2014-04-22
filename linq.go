@@ -36,8 +36,8 @@ func init() {
 	numCPU = runtime.NumCPU()
 	fmt.Println("ptrSize", ptrSize)
 
-	Sum = &AggregateOpr{0, sumOpr, sumOpr}
-	Count = &AggregateOpr{0, countOpr, sumOpr}
+	Sum = &AggregateOpretion{0, sumOpr, sumOpr}
+	Count = &AggregateOpretion{0, countOpr, sumOpr}
 	Min = getMinOpr(defLess)
 	Max = getMaxOpr(defLess)
 }
@@ -65,7 +65,7 @@ type KeyValue struct {
 
 //Aggregate operation structs and functions-------------------------------
 //
-type AggregateOpr struct {
+type AggregateOpretion struct {
 	Seed         interface{}
 	AggAction    func(interface{}, interface{}) interface{}
 	ReduceAction func(interface{}, interface{}) interface{}
@@ -73,10 +73,10 @@ type AggregateOpr struct {
 
 // Standard Sum, Count, Min and Max Aggregation operation
 var (
-	Sum   *AggregateOpr
-	Count *AggregateOpr
-	Min   *AggregateOpr
-	Max   *AggregateOpr
+	Sum   *AggregateOpretion
+	Count *AggregateOpretion
+	Min   *AggregateOpretion
+	Max   *AggregateOpretion
 )
 
 //the queryable struct-------------------------------------------------------------------------
@@ -183,7 +183,7 @@ func (this *Queryable) Results() (results []interface{}, err error) {
 }
 
 // Aggregate returns the results of aggregation operation
-// Aggregation operation aggregates the result in the data source base on the AggregateOpr.
+// Aggregation operation aggregates the result in the data source base on the AggregateOpretion.
 //
 // Aggregate can return a slice includes multiple results if passes multiple aggregation operation once.
 // If passes one aggregation operation, Aggregate will return single interface{}
@@ -199,7 +199,7 @@ func (this *Queryable) Results() (results []interface{}, err error) {
 //	// or
 //	sum, err := From(arr).Aggregate(Sum) // sum is 18
 // TODO: the customized aggregation function
-func (this *Queryable) Aggregate(aggregateFuncs ...*AggregateOpr) (result interface{}, err error) {
+func (this *Queryable) Aggregate(aggregateFuncs ...*AggregateOpretion) (result interface{}, err error) {
 	if ds, e := this.get(); e == nil {
 		if err = this.stepErrs(); err != nil {
 			return nil, err
@@ -226,7 +226,7 @@ func (this *Queryable) Aggregate(aggregateFuncs ...*AggregateOpr) (result interf
 //	arr = []interface{}{0, 3, 6, 9}
 //	sum, err := From(arr).Sum() // sum is 18
 func (this *Queryable) Sum() (result interface{}, err error) {
-	aggregateOprs := []*AggregateOpr{Sum}
+	aggregateOprs := []*AggregateOpretion{Sum}
 
 	if result, err = this.Aggregate(aggregateOprs...); err == nil {
 		return result, nil
@@ -240,7 +240,7 @@ func (this *Queryable) Sum() (result interface{}, err error) {
 //	arr = []interface{}{0, 3, 6, 9}
 //	count, err := From(arr).Count() // count is 4
 func (this *Queryable) Count() (result interface{}, err error) {
-	aggregateOprs := []*AggregateOpr{Count}
+	aggregateOprs := []*AggregateOpretion{Count}
 
 	if result, err = this.Aggregate(aggregateOprs...); err == nil {
 		return result, nil
@@ -257,7 +257,7 @@ func (this *Queryable) CountBy(predicate func(interface{}) bool) (result interfa
 	if predicate == nil {
 		predicate = func(interface{}) bool { return true }
 	}
-	aggregateOprs := []*AggregateOpr{getCountByOpr(predicate)}
+	aggregateOprs := []*AggregateOpretion{getCountByOpr(predicate)}
 
 	if result, err = this.Aggregate(aggregateOprs...); err == nil {
 		return result, nil
@@ -272,7 +272,7 @@ func (this *Queryable) CountBy(predicate func(interface{}) bool) (result interfa
 //	arr = []interface{}{0, 3, 6, 9}
 //	arg, err := From(arr).Average() // sum is 4.5
 func (this *Queryable) Average() (result interface{}, err error) {
-	aggregateOprs := []*AggregateOpr{Sum, Count}
+	aggregateOprs := []*AggregateOpretion{Sum, Count}
 
 	if results, err := this.Aggregate(aggregateOprs...); err == nil {
 		count := float64(results.([]interface{})[1].(int))
@@ -299,7 +299,7 @@ func (this *Queryable) Max(lesses ...func(interface{}, interface{}) bool) (resul
 		less = lesses[0]
 	}
 
-	aggregateOprs := []*AggregateOpr{getMaxOpr(less)}
+	aggregateOprs := []*AggregateOpretion{getMaxOpr(less)}
 
 	if results, err := this.Aggregate(aggregateOprs...); err == nil {
 		return results, nil
@@ -323,7 +323,7 @@ func (this *Queryable) Min(lesses ...func(interface{}, interface{}) bool) (resul
 		less = lesses[0]
 	}
 
-	aggregateOprs := []*AggregateOpr{getMinOpr(less)}
+	aggregateOprs := []*AggregateOpretion{getMinOpr(less)}
 
 	if results, err := this.Aggregate(aggregateOprs...); err == nil {
 		return results, nil
@@ -1343,7 +1343,7 @@ func getReverse() stepAction {
 	})
 }
 
-func getAggregate(src DataSource, aggregateFuncs []*AggregateOpr, option *ParallelOption) (result []interface{}, err error) {
+func getAggregate(src DataSource, aggregateFuncs []*AggregateOpretion, option *ParallelOption) (result []interface{}, err error) {
 	if aggregateFuncs == nil || len(aggregateFuncs) == 0 {
 		return nil, newErrorWithStacks(errors.New("Aggregation function cannot be nil"))
 	}
@@ -1673,7 +1673,7 @@ func trySequentialMap(src DataSource, option *ParallelOption, mapChunk func(c *C
 
 }
 
-func trySequentialAggregate(src DataSource, option *ParallelOption, aggregateFuncs []*AggregateOpr) (rs []interface{}, err error, handled bool) {
+func trySequentialAggregate(src DataSource, option *ParallelOption, aggregateFuncs []*AggregateOpretion) (rs []interface{}, err error, handled bool) {
 	defer func() {
 		if e := recover(); e != nil {
 			err = newErrorWithStacks(e)
@@ -1696,7 +1696,7 @@ func trySequentialAggregate(src DataSource, option *ParallelOption, aggregateFun
 
 }
 
-func ifMustSequential(aggregateFuncs []*AggregateOpr) bool {
+func ifMustSequential(aggregateFuncs []*AggregateOpretion) bool {
 	for _, f := range aggregateFuncs {
 		if f.ReduceAction == nil {
 			return true
@@ -1819,7 +1819,7 @@ func mapSlice(src []interface{}, f func(interface{}) interface{}, out *[]interfa
 }
 
 //TODO: the code need be restructured
-func aggregateSlice(src []interface{}, fs []*AggregateOpr, asSequential bool, asParallel bool) []interface{} {
+func aggregateSlice(src []interface{}, fs []*AggregateOpretion, asSequential bool, asParallel bool) []interface{} {
 	//fmt.Println("aggregateSlice0", src)
 	if len(src) == 0 {
 		panic(errors.New("Cannot aggregate empty slice"))
@@ -1997,28 +1997,28 @@ func maxOpr(v interface{}, t interface{}, less func(interface{}, interface{}) bo
 	}
 }
 
-func getMinOpr(less func(interface{}, interface{}) bool) *AggregateOpr {
+func getMinOpr(less func(interface{}, interface{}) bool) *AggregateOpretion {
 	fun := func(a interface{}, b interface{}) interface{} {
 		return minOpr(a, b, less)
 	}
-	return &AggregateOpr{0, fun, fun}
+	return &AggregateOpretion{0, fun, fun}
 }
 
-func getMaxOpr(less func(interface{}, interface{}) bool) *AggregateOpr {
+func getMaxOpr(less func(interface{}, interface{}) bool) *AggregateOpretion {
 	fun := func(a interface{}, b interface{}) interface{} {
 		return maxOpr(a, b, less)
 	}
-	return &AggregateOpr{0, fun, fun}
+	return &AggregateOpretion{0, fun, fun}
 }
 
-func getCountByOpr(predicate func(interface{}) bool) *AggregateOpr {
+func getCountByOpr(predicate func(interface{}) bool) *AggregateOpretion {
 	fun := func(v interface{}, t interface{}) interface{} {
 		if predicate(v) {
 			t = t.(int) + 1
 		}
 		return t
 	}
-	return &AggregateOpr{0, fun, sumOpr}
+	return &AggregateOpretion{0, fun, sumOpr}
 }
 
 func defLess(a interface{}, b interface{}) bool {

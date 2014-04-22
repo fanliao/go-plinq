@@ -200,7 +200,7 @@ func TestLinq() {
 	testLinqAggWithAllSource("aggregate multiple opretions with mixed type", src1, func(q *Queryable) (interface{}, error) {
 		return From([]interface{}{0, 3, 6, 9}).Aggregate(Sum, Count, Max, Min)
 	})
-	myAgg := &AggregateOpr{"",
+	myAgg := &AggregateOpretion{"",
 		func(v interface{}, t interface{}) interface{} {
 			v1, t1 := v.(power), t.(string)
 			return t1 + "|{" + strconv.Itoa(v1.i) + ":" + strconv.Itoa(v1.p) + "}"
