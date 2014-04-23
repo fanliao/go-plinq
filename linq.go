@@ -1761,7 +1761,7 @@ func (this *chunkWhileTree) handleReadyChunks() (foundWhile bool) {
 	return
 }
 
-func (this *chunkWhileTree) getAfterSlice(currentOrder int, root *avlNode, result *[]*chunkWhileResult) bool {
+func (this *chunkWhileTree) forEachChunks(currentOrder int, root *avlNode, handler func(*chunkWhileResult) (bool, bool), result *[]*chunkWhileResult) bool {
 	if result == nil {
 		r := make([]*chunkWhileResult, 0, 10)
 		result = &r
@@ -1777,94 +1777,199 @@ func (this *chunkWhileTree) getAfterSlice(currentOrder int, root *avlNode, resul
 		//如果当前节点的Order大于要查找的order，则先查找左子树
 		if lc := (root).lchild; lc != nil {
 			l := root.lchild
-			if this.getAfterSlice(currentOrder, l, result) {
+			//if this.getAfterSlice(currentOrder, l, result) {
+			if this.forEachChunks(currentOrder, l, handler, result) {
 				return true
 			}
 		}
 	}
 
-	//查找左子树完成，判断当前节点
-	if rootOrder >= currentOrder {
-		*result = append(*result, rootResult)
-		if root.sameList != nil {
-			for _, v := range root.sameList {
-				*result = append(*result, v.(*chunkWhileResult))
-			}
-		}
+	if found, end := handler(rootResult); end {
+		return found
 	}
-	//如果当前节点是while节点，则结束查找
-	if rootResult.foundWhile {
-		return true
-	}
+	////查找左子树完成，判断当前节点
+	//if rootOrder >= currentOrder {
+	//	*result = append(*result, rootResult)
+	//	if root.sameList != nil {
+	//		for _, v := range root.sameList {
+	//			*result = append(*result, v.(*chunkWhileResult))
+	//		}
+	//	}
+	//}
+	////如果当前节点是while节点，则结束查找
+	//if rootResult.foundWhile {
+	//	return true
+	//}
 	if (root).rchild != nil {
 		r := (root.rchild)
-		if this.getAfterSlice(currentOrder, r, result) {
+		//if this.getAfterSlice(currentOrder, r, result) {
+		if this.forEachChunks(currentOrder, r, handler, result) {
 			return true
 		}
 	}
 	return false
 }
 
+//从currentOrder开始查找avl中的块，一直找到发现一个while块为止
+func (this *chunkWhileTree) getAfterSlice(currentOrder int, root *avlNode, result *[]*chunkWhileResult) bool {
+	return this.forEachChunks(currentOrder, root, func(rootResult *chunkWhileResult) (bool, bool) {
+		rootOrder := rootResult.chunk.Order
+		//查找左子树完成，判断当前节点
+		if rootOrder >= currentOrder {
+			*result = append(*result, rootResult)
+			if root.sameList != nil {
+				for _, v := range root.sameList {
+					*result = append(*result, v.(*chunkWhileResult))
+				}
+			}
+		}
+		//如果当前节点是while节点，则结束查找
+		if rootResult.foundWhile {
+			return true, true
+		}
+		return false, false
+	}, result)
+	//if result == nil {
+	//	r := make([]*chunkWhileResult, 0, 10)
+	//	result = &r
+	//}
+
+	//if root == nil {
+	//	return false
+	//}
+
+	//rootResult := root.data.(*chunkWhileResult)
+	//rootOrder := rootResult.chunk.Order
+	//if rootOrder > currentOrder {
+	//	//如果当前节点的Order大于要查找的order，则先查找左子树
+	//	if lc := (root).lchild; lc != nil {
+	//		l := root.lchild
+	//		if this.getAfterSlice(currentOrder, l, result) {
+	//			return true
+	//		}
+	//	}
+	//}
+
+	////查找左子树完成，判断当前节点
+	//if rootOrder >= currentOrder {
+	//	*result = append(*result, rootResult)
+	//	if root.sameList != nil {
+	//		for _, v := range root.sameList {
+	//			*result = append(*result, v.(*chunkWhileResult))
+	//		}
+	//	}
+	//}
+	////如果当前节点是while节点，则结束查找
+	//if rootResult.foundWhile {
+	//	return true
+	//}
+	//if (root).rchild != nil {
+	//	r := (root.rchild)
+	//	if this.getAfterSlice(currentOrder, r, result) {
+	//		return true
+	//	}
+	//}
+	//return false
+}
+
+//从currentOrder开始查找已经按元素顺序排好的块，一直找到发现一个空缺的位置为止
+//如果是Skip/Take，会在查找同时计算块的起始索引，判断是否符合while条件。因为每块的长度未必等于原始长度，所以必须在得到正确顺序后才能计算
+//如果是SkipWhile/TakeWhile，如果找到第一个符合顺序的while块，就会结束查找。因为SkipWhile/TakeWhile的avl中不会有2个符合while的块存在
 func (this *chunkWhileTree) getReadySlice(currentOrder *int, root *avlNode, result *[]*chunkWhileResult) bool {
-	if result == nil {
-		r := make([]*chunkWhileResult, 0, 10)
-		result = &r
-	}
-
-	if root == nil {
-		return false
-	}
-
-	rootResult := root.data.(*chunkWhileResult)
-	rootOrder := rootResult.chunk.Order
-	if rootOrder > *currentOrder {
-		//如果当前节点的order比指定order大，则继续遍历左子树
-		if lc := (root).lchild; lc != nil {
-			l := root.lchild
-			if this.getReadySlice(currentOrder, l, result) {
-				return true
+	return this.forEachChunks(currentOrder, root, func(rootResult *chunkWhileResult) (bool, bool) {
+		rootOrder := rootResult.chunk.Order
+		//fmt.Println("each the slice item", rootResult.chunk, this.useIndex)
+		if this.findWhile && this.useIndex {
+			//前面已经找到了while元素，那只有根据index查找才需要判断后面的块,并且所有后面的块都需要返回
+			this.afterWhileAct(rootResult)
+		} else if rootOrder == this.startOrder { //currentOrder {
+			//如果当前节点的order等于指定order，则找到了要遍历的第一个元素
+			*result = append(*result, rootResult)
+			rootResult.chunk.StartIndex = this.startIndex
+			//fmt.Println("find ordered item", rootResult.chunk, this.startIndex)
+			if this.useIndex {
+				if find := this.beforeWhileAct(rootResult); find {
+					this.findWhile = true
+					//return true
+				}
+				//fmt.Println("check", rootResult.chunk, this.useIndex, "this.findWhile=", this.findWhile)
 			}
-		}
-	}
-	//fmt.Println("each the slice item", rootResult.chunk, this.useIndex)
-	if this.findWhile && this.useIndex {
-		//前面已经找到了while元素，那只有根据index查找才需要判断后面的块,并且所有后面的快都需要返回
-		this.afterWhileAct(rootResult)
-	} else if rootOrder == *currentOrder {
-		//如果当前节点的order等于指定order，则找到了要遍历的第一个元素
-		*result = append(*result, rootResult)
-		rootResult.chunk.StartIndex = this.startIndex
-		//fmt.Println("find ordered item", rootResult.chunk, this.startIndex)
-		if this.useIndex {
-			if find := this.beforeWhileAct(rootResult); find {
-				this.findWhile = true
-				//return true
+			if root.sameList != nil {
+				panic(errors.New("Order cannot be same as" + strconv.Itoa(rootOrder)))
 			}
-			//fmt.Println("check", rootResult.chunk, this.useIndex, "this.findWhile=", this.findWhile)
+			//*currentOrder += 1
+			this.startOrder += 1
+			this.startIndex += len(rootResult.chunk.Data)
+		} else if rootOrder > *currentOrder {
+			//如果左子树和节点自身没有找到指定order，rootOrder的右子树又比rootOrder大，则指定Order不存在
+			return false, true
 		}
-		if root.sameList != nil {
-			panic(errors.New("Order cannot be same as" + strconv.Itoa(rootOrder)))
+		//如果是SkipWhile/TakeWhile，并且当前节点是while节点，则结束查找
+		//如果是Skip/Take，则不能结束
+		if rootResult.foundWhile && !this.useIndex {
+			return true, true
 		}
-		*currentOrder += 1
-		this.startOrder = *currentOrder
-		this.startIndex += len(rootResult.chunk.Data)
-	} else if rootOrder > *currentOrder {
-		//如果左子树和节点自身没有找到指定order，rootOrder的右子树又比rootOrder大，则指定Order不存在
-		return false
-	}
-	//如果是SkipWhile/TakeWhile，并且当前节点是while节点，则结束查找
-	//如果是Skip/Take，则不能结束
-	if rootResult.foundWhile && !this.useIndex {
-		return true
-	}
+		return false, false
+	}, result)
+	//if result == nil {
+	//	r := make([]*chunkWhileResult, 0, 10)
+	//	result = &r
+	//}
 
-	if (root).rchild != nil {
-		r := (root.rchild)
-		if this.getReadySlice(currentOrder, r, result) {
-			return true
-		}
-	}
-	return false
+	//if root == nil {
+	//	return false
+	//}
+
+	//rootResult := root.data.(*chunkWhileResult)
+	//rootOrder := rootResult.chunk.Order
+	//if rootOrder > *currentOrder {
+	//	//如果当前节点的order比指定order大，则继续遍历左子树
+	//	if lc := (root).lchild; lc != nil {
+	//		l := root.lchild
+	//		if this.getReadySlice(currentOrder, l, result) {
+	//			return true
+	//		}
+	//	}
+	//}
+	////fmt.Println("each the slice item", rootResult.chunk, this.useIndex)
+	//if this.findWhile && this.useIndex {
+	//	//前面已经找到了while元素，那只有根据index查找才需要判断后面的块,并且所有后面的快都需要返回
+	//	this.afterWhileAct(rootResult)
+	//} else if rootOrder == *currentOrder {
+	//	//如果当前节点的order等于指定order，则找到了要遍历的第一个元素
+	//	*result = append(*result, rootResult)
+	//	rootResult.chunk.StartIndex = this.startIndex
+	//	//fmt.Println("find ordered item", rootResult.chunk, this.startIndex)
+	//	if this.useIndex {
+	//		if find := this.beforeWhileAct(rootResult); find {
+	//			this.findWhile = true
+	//			//return true
+	//		}
+	//		//fmt.Println("check", rootResult.chunk, this.useIndex, "this.findWhile=", this.findWhile)
+	//	}
+	//	if root.sameList != nil {
+	//		panic(errors.New("Order cannot be same as" + strconv.Itoa(rootOrder)))
+	//	}
+	//	*currentOrder += 1
+	//	this.startOrder = *currentOrder
+	//	this.startIndex += len(rootResult.chunk.Data)
+	//} else if rootOrder > *currentOrder {
+	//	//如果左子树和节点自身没有找到指定order，rootOrder的右子树又比rootOrder大，则指定Order不存在
+	//	return false
+	//}
+	////如果是SkipWhile/TakeWhile，并且当前节点是while节点，则结束查找
+	////如果是Skip/Take，则不能结束
+	//if rootResult.foundWhile && !this.useIndex {
+	//	return true
+	//}
+
+	//if (root).rchild != nil {
+	//	r := (root.rchild)
+	//	if this.getReadySlice(currentOrder, r, result) {
+	//		return true
+	//	}
+	//}
+	//return false
 }
 
 func (this *chunkWhileTree) setWhileChunk(c *chunkWhileResult) bool {
