@@ -1403,11 +1403,11 @@ func getSkipTakeCount(count int, isTake bool) stepAction {
 	if count < 0 {
 		count = 0
 	}
-	return getSkipTake(func(c *Chunk, startIndex int) (i int, find bool) {
+	return getSkipTake(func(c *Chunk) (i int, find bool) {
 		//BUG: c.StartIndex不一定等于chunk在结果中的起始位置，
 		//比如经过where的chunk，其数据的大小就不等于chunksize
 		if startIndex+len(c.Data) >= count {
-			i, find = count-startIndex, true
+			i, find = count-c.StartIndex, true
 		} else {
 			i, find = startIndex+len(c.Data), false
 		}
@@ -1498,29 +1498,29 @@ func getSkipTakeOld(findWhile func(c *Chunk) (int, bool), isTake bool) stepActio
 	})
 }
 
-func getSkipTake(while interface{}, isTake bool) stepAction {
-	useIndex := false
-	var (
-		findWhile        func(c *Chunk) (int, bool)
-		findWhilebyIndex func(c *Chunk, startIndex int) (int, bool)
-	)
-	if fun, ok := while.(func(*Chunk) (int, bool)); ok {
-		findWhile = fun
-	} else if fun, ok := while.(func(*Chunk, int) (int, bool)); ok {
-		useIndex = true
-		findWhilebyIndex = fun
-	}
+func getSkipTake(findWhile func(*Chunk) (int, bool), isTake bool, useIndex bool) stepAction {
+	//useIndex := false
+	//var (
+	//	findWhile        func(c *Chunk) (int, bool)
+	//	//findWhilebyIndex func(c *Chunk, startIndex int) (int, bool)
+	//)
+	//if fun, ok := while.(func(*Chunk) (int, bool)); ok {
+	//	findWhile = fun
+	//} else if fun, ok := while.(func(*Chunk, int) (int, bool)); ok {
+	//	useIndex = true
+	//	findWhilebyIndex = fun
+	//}
 
 	return stepAction(func(src DataSource, option *ParallelOption) (dst DataSource, sf *promise.Future, keep bool, e error) {
 		switch s := src.(type) {
 		case *listSource:
 			rs := s.ToSlice(false)
 			var i int
-			if !useIndex {
-				i, _ = findWhile(&Chunk{rs, 0, 0})
-			} else {
-				i, _ = findWhilebyIndex(&Chunk{rs, 0, 0}, 0)
-			}
+			//if !useIndex {
+			i, _ = findWhile(&Chunk{rs, 0, 0})
+			//} else {
+			//	i, _ = findWhilebyIndex(&Chunk{rs, 0, 0}, 0)
+			//}
 
 			if isTake {
 				return &listSource{rs[0:i]}, nil, option.KeepOrder, nil
@@ -1532,21 +1532,11 @@ func getSkipTake(while interface{}, isTake bool) stepAction {
 			out := make(chan *Chunk)
 			f := promise.Start(func() (interface{}, error) {
 				found := false
-				avl := newChunkWhileResultTree(func(c *chunkWhileResult, startIndex int) bool {
+				avl := newChunkWhileResultTree(func(c *chunkWhileResult) (while bool) {
 					if useIndex {
-						if i, found := findWhilebyIndex(c.chunk, startIndex); found {
-							fmt.Println("isTake", isTake)
-							if isTake {
-								out <- &Chunk{c.chunk.Data[0:i], c.chunk.Order, c.chunk.StartIndex}
-								//fmt.Println("close abc", c, isTake, c.chunk)
-								//s.Close()
-							} else {
-								out <- &Chunk{c.chunk.Data[i:], c.chunk.Order, c.chunk.StartIndex}
-							}
-							return true
-						} else if isTake {
-							out <- c.chunk
-							return false
+						if i, found := findWhile(c.chunk); found {
+							c.foundWhile = true
+							c.whileIdx = i
 						}
 					}
 					if c.foundWhile {
@@ -1644,7 +1634,8 @@ func getSkipTake(while interface{}, isTake bool) stepAction {
 									//如果不满足，则检查当前块order是否等于下一个order，如果是，则进行beforeWhile处理，并更新startOrder
 									if chunkResult.chunk.Order == avl.startOrder {
 										fmt.Println("当前块=startorder", chunkResult, chunkResult.chunk, avl.startOrder)
-										if find := avl.beforeWhileAct(chunkResult, avl.startIndex); find {
+										chunkResult.chunk.StartIndex = avl.startIndex
+										if find := avl.beforeWhileAct(chunkResult); find {
 											found = true
 											if isTake {
 												fmt.Println("关闭111")
@@ -1736,6 +1727,7 @@ type chunkWhileTree struct {
 	afterWhileAct  func(*chunkWhileResult)
 	beWhileAct     func(*chunkWhileResult)
 	useIndex       bool
+	findWhile      bool
 }
 
 func (this *chunkWhileTree) Insert(node *chunkWhileResult) {
@@ -1834,11 +1826,18 @@ func getReadySlice(this *chunkWhileTree, currentOrder *int, root *avlNode, resul
 			}
 		}
 	}
-	if rootOrder == *currentOrder {
+	if this.findWhile && this.useIndex {
+		//前面已经找到了while元素，那只有根据index查找才需要判断后面的块,并且所有后面的快都需要返回
+		this.afterWhileAct(rootResult)
+	} else if rootOrder == *currentOrder {
 		//如果当前节点的order等于指定order，则找到了要遍历的第一个元素
 		*result = append(*result, rootResult)
-		if find := this.beforeWhileAct(rootResult, this.startIndex); find {
-			return true
+		rootResult.chunk.StartIndex = this.startOrder
+		if this.useIndex {
+			if find := this.beforeWhileAct(rootResult); find {
+				this.findWhile = true
+				//return true
+			}
 		}
 		if root.sameList != nil {
 			panic(errors.New("Order cannot be same as" + strconv.Itoa(rootOrder)))
