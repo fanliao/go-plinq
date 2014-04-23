@@ -1639,7 +1639,6 @@ func (this *chunkWhileTree) getAfterChunks(c *chunkWhileResult) []*chunkWhileRes
 	return nil
 }
 
-
 func getAfterSlice(currentOrder int, root *avlNode, result *[]*chunkWhileResult) []*chunkWhileResult {
 	if result == nil {
 		r := make([]*chunkWhileResult, 0, 10)
@@ -1651,22 +1650,22 @@ func getAfterSlice(currentOrder int, root *avlNode, result *[]*chunkWhileResult)
 	}
 
 	rootOrder := root.data.(*chunkWhileResult).chunk.Order
-	if rootOrder > currentOrder{
+	if rootOrder > currentOrder {
 		if lc := (root).lchild; lc != nil {
 			l := root.lchild
 			getAfterSlice(currentOrder, l, result)
 		}
-	} 
-	
-	*result = append(*result, root.data)
+	}
+
+	*result = append(*result, root.data.(*chunkWhileResult))
 	if root.sameList != nil {
 		for _, v := range root.sameList {
-			*result = append(*result, v)
+			*result = append(*result, v.(*chunkWhileResult))
 		}
 	}
 	if (root).rchild != nil {
 		r := (root.rchild)
-		avlToSlice(r, result)
+		getAfterSlice(currentOrder, r, result)
 	}
 	return *result
 }
