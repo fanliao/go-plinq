@@ -1875,7 +1875,7 @@ func (this *chunkWhileTree) getAfterSlice(currentOrder int, root *avlNode, resul
 //从currentOrder开始查找已经按元素顺序排好的块，一直找到发现一个空缺的位置为止
 //如果是Skip/Take，会在查找同时计算块的起始索引，判断是否符合while条件。因为每块的长度未必等于原始长度，所以必须在得到正确顺序后才能计算
 //如果是SkipWhile/TakeWhile，如果找到第一个符合顺序的while块，就会结束查找。因为SkipWhile/TakeWhile的avl中不会有2个符合while的块存在
-func (this *chunkWhileTree) getReadySlice(currentOrder *int, root *avlNode, result *[]*chunkWhileResult) bool {
+func (this *chunkWhileTree) getReadySlice(currentOrder int, root *avlNode, result *[]*chunkWhileResult) bool {
 	return this.forEachChunks(currentOrder, root, func(rootResult *chunkWhileResult) (bool, bool) {
 		rootOrder := rootResult.chunk.Order
 		//fmt.Println("each the slice item", rootResult.chunk, this.useIndex)
