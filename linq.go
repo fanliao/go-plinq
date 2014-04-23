@@ -1406,14 +1406,13 @@ func getSkipTakeCount(count int, isTake bool) stepAction {
 	return getSkipTake(func(c *Chunk) (i int, find bool) {
 		//BUG: c.StartIndex不一定等于chunk在结果中的起始位置，
 		//比如经过where的chunk，其数据的大小就不等于chunksize
-		if startIndex+len(c.Data) >= count {
+		if c.StartIndex+len(c.Data) >= count {
 			i, find = count-c.StartIndex, true
 		} else {
-			i, find = startIndex+len(c.Data), false
+			i, find = c.StartIndex+len(c.Data), false
 		}
-		fmt.Println("getSkipTake", c, startIndex, "return", i, find)
 		return
-	}, isTake)
+	}, isTake, true)
 }
 
 func getSkipTakeWhile(predicate func(interface{}) bool, isTake bool) stepAction {
@@ -1426,7 +1425,7 @@ func getSkipTakeWhile(predicate func(interface{}) bool, isTake bool) stepAction 
 			}
 		}
 		return len(rs), false
-	}, isTake)
+	}, isTake, true)
 }
 
 func getSkipTakeOld(findWhile func(c *Chunk) (int, bool), isTake bool) stepAction {
@@ -1516,11 +1515,7 @@ func getSkipTake(findWhile func(*Chunk) (int, bool), isTake bool, useIndex bool)
 		case *listSource:
 			rs := s.ToSlice(false)
 			var i int
-			//if !useIndex {
 			i, _ = findWhile(&Chunk{rs, 0, 0})
-			//} else {
-			//	i, _ = findWhilebyIndex(&Chunk{rs, 0, 0}, 0)
-			//}
 
 			if isTake {
 				return &listSource{rs[0:i]}, nil, option.KeepOrder, nil
@@ -1568,14 +1563,12 @@ func getSkipTake(findWhile func(*Chunk) (int, bool), isTake bool, useIndex bool)
 				i := 0
 				for {
 					//Noted the order of sent from source chan maybe confused
-					fmt.Println("start receive----------", i)
 					if c, ok := <-srcChan; ok {
 						//fmt.Println("select receive", c)
 						if c != nil && !reflect.ValueOf(c).IsNil() {
-							fmt.Println("select receive", c)
 
 							if !found {
-								//检查块是否符合while条件，按计算的总是返回flase，因为必须要等前面的块准备好才能得到正确的索引
+								//检查块是否符合while条件，按Index计算的总是返回flase，因为必须要等前面的块准备好才能得到正确的索引
 								var (
 									index        int  = 0
 									foundInWhile bool = false
@@ -1583,111 +1576,32 @@ func getSkipTake(findWhile func(*Chunk) (int, bool), isTake bool, useIndex bool)
 								if !useIndex {
 									index, foundInWhile = findWhile(c)
 								}
-								fmt.Println("check", c, "get", index, foundInWhile)
+
 								chunkResult := &chunkWhileResult{c, foundInWhile, index}
-								//avl.Insert(chunkResult)
 
 								//如果块满足条件,
 								if foundInWhile {
-									//检查avl是否存在已经满足while条件的块
-									if lastWhile := avl.getWhileChunk(); lastWhile != nil {
-										fmt.Println("lastWhile=", lastWhile)
-										//如果存在符合while的块，则检查当前块是在之前还是之后
-										if chunkResult.chunk.Order < lastWhile.chunk.Order {
-											fmt.Println("新块在lastwhile前")
-											//如果是之前，检查avl中所有在当前块之后的块，执行对应的take或while操作
-											afterChunks := avl.getAfterChunks(chunkResult)
-											for _, c := range afterChunks {
-												avl.afterWhileAct(c)
-												fmt.Println("找到after块", c, c.chunk)
-											}
-											//替换原有的while块，检查当前块的order是否等于下一个order，如果是，则找到了while块，并进行对应处理
-											if found = avl.setWhileChunk(chunkResult); found {
-												fmt.Println("找到了order while块", chunkResult, chunkResult.chunk, found)
-												if isTake {
-													s.Close()
-													break
-												}
-											}
-											fmt.Println("没有找到order while块")
-
-										} else {
-											fmt.Println("新块在lastwhile后")
-											//如果是之后，则对当前块执行对应的take或while操作
-											avl.afterWhileAct(chunkResult)
-										}
-									} else {
-										//如果avl中不存在符合while的块，则检查当前块order是否等于下一个order，如果是，则找到了while块，并进行对应处理
-										//如果不是下一个order，则插入AVL，以备后面的检查
-										if found = avl.setWhileChunk(chunkResult); found {
-											fmt.Println("while就是下一个order", chunkResult, chunkResult.chunk, found)
-											if isTake {
-												fmt.Println("begin close")
-												s.Close()
-												fmt.Println("after close")
-												break
-											}
-										}
-										fmt.Println("没有lastwhile，插入", chunkResult, chunkResult.chunk)
-									}
+									found = avl.handleWhileChunk(chunkResult)
 								} else {
-									//如果不满足，则检查当前块order是否等于下一个order，如果是，则进行beforeWhile处理，并更新startOrder
-									if chunkResult.chunk.Order == avl.startOrder {
-										fmt.Println("当前块=startorder", chunkResult, chunkResult.chunk, avl.startOrder)
-										chunkResult.chunk.StartIndex = avl.startIndex
-										if find := avl.beforeWhileAct(chunkResult); find {
-											found = true
-											if isTake {
-												fmt.Println("关闭111")
-												s.Close()
-												fmt.Println("关闭111 done")
-												break
-											}
-										}
-										avl.startOrder += 1
-										avl.startIndex += len(chunkResult.chunk.Data)
-										//检查avl中是否还有符合顺序的块
-										findWhile := avl.getReadySlice()
-										//for _, c := range ordereds {
-										//	avl.beforeWhileAct(c, avlstartIndex)
-										//	fmt.Println("before处理", c, c.chunk, avl.startOrder)
-										//}
-										//如果按顺序找到了while节点，则完成查找
-										if findWhile {
-											fmt.Println("按顺序找到了while节点")
-											found = true
-											if isTake {
-												fmt.Println("关闭222")
-												s.Close()
-												fmt.Println("关闭222 done")
-												break
-											}
-										}
-									} else {
-										//如果不是，则检查是否存在已经满足while条件的前置块
-										if avl.whileChunk != nil && avl.whileChunk.chunk.Order < chunkResult.chunk.Order {
-											fmt.Println("after处理", chunkResult, chunkResult.chunk)
-											//如果存在，则当前块是while之后的块，根据take和skip进行处理
-											avl.afterWhileAct(chunkResult)
-										} else {
-											fmt.Println("插入AVL", chunkResult, chunkResult.chunk)
-											//如果不存在，则插入avl
-											avl.Insert(chunkResult)
-										}
+									found = avl.handleNoWhileChunk(chunkResult)
+								}
+								if found {
+									fmt.Println("找到了while节点")
+									//found = true
+									if isTake {
+										s.Close()
+										break
 									}
 								}
 							} else {
 								//如果已经找到了正确的while块，则此后的块必然是后续的块，直接处理即可
 								if !isTake {
-									fmt.Println("直接输出", c)
 									out <- c
 								} else {
-									fmt.Println("退出2", c)
 									break
 								}
 							}
 						} else if cap(srcChan) > 0 {
-							fmt.Println("关闭333")
 							s.Close()
 							break
 						}
@@ -1696,7 +1610,7 @@ func getSkipTake(findWhile func(*Chunk) (int, bool), isTake bool, useIndex bool)
 					}
 					i++
 				}
-				fmt.Println("退出循环")
+
 				if s.future != nil {
 					if _, err := s.future.Get(); err != nil {
 						return nil, err
@@ -1723,7 +1637,7 @@ type chunkWhileTree struct {
 	startOrder     int
 	startIndex     int
 	whileChunk     *chunkWhileResult
-	beforeWhileAct func(*chunkWhileResult, int) bool
+	beforeWhileAct func(*chunkWhileResult) bool
 	afterWhileAct  func(*chunkWhileResult)
 	beWhileAct     func(*chunkWhileResult)
 	useIndex       bool
@@ -1741,19 +1655,105 @@ func (this *chunkWhileTree) getWhileChunk() *chunkWhileResult {
 	return this.whileChunk
 }
 
-func (this *chunkWhileTree) getAfterChunks(c *chunkWhileResult) []*chunkWhileResult {
-	result := make([]*chunkWhileResult, 0, 10)
-	pResult := &result
-	getAfterSlice(c.chunk.Order, this.avl.root, pResult)
-	return *pResult
+func (this *chunkWhileTree) handleNoWhileChunk(chunkResult *chunkWhileResult) bool {
+	//如果不满足，则检查当前块order是否等于下一个order，如果是，则进行beforeWhile处理，并更新startOrder
+	if chunkResult.chunk.Order == this.startOrder {
+		//fmt.Println("当前块=startorder", chunkResult, chunkResult.chunk, this.startOrder)
+		chunkResult.chunk.StartIndex = this.startIndex
+		if find := this.beforeWhileAct(chunkResult); find {
+			return true
+			//found = true
+			//if isTake {
+			//	s.Close()
+			//	break
+			//}
+		}
+		this.startOrder += 1
+		this.startIndex += len(chunkResult.chunk.Data)
+		//检查avl中是否还有符合顺序的块
+		findWhile := this.handleReadyChunks()
+
+		if findWhile {
+			return true
+			//fmt.Println("按顺序找到了while节点")
+			//found = true
+			//if isTake {
+			//	s.Close()
+			//	break
+			//}
+		}
+	} else {
+		//如果不是，则检查是否存在已经满足while条件的前置块
+		if this.whileChunk != nil && this.whileChunk.chunk.Order < chunkResult.chunk.Order {
+			//fmt.Println("after处理", chunkResult, chunkResult.chunk)
+			//如果存在，则当前块是while之后的块，根据take和skip进行处理
+			this.afterWhileAct(chunkResult)
+		} else {
+			//fmt.Println("插入AVL", chunkResult, chunkResult.chunk)
+			//如果不存在，则插入avl
+			this.Insert(chunkResult)
+		}
+	}
+	return false
+
 }
 
-func (this *chunkWhileTree) getReadySlice() (foundWhile bool) {
+//处理符合while条件的块，返回true表示是原始序列中第一个符合while的块
+func (this *chunkWhileTree) handleWhileChunk(chunkResult *chunkWhileResult) bool {
+	//检查avl是否存在已经满足while条件的块
+	if lastWhile := this.getWhileChunk(); lastWhile != nil {
+		//fmt.Println("lastWhile=", lastWhile)
+		//如果存在符合while的块，则检查当前块是在之前还是之后
+		if chunkResult.chunk.Order < lastWhile.chunk.Order {
+			//fmt.Println("新块在lastwhile前")
+			//如果是之前，检查avl中所有在当前块之后的块，执行对应的take或while操作
+			this.handleWhileAfterChunks(chunkResult)
+			//for _, c := range afterChunks {
+			//	avl.afterWhileAct(c)
+			//	fmt.Println("找到after块", c, c.chunk)
+			//}
+			//替换原有的while块，检查当前块的order是否等于下一个order，如果是，则找到了while块，并进行对应处理
+			if this.setWhileChunk(chunkResult) {
+				return true
+			}
+			//fmt.Println("没有找到order while块")
+
+		} else {
+			//fmt.Println("新块在lastwhile后")
+			//如果是之后，则对当前块执行对应的take或while操作
+			this.afterWhileAct(chunkResult)
+		}
+	} else {
+		//如果avl中不存在符合while的块，则检查当前块order是否等于下一个order，如果是，则找到了while块，并进行对应处理
+		//如果不是下一个order，则插入AVL，以备后面的检查
+		if this.setWhileChunk(chunkResult) {
+			//fmt.Println("while就是下一个order", chunkResult, chunkResult.chunk, true)
+			return true
+			//if isTake {
+			//	return true
+			//}
+		}
+		//fmt.Println("没有lastwhile，插入", chunkResult, chunkResult.chunk)
+	}
+	return false
+}
+
+func (this *chunkWhileTree) handleWhileAfterChunks(c *chunkWhileResult) {
+	result := make([]*chunkWhileResult, 0, 10)
+	pResult := &result
+	this.getAfterSlice(c.chunk.Order, this.avl.root, pResult)
+	for _, c := range result {
+		this.afterWhileAct(c)
+		fmt.Println("找到after块", c, c.chunk)
+	}
+}
+
+func (this *chunkWhileTree) handleReadyChunks() (foundWhile bool) {
 	result := make([]*chunkWhileResult, 0, 10)
 	pResult := &result
 	startOrder := &this.startOrder
-	foundWhile = getReadySlice(this, startOrder, this.avl.root, pResult)
-	//ordereds, findWhile := avl.getReadySlice()
+	foundWhile = this.getReadySlice(startOrder, this.avl.root, pResult)
+	//ordereds, findWhile := avl.handleReadyChunks()
 	//for _, c := range ordereds {
 	//	avl.beforeWhileAct(c, avlstartIndex)
 	//	fmt.Println("before处理", c, c.chunk, avl.startOrder)
@@ -1761,7 +1761,7 @@ func (this *chunkWhileTree) getReadySlice() (foundWhile bool) {
 	return
 }
 
-func getAfterSlice(currentOrder int, root *avlNode, result *[]*chunkWhileResult) bool {
+func (this *chunkWhileTree) getAfterSlice(currentOrder int, root *avlNode, result *[]*chunkWhileResult) bool {
 	if result == nil {
 		r := make([]*chunkWhileResult, 0, 10)
 		result = &r
@@ -1777,7 +1777,7 @@ func getAfterSlice(currentOrder int, root *avlNode, result *[]*chunkWhileResult)
 		//如果当前节点的Order大于要查找的order，则先查找左子树
 		if lc := (root).lchild; lc != nil {
 			l := root.lchild
-			if getAfterSlice(currentOrder, l, result) {
+			if this.getAfterSlice(currentOrder, l, result) {
 				return true
 			}
 		}
@@ -1798,14 +1798,14 @@ func getAfterSlice(currentOrder int, root *avlNode, result *[]*chunkWhileResult)
 	}
 	if (root).rchild != nil {
 		r := (root.rchild)
-		if getAfterSlice(currentOrder, r, result) {
+		if this.getAfterSlice(currentOrder, r, result) {
 			return true
 		}
 	}
 	return false
 }
 
-func getReadySlice(this *chunkWhileTree, currentOrder *int, root *avlNode, result *[]*chunkWhileResult) bool {
+func (this *chunkWhileTree) getReadySlice(currentOrder *int, root *avlNode, result *[]*chunkWhileResult) bool {
 	if result == nil {
 		r := make([]*chunkWhileResult, 0, 10)
 		result = &r
@@ -1821,23 +1821,26 @@ func getReadySlice(this *chunkWhileTree, currentOrder *int, root *avlNode, resul
 		//如果当前节点的order比指定order大，则继续遍历左子树
 		if lc := (root).lchild; lc != nil {
 			l := root.lchild
-			if getReadySlice(this, currentOrder, l, result) {
+			if this.getReadySlice(currentOrder, l, result) {
 				return true
 			}
 		}
 	}
+	//fmt.Println("each the slice item", rootResult.chunk, this.useIndex)
 	if this.findWhile && this.useIndex {
 		//前面已经找到了while元素，那只有根据index查找才需要判断后面的块,并且所有后面的快都需要返回
 		this.afterWhileAct(rootResult)
 	} else if rootOrder == *currentOrder {
 		//如果当前节点的order等于指定order，则找到了要遍历的第一个元素
 		*result = append(*result, rootResult)
-		rootResult.chunk.StartIndex = this.startOrder
+		rootResult.chunk.StartIndex = this.startIndex
+		//fmt.Println("find ordered item", rootResult.chunk, this.startIndex)
 		if this.useIndex {
 			if find := this.beforeWhileAct(rootResult); find {
 				this.findWhile = true
 				//return true
 			}
+			//fmt.Println("check", rootResult.chunk, this.useIndex, "this.findWhile=", this.findWhile)
 		}
 		if root.sameList != nil {
 			panic(errors.New("Order cannot be same as" + strconv.Itoa(rootOrder)))
@@ -1849,14 +1852,15 @@ func getReadySlice(this *chunkWhileTree, currentOrder *int, root *avlNode, resul
 		//如果左子树和节点自身没有找到指定order，rootOrder的右子树又比rootOrder大，则指定Order不存在
 		return false
 	}
-	//如果当前节点是while节点，则结束查找
-	if rootResult.foundWhile {
+	//如果是SkipWhile/TakeWhile，并且当前节点是while节点，则结束查找
+	//如果是Skip/Take，则不能结束
+	if rootResult.foundWhile && !this.useIndex {
 		return true
 	}
 
 	if (root).rchild != nil {
 		r := (root.rchild)
-		if getReadySlice(this, currentOrder, r, result) {
+		if this.getReadySlice(currentOrder, r, result) {
 			return true
 		}
 	}
@@ -1875,7 +1879,7 @@ func (this *chunkWhileTree) setWhileChunk(c *chunkWhileResult) bool {
 	}
 }
 
-func newChunkWhileResultTree(beforeWhileAct func(*chunkWhileResult, int) bool, afterWhileAct func(*chunkWhileResult), beWhileAct func(*chunkWhileResult), useIndex bool) *chunkWhileTree {
+func newChunkWhileResultTree(beforeWhileAct func(*chunkWhileResult) bool, afterWhileAct func(*chunkWhileResult), beWhileAct func(*chunkWhileResult), useIndex bool) *chunkWhileTree {
 	return &chunkWhileTree{NewAvlTree(func(a interface{}, b interface{}) int {
 		c1, c2 := a.(*chunkWhileResult), b.(*chunkWhileResult)
 		if c1.chunk.Order < c2.chunk.Order {
@@ -1885,7 +1889,7 @@ func newChunkWhileResultTree(beforeWhileAct func(*chunkWhileResult, int) bool, a
 		} else {
 			return 1
 		}
-	}), 0, 0, nil, beforeWhileAct, afterWhileAct, beWhileAct, useIndex}
+	}), 0, 0, nil, beforeWhileAct, afterWhileAct, beWhileAct, useIndex, false}
 }
 
 func getSkipWhile(predicate func(interface{}) bool) stepAction {
