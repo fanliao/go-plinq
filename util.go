@@ -64,11 +64,6 @@ type structField struct {
 
 func dataPtr(data interface{}) (ptr unsafe.Pointer, typ *rtype) {
 	headerPtr := *((*interfaceHeader)(unsafe.Pointer(&data)))
-	//var dataPtr unsafe.Pointer
-	//if ptr.typ.kind == uint8(reflect.Ptr) {
-	//	//如果是指针类型，则this.word就是数据的地址
-	//	dataPtr = unsafe.Pointer(ptr.word)
-	//}
 
 	typ = headerPtr.typ
 	if headerPtr.typ != nil {
@@ -87,12 +82,10 @@ func dataPtr(data interface{}) (ptr unsafe.Pointer, typ *rtype) {
 func hashByPtr(dataPtr unsafe.Pointer, typ *rtype, hashObj *sHash) {
 	t := typ
 	if t == nil {
-		//hashString("nil", hashObj)
 		hashValue(unsafe.Pointer(uintptr(0)), 0, hashObj)
 		return
 	}
 
-	//hashString(*t.string, hashObj)
 	switch t.Kind() {
 	case reflect.String:
 		hashString(*((*string)(dataPtr)), hashObj)
@@ -137,7 +130,6 @@ func hashByPtr(dataPtr unsafe.Pointer, typ *rtype, hashObj *sHash) {
 	default:
 		hashValue(dataPtr, typ.size, hashObj)
 	}
-
 }
 
 func hashString(s string, hashObj *sHash) {
@@ -153,7 +145,6 @@ func hashStruct(dataPtr unsafe.Pointer, typ *rtype, hashObj *sHash) {
 		offset, fTyp := fld.offset, fld.typ
 		hashByPtr(unsafe.Pointer(uintptr(dataPtr)+offset), fTyp, hashObj)
 	}
-
 }
 
 func hashUInt32(data uint32, hashObj *sHash) {
@@ -162,14 +153,10 @@ func hashUInt32(data uint32, hashObj *sHash) {
 
 func hashValue(dataPtr unsafe.Pointer, size uintptr, hashObj *sHash) {
 	var i uintptr
-	//logs := make([]interface{}, 0, 10)
-	//logs = append(logs, data, "\n")
 	for i = 0; i < size; i++ {
 		c := *((*byte)(unsafe.Pointer(uintptr(dataPtr) + i)))
 		hashObj.WriteBype(c)
-		//logs = append(logs, i, c, hash, "\n")
 	}
-	//fmt.Println(logs...)
 }
 
 func hash64(data interface{}) uint64 {
@@ -258,7 +245,6 @@ type sHash struct {
 }
 
 func (this *sHash) Sum64() uint64 {
-	//return uint64(this.hash1.Sum32())
 	return uint64(this.hash1.Sum32())<<32 | uint64(this.hash2.Sum32())
 }
 
@@ -352,7 +338,6 @@ func lBalance(root **avlNode) {
 			l.bf = LH
 		}
 		lr.bf = EH
-		//pLchild := (avlTree)((*root).lchild)
 		lRotate(&((*root).lchild))
 		rRotate(root)
 	}
@@ -361,7 +346,6 @@ func lBalance(root **avlNode) {
 func rBalance(root **avlNode) {
 	var rl *avlNode
 	r := (*root).rchild
-	//fmt.Println("rBalance, r=", *r)
 	switch r.bf {
 	case RH:
 		(*root).bf = EH
@@ -392,7 +376,6 @@ func InsertAVL(root **avlNode, e interface{}, taller *bool, compare1 func(interf
 		node := avlNode{e, nil, EH, nil, nil}
 		*root = &node
 		*taller = true
-		//fmt.Println("insert to node,node=", *root)
 	} else {
 		i := compare1(e, (*root).data)
 		if e == (*root).data || i == 0 {
@@ -405,12 +388,10 @@ func InsertAVL(root **avlNode, e interface{}, taller *bool, compare1 func(interf
 		}
 
 		if i == -1 {
-			//lchild := (avlTree)((*root).lchild)
-			//fmt.Println("will insert to lchild,lchild=", ((*root).lchild), " ,root=", *root, " ,e=", e)
 			if !InsertAVL(&((*root).lchild), e, taller, compare1) {
 				return false
 			}
-			//fmt.Println("insert to lchild,lchild=", ((*root).lchild), " ,root=", *root, " ,e=", e)
+
 			if *taller {
 				switch (*root).bf {
 				case LH:
@@ -425,12 +406,10 @@ func InsertAVL(root **avlNode, e interface{}, taller *bool, compare1 func(interf
 				}
 			}
 		} else if i == 1 {
-			//rchild := (avlTree)((*root).rchild)
-			//fmt.Println("will insert to rchild,rchild=", ((*root).rchild), " ,root=", *root, " ,e=", e)
 			if !InsertAVL(&((*root).rchild), e, taller, compare1) {
 				return false
 			}
-			//fmt.Println("insert to rchild,rchild=", ((*root).lchild), " ,root=", *root, " ,e=", e)
+
 			if *taller {
 				switch (*root).bf {
 				case RH:
@@ -448,16 +427,6 @@ func InsertAVL(root **avlNode, e interface{}, taller *bool, compare1 func(interf
 	}
 	return true
 }
-
-//func compareOriType(a interface{}, b interface{}) int {
-//	if a < b {
-//		return -1
-//	} else if a == b {
-//		return 0
-//	} else {
-//		return 1
-//	}
-//}
 
 type avlTree struct {
 	root    *avlNode
