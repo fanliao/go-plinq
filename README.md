@@ -197,3 +197,9 @@ N = 100000
   </tr>
 </table>
 
+从性能测试结果看，即使采取了并行算法，plinq的Union和Except/Intersect的性能仍然低于go-linq的非并行模式。
+
+这是因为go-linq在这些运算符的实现中直接采用了interface{}作为map的key，而在go中有些类型特别是slice以及包含了slice的struct都不能作为map的key。
+
+所以go-plinq自己实现了一个hash函数将interface{}转换为hashkey后再作为map的key，其中要用到反射来获取struct的字段值。从测试结果上看，这部分对性能的影响比较大。
+
