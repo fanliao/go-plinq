@@ -1186,235 +1186,276 @@ func TestSkipAndTake(t *testing.T) {
 	_ = getTakeResult
 
 	test := func(size int) {
-		c.Convey("Skip nothing in list", func() {
-			r, err := From(ints).SetSizeOfChunk(size).Skip(-1).Results()
-			//TODO: need test keep order
-			c.So(err, c.ShouldBeNil)
-			c.So(r, shouldSlicesResemble, ints)
-		})
-		c.Convey("Skip all in list", func() {
-			r, err := From(ints).SetSizeOfChunk(size).Skip(100).Results()
-			//TODO: need test keep order
-			c.So(err, c.ShouldBeNil)
-			c.So(r, shouldSlicesResemble, []interface{}{})
-		})
-		c.Convey("Skip 12 in list", func() {
-			r, err := From(ints).SetSizeOfChunk(size).Skip(12).Results()
-			c.So(err, c.ShouldBeNil)
-			c.So(r, shouldSlicesResemble, getSkipResult(12))
-		})
-
-		c.Convey("SkipWhile nothing in list", func() {
-			r, err := From(ints).SetSizeOfChunk(size).SkipWhile(func(v interface{}) bool {
-				return v.(int) < -1
-			}).Results()
-			//TODO: need test keep order
-			c.So(err, c.ShouldBeNil)
-			c.So(r, shouldSlicesResemble, ints)
-		})
-		c.Convey("SkipWhile all in list", func() {
-			r, err := From(ints).SetSizeOfChunk(size).SkipWhile(func(v interface{}) bool {
-				return v.(int) < 100
-			}).Results()
-			//TODO: need test keep order
-			c.So(err, c.ShouldBeNil)
-			c.So(r, shouldSlicesResemble, []interface{}{})
-		})
-		c.Convey("SkipWhile 12 in list", func() {
-			r, err := From(ints).SetSizeOfChunk(size).SkipWhile(func(v interface{}) bool {
-				return v.(int) < 12
-			}).Results()
-			c.So(err, c.ShouldBeNil)
-			c.So(r, shouldSlicesResemble, getSkipResult(12))
+		//test list source -----------------------------------------------
+		c.Convey("Test Skip in list", func() {
+			c.Convey("Skip nothing", func() {
+				r, err := From(ints).SetSizeOfChunk(size).Skip(-1).Results()
+				//TODO: need test keep order
+				c.So(err, c.ShouldBeNil)
+				c.So(r, shouldSlicesResemble, ints)
+			})
+			c.Convey("Skip all", func() {
+				r, err := From(ints).SetSizeOfChunk(size).Skip(100).Results()
+				//TODO: need test keep order
+				c.So(err, c.ShouldBeNil)
+				c.So(r, shouldSlicesResemble, []interface{}{})
+			})
+			c.Convey("Skip 12", func() {
+				r, err := From(ints).SetSizeOfChunk(size).Skip(12).Results()
+				c.So(err, c.ShouldBeNil)
+				c.So(r, shouldSlicesResemble, getSkipResult(12))
+			})
 		})
 
-		c.Convey("Take nothing in list", func() {
-			r, err := From(ints).SetSizeOfChunk(size).Take(-1).Results()
-			//TODO: need test keep order
-			c.So(err, c.ShouldBeNil)
-			c.So(r, shouldSlicesResemble, []interface{}{})
+		c.Convey("Test SkipWhile in list", func() {
+			c.Convey("SkipWhile with nil predicateFunc", func() {
+				c.So(func() { From(ints).SetSizeOfChunk(size).SkipWhile(nil).Results() }, c.ShouldPanicWith, ErrNilAction)
+			})
+
+			c.Convey("SkipWhile using a predicate func with panic error", func() {
+				_, err := From(ints).SetSizeOfChunk(size).SkipWhile(filterWithPanic).Results()
+				c.So(err, c.ShouldNotBeNil)
+			})
+
+			c.Convey("SkipWhile nothing", func() {
+				r, err := From(ints).SetSizeOfChunk(size).SkipWhile(func(v interface{}) bool {
+					return v.(int) < -1
+				}).Results()
+				//TODO: need test keep order
+				c.So(err, c.ShouldBeNil)
+				c.So(r, shouldSlicesResemble, ints)
+			})
+
+			c.Convey("SkipWhile all", func() {
+				r, err := From(ints).SetSizeOfChunk(size).SkipWhile(func(v interface{}) bool {
+					return v.(int) < 100
+				}).Results()
+				//TODO: need test keep order
+				c.So(err, c.ShouldBeNil)
+				c.So(r, shouldSlicesResemble, []interface{}{})
+			})
+
+			c.Convey("SkipWhile 12", func() {
+				r, err := From(ints).SetSizeOfChunk(size).SkipWhile(func(v interface{}) bool {
+					return v.(int) < 12
+				}).Results()
+				c.So(err, c.ShouldBeNil)
+				c.So(r, shouldSlicesResemble, getSkipResult(12))
+			})
 		})
-		c.Convey("Take all in list", func() {
-			for _, v := range indexses {
+
+		c.Convey("Test Take in list", func() {
+			c.Convey("Take nothing", func() {
+				r, err := From(ints).SetSizeOfChunk(size).Take(-1).Results()
+				//TODO: need test keep order
+				c.So(err, c.ShouldBeNil)
+				c.So(r, shouldSlicesResemble, []interface{}{})
+			})
+			c.Convey("Take all", func() {
 				r, err := From(ints).SetSizeOfChunk(size).Take(100).Results()
 				//TODO: need test keep order
 				c.So(err, c.ShouldBeNil)
 				c.So(r, shouldSlicesResemble, ints)
-			}
-		})
-		c.Convey("Take 12 in list", func() {
-			for _, v := range indexses {
+			})
+			c.Convey("Take 12", func() {
 				r, err := From(ints).SetSizeOfChunk(size).Take(12).Results()
 				c.So(err, c.ShouldBeNil)
 				c.So(r, shouldSlicesResemble, getTakeResult(12))
-			}
+			})
 		})
 
-		c.Convey("TakeWhile nothing in list", func() {
-			for _, v := range indexses {
+		c.Convey("Test TakeWhile in list", func() {
+			c.Convey("TakeWhile using nil predicateFunc", func() {
+				c.So(func() { From(ints).SetSizeOfChunk(size).TakeWhile(nil).Results() }, c.ShouldPanicWith, ErrNilAction)
+			})
+
+			c.Convey("TakeWhile using a predicate func with panic error", func() {
+				_, err := From(ints).SetSizeOfChunk(size).TakeWhile(filterWithPanic).Results()
+				c.So(err, c.ShouldNotBeNil)
+			})
+
+			c.Convey("TakeWhile nothing", func() {
 				r, err := From(ints).SetSizeOfChunk(size).TakeWhile(func(v interface{}) bool {
 					return v.(int) < -1
 				}).Results()
 				//TODO: need test keep order
 				c.So(err, c.ShouldBeNil)
 				c.So(r, shouldSlicesResemble, []interface{}{})
-			}
-		})
-		c.Convey("TakeWhile all in list", func() {
-			for _, v := range indexses {
+			})
+
+			c.Convey("TakeWhile all", func() {
 				r, err := From(ints).SetSizeOfChunk(size).TakeWhile(func(v interface{}) bool {
 					return v.(int) < 100
 				}).Results()
 				//TODO: need test keep order
 				c.So(err, c.ShouldBeNil)
 				c.So(r, shouldSlicesResemble, ints)
-			}
-		})
-		c.Convey("TakeWhile 12 in list", func() {
-			r, err := From(ints).SetSizeOfChunk(size).TakeWhile(func(v interface{}) bool {
-				return v.(int) < 12
-			}).Results()
-			c.So(err, c.ShouldBeNil)
-			c.So(r, shouldSlicesResemble, getTakeResult(12))
+			})
+
+			c.Convey("TakeWhile 12", func() {
+				r, err := From(ints).SetSizeOfChunk(size).TakeWhile(func(v interface{}) bool {
+					return v.(int) < 12
+				}).Results()
+				c.So(err, c.ShouldBeNil)
+				c.So(r, shouldSlicesResemble, getTakeResult(12))
+			})
 		})
 
 		//--------------------------------------------------------
-		c.Convey("Skip nothing in channel", func() {
-			for _, v := range indexses {
-				r, err := From(getCChunkSrc(v)).SetSizeOfChunk(size).Skip(-1).Results()
-				//TODO: need test keep order
-				c.So(err, c.ShouldBeNil)
-				if shouldSlicesResemble(r, ints) != "" {
-					fmt.Println("skip -1 for", v, "return", r)
+		c.Convey("Test Skip in channel", func() {
+			c.Convey("Skip nothing", func() {
+				for _, v := range indexses {
+					r, err := From(getCChunkSrc(v)).SetSizeOfChunk(size).Skip(-1).Results()
+					//TODO: need test keep order
+					c.So(err, c.ShouldBeNil)
+					if shouldSlicesResemble(r, ints) != "" {
+						fmt.Println("skip -1 for", v, "return", r)
+					}
+					c.So(r, shouldSlicesResemble, ints)
 				}
-				c.So(r, shouldSlicesResemble, ints)
-			}
-		})
-		c.Convey("Skip all in channel", func() {
-			for _, v := range indexses {
-				r, err := From(getCChunkSrc(v)).SetSizeOfChunk(size).Skip(100).Results()
-				//TODO: need test keep order
-				c.So(err, c.ShouldBeNil)
-				if shouldSlicesResemble(r, []interface{}{}) != "" {
-					fmt.Println("skip 100 for", v, "return", r)
+			})
+			c.Convey("Skip all", func() {
+				for _, v := range indexses {
+					r, err := From(getCChunkSrc(v)).SetSizeOfChunk(size).Skip(100).Results()
+					//TODO: need test keep order
+					c.So(err, c.ShouldBeNil)
+					if shouldSlicesResemble(r, []interface{}{}) != "" {
+						fmt.Println("skip 100 for", v, "return", r)
+					}
+					c.So(r, shouldSlicesResemble, []interface{}{})
 				}
-				c.So(r, shouldSlicesResemble, []interface{}{})
-			}
-		})
-		c.Convey("Skip 12 in channel", func() {
-			for _, v := range indexses {
-				r, err := From(getCChunkSrc(v)).SetSizeOfChunk(size).Skip(12).Results()
-				c.So(err, c.ShouldBeNil)
-				if shouldSlicesResemble(r, getSkipResult(12)) != "" {
-					fmt.Println("skip 12 for", v, "return", r)
+			})
+			c.Convey("Skip 12", func() {
+				for _, v := range indexses {
+					r, err := From(getCChunkSrc(v)).SetSizeOfChunk(size).Skip(12).Results()
+					c.So(err, c.ShouldBeNil)
+					if shouldSlicesResemble(r, getSkipResult(12)) != "" {
+						fmt.Println("skip 12 for", v, "return", r)
+					}
+					c.So(r, shouldSlicesResemble, getSkipResult(12))
 				}
-				c.So(r, shouldSlicesResemble, getSkipResult(12))
-			}
+			})
 		})
 
-		c.Convey("SkipWhile nothing in channel", func() {
-			for _, v := range indexses {
-				r, err := From(getCChunkSrc(v)).SetSizeOfChunk(size).SkipWhile(func(v interface{}) bool {
-					return v.(int) < -1
-				}).Results()
-				//TODO: need test keep order
-				c.So(err, c.ShouldBeNil)
-				if shouldSlicesResemble(r, ints) != "" {
-					fmt.Println("SkipWhile -1 for", v, "return", r)
+		c.Convey("Test SkipWhile in channel", func() {
+			c.Convey("TakeWhile using a predicate func with panic error", func() {
+				_, err := From(getChan(ints)).SetSizeOfChunk(size).SkipWhile(filterWithPanic).Results()
+				c.So(err, c.ShouldNotBeNil)
+			})
+
+			c.Convey("SkipWhile nothing", func() {
+				for _, v := range indexses {
+					r, err := From(getCChunkSrc(v)).SetSizeOfChunk(size).SkipWhile(func(v interface{}) bool {
+						return v.(int) < -1
+					}).Results()
+					//TODO: need test keep order
+					c.So(err, c.ShouldBeNil)
+					if shouldSlicesResemble(r, ints) != "" {
+						fmt.Println("SkipWhile -1 for", v, "return", r)
+					}
+					c.So(r, shouldSlicesResemble, ints)
 				}
-				c.So(r, shouldSlicesResemble, ints)
-			}
-		})
-		c.Convey("SkipWhile all in channel", func() {
-			for _, v := range indexses {
-				r, err := From(getCChunkSrc(v)).SetSizeOfChunk(size).SkipWhile(func(v interface{}) bool {
-					return v.(int) < 100
-				}).Results()
-				//TODO: need test keep order
-				c.So(err, c.ShouldBeNil)
-				if shouldSlicesResemble(r, []interface{}{}) != "" {
-					fmt.Println("SkipWhile 100 for", v, "return", r)
+			})
+			c.Convey("SkipWhile all", func() {
+				for _, v := range indexses {
+					r, err := From(getCChunkSrc(v)).SetSizeOfChunk(size).SkipWhile(func(v interface{}) bool {
+						return v.(int) < 100
+					}).Results()
+					//TODO: need test keep order
+					c.So(err, c.ShouldBeNil)
+					if shouldSlicesResemble(r, []interface{}{}) != "" {
+						fmt.Println("SkipWhile 100 for", v, "return", r)
+					}
+					c.So(r, shouldSlicesResemble, []interface{}{})
 				}
-				c.So(r, shouldSlicesResemble, []interface{}{})
-			}
-		})
-		c.Convey("SkipWhile 12 in channel", func() {
-			for _, v := range indexses {
-				r, err := From(getCChunkSrc(v)).SetSizeOfChunk(size).SkipWhile(func(v interface{}) bool {
-					return v.(int) < 12
-				}).Results()
-				c.So(err, c.ShouldBeNil)
-				if shouldSlicesResemble(r, getSkipResult(12)) != "" {
-					fmt.Println("SkipWhile 12 for", v, "return", r)
+			})
+			c.Convey("SkipWhile 12", func() {
+				for _, v := range indexses {
+					r, err := From(getCChunkSrc(v)).SetSizeOfChunk(size).SkipWhile(func(v interface{}) bool {
+						return v.(int) < 12
+					}).Results()
+					c.So(err, c.ShouldBeNil)
+					if shouldSlicesResemble(r, getSkipResult(12)) != "" {
+						fmt.Println("SkipWhile 12 for", v, "return", r)
+					}
+					c.So(r, shouldSlicesResemble, getSkipResult(12))
 				}
-				c.So(r, shouldSlicesResemble, getSkipResult(12))
-			}
+			})
 		})
 
-		c.Convey("Take nothing in channel", func() {
-			for _, v := range indexses {
-				r, err := From(getCChunkSrc(v)).SetSizeOfChunk(size).Take(-1).Results()
-				//TODO: need test keep order
-				c.So(err, c.ShouldBeNil)
-				c.So(r, shouldSlicesResemble, []interface{}{})
-			}
-		})
-		c.Convey("Take all in channel", func() {
-			for _, v := range indexses {
-				r, err := From(getCChunkSrc(v)).SetSizeOfChunk(size).Take(100).Results()
-				//TODO: need test keep order
-				c.So(err, c.ShouldBeNil)
-				c.So(r, shouldSlicesResemble, ints)
-			}
-		})
-		c.Convey("Take 12 in channel", func() {
-			for _, v := range indexses {
-				r, err := From(getCChunkSrc(v)).SetSizeOfChunk(size).Take(12).Results()
-				c.So(err, c.ShouldBeNil)
-				if shouldSlicesResemble(r, getTakeResult(12)) != "" {
-					fmt.Println("take 12 for", v, "return", r)
+		c.Convey("Test Take in channel", func() {
+			c.Convey("Take nothing", func() {
+				for _, v := range indexses {
+					r, err := From(getCChunkSrc(v)).SetSizeOfChunk(size).Take(-1).Results()
+					//TODO: need test keep order
+					c.So(err, c.ShouldBeNil)
+					c.So(r, shouldSlicesResemble, []interface{}{})
 				}
-				c.So(r, shouldSlicesResemble, getTakeResult(12))
-			}
+			})
+			c.Convey("Take all", func() {
+				for _, v := range indexses {
+					r, err := From(getCChunkSrc(v)).SetSizeOfChunk(size).Take(100).Results()
+					//TODO: need test keep order
+					c.So(err, c.ShouldBeNil)
+					c.So(r, shouldSlicesResemble, ints)
+				}
+			})
+			c.Convey("Take 12", func() {
+				for _, v := range indexses {
+					r, err := From(getCChunkSrc(v)).SetSizeOfChunk(size).Take(12).Results()
+					c.So(err, c.ShouldBeNil)
+					if shouldSlicesResemble(r, getTakeResult(12)) != "" {
+						fmt.Println("take 12 for", v, "return", r)
+					}
+					c.So(r, shouldSlicesResemble, getTakeResult(12))
+				}
+			})
 		})
 
-		c.Convey("TakeWhile nothing in channel", func() {
-			for _, v := range indexses {
-				r, err := From(getCChunkSrc(v)).SetSizeOfChunk(size).TakeWhile(func(v interface{}) bool {
-					return v.(int) < -1
-				}).Results()
-				//TODO: need test keep order
-				c.So(err, c.ShouldBeNil)
-				if shouldSlicesResemble(r, []interface{}{}) != "" {
-					fmt.Println("TakeWhile -1 for", v, "return", r)
+		c.Convey("Test TakeWhile in channel", func() {
+			c.Convey("TakeWhile using a predicate func with panic error", func() {
+				_, err := From(getChan(ints)).SetSizeOfChunk(size).TakeWhile(filterWithPanic).Results()
+				c.So(err, c.ShouldNotBeNil)
+			})
+
+			c.Convey("TakeWhile nothing", func() {
+				for _, v := range indexses {
+					r, err := From(getCChunkSrc(v)).SetSizeOfChunk(size).TakeWhile(func(v interface{}) bool {
+						return v.(int) < -1
+					}).Results()
+					//TODO: need test keep order
+					c.So(err, c.ShouldBeNil)
+					if shouldSlicesResemble(r, []interface{}{}) != "" {
+						fmt.Println("TakeWhile -1 for", v, "return", r)
+					}
+					c.So(r, shouldSlicesResemble, []interface{}{})
 				}
-				c.So(r, shouldSlicesResemble, []interface{}{})
-			}
-		})
-		c.Convey("TakeWhile all in channel", func() {
-			for _, v := range indexses {
-				r, err := From(getCChunkSrc(v)).SetSizeOfChunk(size).TakeWhile(func(v interface{}) bool {
-					return v.(int) < 100
-				}).Results()
-				//TODO: need test keep order
-				c.So(err, c.ShouldBeNil)
-				if shouldSlicesResemble(r, ints) != "" {
-					fmt.Println("TakeWhile 100 for", v, "return", r)
+			})
+			c.Convey("TakeWhile all", func() {
+				for _, v := range indexses {
+					r, err := From(getCChunkSrc(v)).SetSizeOfChunk(size).TakeWhile(func(v interface{}) bool {
+						return v.(int) < 100
+					}).Results()
+					//TODO: need test keep order
+					c.So(err, c.ShouldBeNil)
+					if shouldSlicesResemble(r, ints) != "" {
+						fmt.Println("TakeWhile 100 for", v, "return", r)
+					}
+					c.So(r, shouldSlicesResemble, ints)
 				}
-				c.So(r, shouldSlicesResemble, ints)
-			}
-		})
-		c.Convey("TakeWhile 12 in channel", func() {
-			for _, v := range indexses {
-				r, err := From(getCChunkSrc(v)).SetSizeOfChunk(size).TakeWhile(func(v interface{}) bool {
-					return v.(int) < 12
-				}).Results()
-				c.So(err, c.ShouldBeNil)
-				if shouldSlicesResemble(r, getTakeResult(12)) != "" {
-					fmt.Println("TakeWhile 12 for", v, "return", r)
+			})
+			c.Convey("TakeWhile 12", func() {
+				for _, v := range indexses {
+					r, err := From(getCChunkSrc(v)).SetSizeOfChunk(size).TakeWhile(func(v interface{}) bool {
+						return v.(int) < 12
+					}).Results()
+					c.So(err, c.ShouldBeNil)
+					if shouldSlicesResemble(r, getTakeResult(12)) != "" {
+						fmt.Println("TakeWhile 12 for", v, "return", r)
+					}
+					c.So(r, shouldSlicesResemble, getTakeResult(12))
 				}
-				c.So(r, shouldSlicesResemble, getTakeResult(12))
-			}
+			})
 		})
 
 	}

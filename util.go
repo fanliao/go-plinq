@@ -634,6 +634,14 @@ func stepTypToString(typ int) string {
 		return "CONCAT opretion"
 	case ACT_INTERSECT:
 		return "INTERSECT opretion"
+	case ACT_SKIP:
+		return "Skip opretion"
+	case ACT_SKIPWHILE:
+		return "SkipWhile opretion"
+	case ACT_TAKE:
+		return "Take opretion"
+	case ACT_TAKEWHILE:
+		return "TakeWhile opretion"
 	default:
 		return "unknown opretion"
 	}

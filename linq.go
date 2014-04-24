@@ -553,6 +553,7 @@ func (this *Queryable) Skip(count int) *Queryable {
 // 				SkipWhile(func(v interface{}) bool { return v.(int)%3 == 0 }).Results()
 //		// arr will be 3,4,5,6
 func (this *Queryable) SkipWhile(predicate func(interface{}) bool) *Queryable {
+	mustNotNil(predicate, ErrNilAction)
 	//this.act.(predicate predicateFunc)
 	this.steps = append(this.steps, commonStep{ACT_SKIPWHILE, predicateFunc(predicate), 0})
 	return this
@@ -580,6 +581,7 @@ func (this *Queryable) Take(count int) *Queryable {
 //				TakeWhile(func(v interface{}) bool { return v.(int)%3 == 0 }).Results()
 //		// arr will be 1,2
 func (this *Queryable) TakeWhile(predicate func(interface{}) bool) *Queryable {
+	mustNotNil(predicate, ErrNilAction)
 	//this.act.(predicate predicateFunc)
 	this.steps = append(this.steps, commonStep{ACT_TAKEWHILE, predicateFunc(predicate), 0})
 	return this
@@ -674,29 +676,39 @@ func (this *Queryable) get() (data DataSource, err error) {
 		var f *promise.Future
 		step1 := step
 
-		//execute the step
-		if data, f, keepOrder, err = step.Action()(data, step.POption(pOption)); err != nil {
-			//fmt.Println("get errors when execute1---------", i, step.Typ())
-			errsChan <- NewStepError(i, step1.Typ(), err)
-			for j := i + 1; j < len(this.steps); j++ {
+		if err := func() error {
+			defer func() {
+				if err := recover(); err != nil {
+					errsChan <- NewStepError(i, step1.Typ(), newErrorWithStacks(err))
+				}
+			}()
+			//execute the step
+			if data, f, keepOrder, err = step.Action()(data, step.POption(pOption)); err != nil {
+				//fmt.Println("get errors when execute1---------", i, step.Typ())
+				errsChan <- NewStepError(i, step1.Typ(), err)
+				for j := i + 1; j < len(this.steps); j++ {
+					errsChan <- nil
+				}
+				return err
+			} else if f != nil {
+				j := i
+				//add a fail callback to collect the errors in pipeline mode
+				//because the steps will be paralle in piplline mode,
+				//so cannot use return value of the function
+				f.Fail(func(results interface{}) {
+					//fmt.Println("get errors when execute2----------", i, step.Typ())
+					errsChan <- NewStepError(j, step1.Typ(), results)
+				}).Done(func(results interface{}) {
+					//fmt.Println("get errors when execute3-----------", i, step.Typ())
+					errsChan <- nil
+				})
+			} else {
+				//fmt.Println("get errors when execute4-----------", i, step.Typ())
 				errsChan <- nil
 			}
+			return nil
+		}(); err != nil {
 			return nil, err
-		} else if f != nil {
-			j := i
-			//add a fail callback to collect the errors in pipeline mode
-			//because the steps will be paralle in piplline mode,
-			//so cannot use return value of the function
-			f.Fail(func(results interface{}) {
-				//fmt.Println("get errors when execute2----------", i, step.Typ())
-				errsChan <- NewStepError(j, step1.Typ(), results)
-			}).Done(func(results interface{}) {
-				//fmt.Println("get errors when execute3-----------", i, step.Typ())
-				errsChan <- nil
-			})
-		} else {
-			//fmt.Println("get errors when execute4-----------", i, step.Typ())
-			errsChan <- nil
 		}
 
 		//set the keepOrder for next step
