@@ -20,21 +20,63 @@ rs, err := q1.Results()
 
 
 ## 已经实现的linq查询运算符:
-* 排序运算符：OrderBy, Reverse
+* 排序运算符：
 
-* Set运算符：Distinct, Except, Intersect, Union
+OrderBy, Reverse
 
-* 筛选运算符：Where
+* Set运算符：
 
-* 投影运算符：Select
+Distinct, Except, Intersect, Union
 
-* 连接运算符：Join, LeftJoin, GroupJoin, LeftGroupJoin
+* 筛选运算符：
 
-* 分组运算符：GroupBy
+Where
 
-* 串联运算符：Concat
+* 投影运算符：
 
-* 聚合运算符：Aggregate, Average, Count, Max, Min, Sum
+Select
+
+* 连接运算符：
+
+Join, LeftJoin, GroupJoin, LeftGroupJoin
+
+* 分组运算符：
+
+GroupBy
+
+* 串联运算符：
+
+Concat
+
+* 聚合运算符：
+
+Aggregate, Average, Count, Max, Min, Sum
+
+* 过滤操作符：
+
+Skip, SkipWhile, Take, TakeWhile
+
+* 元素运算符：
+
+ElementAt
+
+## 尚未实现的linq查询运算符:
+
+* 选择：
+
+SeleteMany
+
+* 量词/Quantifiers：
+
+Contains, All, Any, AnyWith, SequenceEqual
+
+* 生成器方法
+
+Range, Repeat
+
+* 元素运算符/Element Operators
+
+First, FirstBy, Last, LastBy, Single, 
 
 ## 文档（未完成。。。）:
 
