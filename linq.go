@@ -146,6 +146,25 @@ func (this *Queryable) Results() (results []interface{}, err error) {
 	return
 }
 
+// ElementAt returns the element at the specified index i.
+// If i is a negative number or if no element exists at i-th index, found will
+// be returned false.
+//
+// Example:
+// i, found, err := From([]int{0,1,2}).ElementAt(2)
+//		// i is 2
+func (this *Queryable) ElementAt(i int) (result interface{}, found bool, err error) {
+	if ds, e := this.get(); e == nil {
+		if err = this.stepErrs(); err != nil {
+			return nil, false, err
+		}
+
+		return getElementAt(ds, i, &(this.ParallelOption))
+	} else {
+		return nil, false, e
+	}
+}
+
 // Aggregate returns the results of aggregation operation
 // Aggregation operation aggregates the result in the data source base on the AggregateOpretion.
 //
@@ -155,7 +174,6 @@ func (this *Queryable) Results() (results []interface{}, err error) {
 // Noted:
 // Aggregate supports the customized aggregation function
 // TODO: doesn't support the mixed type in aggregate now
-// TODO: Will panic if the error appears in aggregate function, but should return an error
 //
 // Example:
 //	arr = []interface{}{0, 3, 6, 9}
@@ -926,16 +944,16 @@ func (this *chanSource) makeChunkChanSure(chunkSize int) {
 	}
 }
 
-//Itr returns a function that returns a pointer of chunk every be called
-func (this *chanSource) Itr(chunkSize int) func() (*Chunk, bool) {
-	this.makeChunkChanSure(chunkSize)
-	ch := this.chunkChan
-	return func() (*Chunk, bool) {
-		c, ok := <-ch
-		//fmt.Println("chanSource receive", c)
-		return c, ok
-	}
-}
+////Itr returns a function that returns a pointer of chunk every be called
+//func (this *chanSource) Itr(chunkSize int) func() (*Chunk, bool) {
+//	this.makeChunkChanSure(chunkSize)
+//	ch := this.chunkChan
+//	return func() (*Chunk, bool) {
+//		c, ok := <-ch
+//		//fmt.Println("chanSource receive", c)
+//		return c, ok
+//	}
+//}
 
 //Itr returns a function that returns a pointer of chunk every be called
 func (this *chanSource) ChunkChan(chunkSize int) chan *Chunk {
@@ -1039,6 +1057,7 @@ const (
 	ACT_SKIPWHILE
 	ACT_TAKE
 	ACT_TAKEWHILE
+	ACT_ELEMENTAT
 )
 
 //stepAction presents a action related to a linq operation
@@ -1489,7 +1508,6 @@ func getSkipTake(foundNoMatch func(*Chunk) (int, bool), isTake bool, useIndex bo
 				return &listSource{rs[i:]}, nil, option.KeepOrder, nil
 			}
 		case *chanSource:
-			srcChan := s.ChunkChan(option.ChunkSize)
 			out := make(chan *Chunk)
 			beforeNoMatchAct := func(c *chunkWhileResult) (while bool) {
 				//如果useIndex，则只有等到顺序确定时才能判断是否不满足条件
@@ -1504,32 +1522,39 @@ func getSkipTake(foundNoMatch func(*Chunk) (int, bool), isTake bool, useIndex bo
 					//如果在块中发现不满足条件的item，则必然是第一个不满足条件的item
 					//fmt.Println("beforeNoMatch", c, c.chunk)
 					if isTake {
-						out <- &Chunk{c.chunk.Data[0:c.whileIdx], c.chunk.Order, c.chunk.StartIndex}
+						//out <- &Chunk{c.chunk.Data[0:c.whileIdx], c.chunk.Order, c.chunk.StartIndex}
+						sendChunk(out, &Chunk{c.chunk.Data[0:c.whileIdx], c.chunk.Order, c.chunk.StartIndex})
 					} else {
-						out <- &Chunk{c.chunk.Data[c.whileIdx:], c.chunk.Order, c.chunk.StartIndex}
+						//out <- &Chunk{c.chunk.Data[c.whileIdx:], c.chunk.Order, c.chunk.StartIndex}
+						sendChunk(out, &Chunk{c.chunk.Data[c.whileIdx:], c.chunk.Order, c.chunk.StartIndex})
 					}
 					return true
 				} else if isTake {
 					//如果没有发现不满足条件的，那可以take
-					out <- c.chunk
+					//out <- c.chunk
+					sendChunk(out, c.chunk)
 				}
 				return false
 			}
 			afterNoMatchAct := func(c *chunkWhileResult) {
 				//fmt.Println("afterNoMatchAct", c.chunk)
 				if !isTake {
-					out <- c.chunk
+					//out <- c.chunk
+					sendChunk(out, c.chunk)
 				}
 			}
 			beNoMatchAct := func(c *chunkWhileResult) {
 				//fmt.Println("beNoMatchAct", c.chunk)
 				if isTake {
-					out <- &Chunk{c.chunk.Data[0:c.whileIdx], c.chunk.Order, c.chunk.StartIndex}
+					//out <- &Chunk{c.chunk.Data[0:c.whileIdx], c.chunk.Order, c.chunk.StartIndex}
+					sendChunk(out, &Chunk{c.chunk.Data[0:c.whileIdx], c.chunk.Order, c.chunk.StartIndex})
 					//s.Close()
 				} else {
-					out <- &Chunk{c.chunk.Data[c.whileIdx:], c.chunk.Order, c.chunk.StartIndex}
+					//out <- &Chunk{c.chunk.Data[c.whileIdx:], c.chunk.Order, c.chunk.StartIndex}
+					sendChunk(out, &Chunk{c.chunk.Data[c.whileIdx:], c.chunk.Order, c.chunk.StartIndex})
 				}
 			}
+			srcChan := s.ChunkChan(option.ChunkSize)
 
 			f := promise.Start(func() (interface{}, error) {
 				foundFirstNoMatch := false
@@ -1547,8 +1572,6 @@ func getSkipTake(foundNoMatch func(*Chunk) (int, bool), isTake bool, useIndex bo
 						}
 					}
 
-					//fmt.Println("receive", c)
-					//if c != nil && !reflect.ValueOf(c).IsNil() {
 					if !foundFirstNoMatch {
 						//检查块是否符合while条件，按Index计算的总是返回flase，因为必须要等前面的块准备好才能得到正确的索引
 						chunkResult := &chunkWhileResult{chunk: c}
@@ -1565,7 +1588,6 @@ func getSkipTake(foundNoMatch func(*Chunk) (int, bool), isTake bool, useIndex bo
 						}
 						if foundFirstNoMatch {
 							//fmt.Println("找到了while节点")
-							//found = true
 							if isTake {
 								s.Close()
 								break
@@ -1574,7 +1596,8 @@ func getSkipTake(foundNoMatch func(*Chunk) (int, bool), isTake bool, useIndex bo
 					} else {
 						//如果已经找到了正确的while块，则此后的块必然是后续的块，直接处理即可
 						if !isTake {
-							out <- c
+							//out <- c
+							sendChunk(out, c)
 						} else {
 							break
 						}
@@ -1594,6 +1617,75 @@ func getSkipTake(foundNoMatch func(*Chunk) (int, bool), isTake bool, useIndex bo
 		}
 		panic(ErrUnsupportSource)
 	})
+}
+
+func getElementAt(src DataSource, i int, option *ParallelOption) (element interface{}, found bool, err error) {
+	foundNoMatch := func(c *Chunk) (int, bool) {
+		if c.StartIndex <= i && c.StartIndex+len(c.Data)-1 >= i {
+			return i - c.StartIndex, true
+		} else {
+			return len(c.Data), false
+		}
+	}
+	useIndex := true
+
+	switch s := src.(type) {
+	case *listSource:
+		rs := s.ToSlice(false)
+		if i, found := foundNoMatch(&Chunk{rs, 0, 0}); found {
+			return rs[i], true, nil
+		} else {
+			return nil, false, nil
+		}
+	case *chanSource:
+		beforeNoMatchAct := func(c *chunkWhileResult) (while bool) {
+			//判断是否满足条件
+			if idx, found := foundNoMatch(c.chunk); found {
+				if idx >= len(c.chunk.Data) {
+					fmt.Println("out of range", c.chunk, idx, i)
+				}
+				element = c.chunk.Data[idx]
+				return true
+			}
+			return false
+		}
+		afterNoMatchAct, beNoMatchAct := func(c *chunkWhileResult) {}, func(c *chunkWhileResult) {}
+
+		srcChan := s.ChunkChan(option.ChunkSize)
+		avl := newChunkWhileResultTree(beforeNoMatchAct, afterNoMatchAct, beNoMatchAct, useIndex)
+
+		for c := range srcChan {
+			//fmt.Println("select receive", c)
+			if isNil(c) {
+				if cap(srcChan) > 0 {
+					s.Close()
+					break
+				} else {
+					continue
+				}
+			}
+
+			if !found {
+				//如果块满足条件,
+				found = avl.handleMatchChunk(&chunkWhileResult{chunk: c})
+				if found {
+					s.Close()
+					break
+				}
+			} else {
+				//如果已经找到了正确的块，则此后的块直接跳过
+				break
+			}
+		}
+
+		if s.future != nil {
+			if _, err := s.future.Get(); err != nil {
+				return nil, false, err
+			}
+		}
+		return
+	}
+	panic(ErrUnsupportSource)
 }
 
 type chunkWhileResult struct {
@@ -1636,7 +1728,7 @@ func (this *chunkWhileTree) handleMatchChunk(chunkResult *chunkWhileResult) bool
 		if find := this.beforeNoMatchAct(chunkResult); find {
 			this.foundNoMatch = true
 			if !this.useIndex {
-				fmt.Println("handleMatchChunk return true1")
+				//fmt.Println("handleMatchChunk return true1")
 				return true
 			}
 		}
@@ -2124,21 +2216,14 @@ func parallelMapChanToChan(src *chanSource, out chan *Chunk, task func(*Chunk) *
 					//fmt.Println("select receive", c)
 					d := task(c)
 					if out != nil && d != nil {
-						out <- d
+						//out <- d
+						sendChunk(out, d)
 						//fmt.Println("parallelMapChanToChan send", i, "get", *c, "\nsend", *d)
 					}
 				} else if cap(srcChan) > 0 {
 					src.Close()
-					//fmt.Println("select receive a nil-----------------")
-					//return nil, nil
 					break
 				}
-				//} else {
-				//	//fmt.Println("parallelMapChanToChan end receive--------------")
-				//	//return nil, nil
-				//	break
-				//}
-
 			}
 			if src.future != nil {
 				if _, err := src.future.Get(); err != nil {
@@ -2180,7 +2265,8 @@ func parallelMapListToChan(src DataSource, out chan *Chunk, task func(*Chunk) *C
 					end = lenOfData
 				}
 				c := &Chunk{data[i*size : end], i * size, i * size} //, end}
-				ch <- c
+				//ch <- c
+				sendChunk(ch, c)
 			}
 			close(ch)
 		}()
@@ -2357,7 +2443,8 @@ func addCloseChanCallback(f *promise.Future, out chan *Chunk) {
 					close(out)
 				} else {
 					//fmt.Println("close chan begin send nil")
-					out <- nil
+					//out <- nil
+					sendChunk(out, nil)
 					//fmt.Println("close chan sent nil")
 				}
 			}
