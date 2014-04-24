@@ -52,8 +52,6 @@
 
 
 ## 尚未实现的linq查询运算符:
-* 过滤操作符：
-Skip, SkipWhile, Take, TakeWhile
 
 * 选择：
 SeleteMany
@@ -67,6 +65,6 @@ SequenceEqual
 Range， Repeat
 
 * 元素运算符/Element Operators
-ElementAt, First, FirstBy, Last, LastBy, Single, 
+First, FirstBy, Last, LastBy, Single, 
 
 

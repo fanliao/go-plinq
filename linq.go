@@ -60,7 +60,7 @@ type Chunk struct {
 type DataSource interface {
 	Typ() int                   //list or chan?
 	ToSlice(bool) []interface{} //Get a slice includes all datas
-	//ToChan() chan interface{}   //will be implement in futures
+	ToChan() chan interface{}   //will be implement in futures
 }
 
 // KeyValue presents a key value pair, it be used by GroupBy, Join and Set operations
@@ -141,6 +141,19 @@ func (this *Queryable) Results() (results []interface{}, err error) {
 	err = this.stepErrs()
 	if err != nil {
 		results = nil
+	}
+
+	return
+}
+
+func (this *Queryable) ToChan() (out chan interface{}, err error) {
+	if ds, e := this.get(); e == nil {
+		out = ds.ToChan()
+	}
+
+	err = this.stepErrs()
+	if err != nil {
+		out = nil
 	}
 
 	return
@@ -824,16 +837,16 @@ func (this listSource) ToSlice(keepOrder bool) []interface{} {
 	return nil
 }
 
-//func (this listSource) ToChan() chan interface{} {
-//	out := make(chan interface{})
-//	go func() {
-//		for _, v := range this.ToSlice(true) {
-//			out <- v
-//		}
-//		close(out)
-//	}()
-//	return out
-//}
+func (this listSource) ToChan() chan interface{} {
+	out := make(chan interface{})
+	go func() {
+		for _, v := range this.ToSlice(false) {
+			out <- v
+		}
+		close(out)
+	}()
+	return out
+}
 
 func getSlice(v reflect.Value) []interface{} {
 	switch v.Kind() {
@@ -981,11 +994,14 @@ func (this chanSource) ToSlice(keepOrder bool) []interface{} {
 
 		//fmt.Println("ToSlice start receive Chunk")
 		for c := range this.chunkChan {
-			//if use the buffer channel, then must receive a nil as end flag
-			if reflect.ValueOf(c).IsNil() {
-				this.Close()
+			if isNil(c) {
+				//if use the buffer channel, then must receive a nil as end flag
+				if cap(this.chunkChan) > 0 {
+					this.Close()
+					break
+				}
 				//fmt.Println("close chan")
-				break
+				continue
 			}
 
 			if keepOrder {
@@ -1018,17 +1034,42 @@ func (this chanSource) ToSlice(keepOrder bool) []interface{} {
 	}
 }
 
-//func (this chanSource) ToChan() chan interface{} {
-//	out := make(chan interface{})
-//	go func() {
-//		for c := range this.Data {
-//			for _, v := range c.Data {
-//				out <- v
-//			}
-//		}
-//	}()
-//	return out
-//}
+func (this chanSource) ToChan() chan interface{} {
+	out := make(chan interface{})
+	if this.chunkChan != nil {
+		go func() {
+			for c := range this.chunkChan {
+				if isNil(c) {
+					if cap(this.chunkChan) > 0 {
+						this.Close()
+						break
+					}
+					continue
+				}
+				for _, v := range c.Data {
+					out <- v
+				}
+			}
+			close(out)
+		}()
+	} else if this.data != nil {
+		srcChan := reflect.ValueOf(this.data)
+		if srcChan.Kind() != reflect.Chan {
+			panic(ErrUnsupportSource)
+		}
+		go func() {
+			for {
+				if v, ok := srcChan.Recv(); ok {
+					out <- v.Interface()
+				} else {
+					close(out)
+					break
+				}
+			}
+		}()
+	}
+	return out
+}
 
 // hKeyValue be used in Distinct, Join, Union/Intersect operations
 type hKeyValue struct {

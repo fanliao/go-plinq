@@ -1522,6 +1522,65 @@ func TestElementAt(t *testing.T) {
 	})
 }
 
+func chanToSlice(out chan interface{}) (rs []interface{}) {
+	rs = make([]interface{}, 0, 4)
+	for v := range out {
+		rs = append(rs, v)
+	}
+	return rs
+}
+
+func TestToChannel(t *testing.T) {
+	c.Convey("Test ToChan of list source", t, func() {
+		c.Convey("For emtpy list", func() {
+			ds := &listSource{[]interface{}{}}
+			out := ds.ToChan()
+			rs := chanToSlice(out)
+			c.So(rs, shouldSlicesResemble, []interface{}{})
+		})
+		c.Convey("For emtpy list", func() {
+			ds := &listSource{[]interface{}{1, 2, 3, 4}}
+			out := ds.ToChan()
+			rs := chanToSlice(out)
+			c.So(rs, shouldSlicesResemble, []interface{}{1, 2, 3, 4})
+		})
+	})
+
+	expectedInts := make([]interface{}, count/2)
+	for i := 0; i < count/2; i++ {
+		expectedInts[i] = i * 2
+	}
+	c.Convey("Test ToChan of channel source", t, func() {
+		c.Convey("For emtpy channel", func() {
+			out, err := From([]int{}).Where(filterWithPanic).ToChan()
+			c.So(err, c.ShouldBeNil)
+			rs := chanToSlice(out)
+			c.So(rs, shouldSlicesResemble, []interface{}{})
+		})
+
+		c.Convey("For channel", func() {
+			out, err := From(tInts).Where(filterInt).ToChan()
+			c.So(err, c.ShouldBeNil)
+			rs := chanToSlice(out)
+			c.So(rs, shouldSlicesResemble, expectedInts)
+		})
+
+		c.Convey("For origin channel", func() {
+			src := make(chan int)
+			go func() {
+				for i := 0; i < count; i++ {
+					src <- i
+				}
+				close(src)
+			}()
+			out, err := From(src).ToChan()
+			c.So(err, c.ShouldBeNil)
+			rs := chanToSlice(out)
+			c.So(rs, shouldSlicesResemble, tInts)
+		})
+	})
+}
+
 func shouldSlicesResemble(actual interface{}, expected ...interface{}) string {
 	actualSlice, expectedSlice := reflect.ValueOf(actual), reflect.ValueOf(expected[0])
 	if actualSlice.Kind() != expectedSlice.Kind() {

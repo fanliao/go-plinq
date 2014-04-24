@@ -15,9 +15,34 @@ rs, err := q1.Results()
 ```
 
 * 并行查询
-* 支持Channel作为查询数据源
-* 支持返回Channel作为查询结果（未完成。。。）
 
+为了测量plinq的并行加速比，采用了go-linq的非并行模式作为对比的依据。从后面的测试结果看，当N为1000时，plinq的加速比大约为2，当N达到10000或以上时，plinq的加速比稳定在3左右。这里的加速比只是一个参考值，在并行算法中，加速比取决于很多因素，难以一概而论。
+
+通过设置数据块的最小值，可以让plinq在小数据量（N<=100)的情况下退化为非并行模式运行，以防止并行带来的开销超过了并行的收益。
+
+这里要说说go-linq的并行模式采用了每个数据项一个goroutiner的策略，实际上这种策略基本是无用的。在数据量小的情况下体现不出并行的优势，在数据量大的情况下过多的goroutiner将迅速增加系统的开销直到go的运行时崩溃。
+
+* 支持Channel作为查询数据源
+
+```go
+type User struct {
+	id   int
+	name string
+}
+chUsers := make(chan *User)
+rs, err := From(chUsers).Select(func(u interface{})interface{} {
+	return u.name
+}).Results()
+```
+
+* 支持返回Channel作为查询结果
+
+```go
+users := make([]*User, 100)
+rs, err := From(users).Select(func(u interface{})interface{} {
+	return u.name
+}).ToChan()
+```
 
 ## 已经实现的linq查询运算符:
 * 排序运算符：
@@ -60,7 +85,7 @@ Skip, SkipWhile, Take, TakeWhile
 
 ElementAt
 
-## 尚未实现的linq查询运算符:
+## 计划实现的linq查询运算符:
 
 * 选择：
 
