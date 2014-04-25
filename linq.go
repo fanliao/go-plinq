@@ -2,7 +2,7 @@ package plinq
 
 import (
 	"errors"
-	//"fmt"
+	"fmt"
 	"github.com/fanliao/go-promise"
 	"reflect"
 	"runtime"
@@ -36,7 +36,7 @@ var (
 
 func init() {
 	numCPU = runtime.NumCPU()
-	//fmt.Println("ptrSize", ptrSize)
+	fmt.Println("ptrSize", ptrSize)
 
 	Sum = &AggregateOpretion{0, sumOpr, sumOpr}
 	Count = &AggregateOpretion{0, countOpr, sumOpr}
@@ -1413,13 +1413,13 @@ func getConcat(source2 interface{}) stepAction {
 
 func getIntersect(source2 interface{}) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption) (result DataSource, f *promise.Future, keep bool, err error) {
-		results, _, err := filterSet(src, source2, func(hashKey1 uint64, distKVs map[uint64]interface{}) bool {
+		result, f, err = filterSet(src, source2, func(hashKey1 uint64, distKVs map[uint64]interface{}) bool {
 			_, ok := distKVs[hashKey1]
 			return ok
 		}, option)
 
 		if err == nil {
-			return &listSource{results}, nil, option.KeepOrder, nil
+			return result, f, option.KeepOrder, nil
 		} else {
 			return nil, nil, option.KeepOrder, err
 		}
@@ -1428,13 +1428,13 @@ func getIntersect(source2 interface{}) stepAction {
 
 func getExcept(source2 interface{}) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption) (result DataSource, f *promise.Future, keep bool, err error) {
-		results, _, err := filterSet(src, source2, func(hashKey1 uint64, distKVs map[uint64]interface{}) bool {
+		result, f, err = filterSet(src, source2, func(hashKey1 uint64, distKVs map[uint64]interface{}) bool {
 			_, ok := distKVs[hashKey1]
 			return !ok
 		}, option)
 
 		if err == nil {
-			return &listSource{results}, nil, option.KeepOrder, nil
+			return result, f, option.KeepOrder, nil
 		} else {
 			return nil, nil, option.KeepOrder, err
 		}
@@ -1749,7 +1749,71 @@ func getAggregate(src DataSource, aggregateFuncs []*AggregateOpretion, option *P
 
 }
 
-func filterSet(src DataSource, source2 interface{}, filter func(uint64, map[uint64]interface{}) bool, option *ParallelOption) ([]interface{}, map[uint64]interface{}, error) {
+func filterSet(src DataSource, source2 interface{}, filter func(uint64, map[uint64]interface{}) bool, option *ParallelOption) (DataSource, *promise.Future, error) {
+	//-------------------------------------------------------------
+	//mapChunk := func(c *Chunk) (r *Chunk) {
+	//	r = &Chunk{getKeyValues(c, func(v interface{}) interface{} { return v }, nil), c.Order, c.StartIndex}
+	//	return
+	//}
+
+	////map the element to a keyValue that key is group key and value is element
+	//mapFuture, reduceSrcChan2 := parallelMapToChan(newDataSource(source2), nil, mapChunk, option)
+
+	////get distinct values
+	//distKVs := make(map[uint64]interface{})
+	//option.Degree = 1
+	//f1, _ := parallelMapChanToChan(&chanSource{chunkChan: reduceSrcChan2, future: mapFuture},
+	//	nil,
+	//	func(c *Chunk) *Chunk {
+	//		for _, v := range c.Data {
+	//			kv := v.(*hKeyValue)
+	//			if _, ok := distKVs[kv.keyHash]; !ok {
+	//				distKVs[kv.keyHash] = *kv
+	//			}
+	//		}
+	//		return nil
+	//	}, option)
+	////_, err := f.Get()
+
+	//////fmt.Println("\ndistKVs=", distKVs)
+	////return distKVs, err
+
+	////map the elements of source and source2 to the a KeyValue slice
+	////includes the hash value and the original element
+	//f2, reduceSrcChan := parallelMapToChan(src, nil, mapChunk, option)
+
+	//resultKVs := make(map[uint64]interface{}, 100)
+	//mapDistinct := func(c *Chunk) *Chunk {
+	//	if _, err := f1.Get(); err != nil {
+	//		panic(err)
+	//	}
+
+	//	//fmt.Println("\ndistKVs=", distKVs)
+	//	//filter src
+	//	i := 0
+	//	results := make([]interface{}, len(c.Data))
+	//	for _, v := range c.Data {
+	//		kv := v.(*hKeyValue)
+	//		k := kv.keyHash
+	//		if filter(k, distKVs) {
+	//			if _, ok := resultKVs[k]; !ok {
+	//				resultKVs[k] = kv.value
+	//				results[i] = kv.value
+	//				i++
+	//			}
+	//		}
+	//	}
+	//	//fmt.Println("return:", results[0:i])
+
+	//	return &Chunk{results[0:i], c.Order, c.StartIndex}
+	//}
+
+	////always use channel mode in Where operation
+	//option.Degree = 1
+	//f, out := parallelMapToChan(&chanSource{chunkChan: reduceSrcChan, future: f2}, nil, mapDistinct, option)
+	//return &chanSource{chunkChan: out}, f, nil
+
+	//-------------------------------------------------------------
 	f1, f2 := promise.Start(func() (interface{}, error) {
 		return distinctKVs(source2, option)
 	}), promise.Start(func() (interface{}, error) {
@@ -1764,13 +1828,16 @@ func filterSet(src DataSource, source2 interface{}, filter func(uint64, map[uint
 		distKVs := r1.(map[uint64]interface{})
 		kvs := r2.([]interface{})
 
+		//fmt.Println("distKVs2=", distKVs)
 		//filter src
 		i := 0
 		results, resultKVs := make([]interface{}, len(kvs)),
 			make(map[uint64]interface{}, len(kvs))
+		//results := make([]interface{}, len(kvs))
 		for _, v := range kvs {
 			kv := v.(*KeyValue)
 			k := kv.Key.(uint64)
+			//fmt.Println("check", *kv)
 			if filter(k, distKVs) {
 				if _, ok := resultKVs[k]; !ok {
 					resultKVs[k] = kv.Value
@@ -1779,8 +1846,10 @@ func filterSet(src DataSource, source2 interface{}, filter func(uint64, map[uint
 				}
 			}
 		}
+		//fmt.Println("return", results[0:i])
 
-		return results[0:i], resultKVs, nil
+		//return results[0:i], resultKVs, nil
+		return &listSource{results[0:i]}, nil, nil
 	}
 }
 
@@ -1839,6 +1908,7 @@ func parallelMapChanToChan(src *chanSource, out chan *Chunk, task func(*Chunk) *
 			defer func() {
 				if err := recover(); err != nil {
 					e = newErrorWithStacks(err)
+					//fmt.Println("get error:", e)
 				}
 			}()
 			for c := range srcChan {
@@ -1873,7 +1943,7 @@ func parallelMapChanToChan(src *chanSource, out chan *Chunk, task func(*Chunk) *
 func parallelMapListToChan(src DataSource, out chan *Chunk, task func(*Chunk) *Chunk, option *ParallelOption) (*promise.Future, chan *Chunk) {
 	var createOutChan bool
 	if out == nil {
-		out = make(chan *Chunk, option.Degree)
+		out = make(chan *Chunk, 5*option.Degree)
 		createOutChan = true
 	}
 
