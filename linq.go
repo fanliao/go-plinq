@@ -12,9 +12,10 @@ import (
 )
 
 const (
-	DEFAULTCHUNKSIZE     = 500
-	SOURCE_LIST      int = iota //presents the list source
-	SOURCE_CHUNK                //presents the channel source
+	DEFAULTCHUNKSIZE       = 100
+	DEFAULTMINCUNKSIZE     = 20
+	SOURCE_LIST        int = iota //presents the list source
+	SOURCE_CHUNK                  //presents the channel source
 )
 
 var (
@@ -1251,7 +1252,7 @@ func getDistinct(distinctFunc oneArgsFunc) stepAction {
 		//	c = distinctChunkVals(c, distKVs)
 		//	return &listSource{c.Data}, nil, option.KeepOrder, nil
 		//}
-
+		option.ChunkSize = DEFAULTMINCUNKSIZE
 		//map the element to a keyValue that key is hash value and value is element
 		f, reduceSrcChan := parallelMapToChan(src, nil, mapChunk, option)
 
@@ -1334,6 +1335,7 @@ func getJoinImpl(inner interface{},
 	unmatchSelector func(*hKeyValue, *[]interface{}), isLeftJoin bool) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption) (dst DataSource, sf *promise.Future, keep bool, e error) {
 		keep = option.KeepOrder
+		option.ChunkSize = DEFAULTMINCUNKSIZE
 		innerKVtask := promise.Start(func() (interface{}, error) {
 			if innerKVsDs, err := From(inner).hGroupBy(innerKeySelector).execute(); err == nil {
 				return innerKVsDs.(*listSource).data, nil
@@ -1881,6 +1883,9 @@ func parallelMapListToChan(src DataSource, out chan *Chunk, task func(*Chunk) *C
 		f = promise.Wrap([]interface{}{})
 	} else {
 		size, lenOfData := option.ChunkSize, len(data)
+		if size < lenOfData/(numCPU*5) {
+			size = lenOfData / (numCPU * 5)
+		}
 		ch := make(chan *Chunk)
 		go func() {
 			for i := 0; i*size < lenOfData; i++ {

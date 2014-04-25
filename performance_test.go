@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	countForB    int  = 10000
-	rptCountForB int  = 11000
+	countForB    int  = 1000000
+	rptCountForB int  = 1100000
 	testGoLinq   bool = true
 )
 
