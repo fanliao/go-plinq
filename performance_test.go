@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	countForB    int  = 10000
-	rptCountForB int  = 11000
+	countForB    int  = 1000000
+	rptCountForB int  = 1100000
 	testGoLinq   bool = true
 )
 
@@ -131,7 +131,7 @@ func BenchmarkGoLinqDistinct(b *testing.B) {
 		b.SkipNow()
 		return
 	}
-	if countForB > 10000 {
+	if countForB > 1000 {
 		b.Fatal()
 		return
 	}
@@ -195,7 +195,7 @@ func BenchmarkGoLinqJoin(b *testing.B) {
 		b.SkipNow()
 		return
 	}
-	if countForB > 10000 {
+	if countForB > 1000 {
 		b.Fatal()
 		return
 	}
@@ -284,6 +284,56 @@ func BenchmarkGoLinqUnion(b *testing.B) {
 
 ////test except--------------------------------------------------------------------
 func BenchmarkBlockSourceExcept(b *testing.B) {
+	filteri = 1
+	for i := 0; i < b.N; i++ {
+		dst, _ := From(bUsers).Except(bUsers2).Results()
+		if len(dst) != countForB/2 {
+			b.Fail()
+			b.Error("size is ", len(dst))
+			b.Log("dst=", dst)
+		}
+	}
+}
+
+func BenchmarkBlockSourceExcept2(b *testing.B) {
+	filteri = 2
+	for i := 0; i < b.N; i++ {
+		dst, _ := From(bUsers).Except(bUsers2).Results()
+		if len(dst) != countForB/2 {
+			b.Fail()
+			b.Error("size is ", len(dst))
+			b.Log("dst=", dst)
+		}
+	}
+}
+
+func BenchmarkBlockSourceExcept3(b *testing.B) {
+	filteri = 3
+	for i := 0; i < b.N; i++ {
+		dst, err := From(bUsers).Except(bUsers2).Results()
+		if len(dst) != countForB/2 {
+			b.Fail()
+			b.Error("size is ", len(dst))
+			b.Log("dst=", dst)
+			b.Log("err=", err)
+		}
+	}
+}
+
+func BenchmarkBlockSourceExcept4(b *testing.B) {
+	filteri = 4
+	for i := 0; i < b.N; i++ {
+		dst, _ := From(bUsers).Except(bUsers2).Results()
+		if len(dst) != countForB/2 {
+			b.Fail()
+			b.Error("size is ", len(dst))
+			b.Log("dst=", dst)
+		}
+	}
+}
+
+func BenchmarkBlockSourceExcept5(b *testing.B) {
+	filteri = 5
 	for i := 0; i < b.N; i++ {
 		dst, _ := From(bUsers).Except(bUsers2).Results()
 		if len(dst) != countForB/2 {
@@ -301,6 +351,81 @@ func BenchmarkGoLinqExcept(b *testing.B) {
 	}
 	for i := 0; i < b.N; i++ {
 		dst, _ := linq.From(bUsers).Except(bUsers2).Results()
+		if len(dst) != countForB/2 {
+			b.Fail()
+			b.Error("size is ", len(dst))
+		}
+	}
+}
+
+////test except--------------------------------------------------------------------
+func BenchmarkBlockSourceIntersect(b *testing.B) {
+	filteri = 1
+	for i := 0; i < b.N; i++ {
+		dst, _ := From(bUsers).Intersect(bUsers2).Results()
+		if len(dst) != countForB/2 {
+			b.Fail()
+			b.Error("size is ", len(dst))
+			b.Log("dst=", dst)
+		}
+	}
+}
+
+func BenchmarkBlockSourceIntersect2(b *testing.B) {
+	filteri = 2
+	for i := 0; i < b.N; i++ {
+		dst, _ := From(bUsers).Intersect(bUsers2).Results()
+		if len(dst) != countForB/2 {
+			b.Fail()
+			b.Error("size is ", len(dst))
+			b.Log("dst=", dst)
+		}
+	}
+}
+
+func BenchmarkBlockSourceIntersect3(b *testing.B) {
+	filteri = 3
+	for i := 0; i < b.N; i++ {
+		dst, _ := From(bUsers).Intersect(bUsers2).Results()
+		if len(dst) != countForB/2 {
+			b.Fail()
+			b.Error("size is ", len(dst))
+			b.Log("dst=", dst)
+		}
+	}
+}
+
+func BenchmarkBlockSourceIntersect4(b *testing.B) {
+	filteri = 4
+	for i := 0; i < b.N; i++ {
+		dst, _ := From(bUsers).Intersect(bUsers2).Results()
+		if len(dst) != countForB/2 {
+			b.Fail()
+			b.Error("size is ", len(dst))
+			b.Log("dst=", dst)
+		}
+	}
+}
+
+func BenchmarkBlockSourceIntersect5(b *testing.B) {
+	filteri = 5
+	for i := 0; i < b.N; i++ {
+		dst, _ := From(bUsers).Intersect(bUsers2).Results()
+		if len(dst) != countForB/2 {
+			b.Fail()
+			b.Error("size is ", len(dst))
+			b.Log("dst=", dst)
+		}
+	}
+}
+
+func BenchmarkGoLinqIntersect(b *testing.B) {
+	if !testGoLinq {
+		b.SkipNow()
+		return
+	}
+	for i := 0; i < b.N; i++ {
+		dst, _ := linq.From(bUsers).Intersect(bUsers2).Results()
 		if len(dst) != countForB/2 {
 			b.Fail()
 			b.Error("size is ", len(dst))

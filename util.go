@@ -520,7 +520,7 @@ func NewLinqError(text string, err interface{}) error {
 	} else if errs, ok := err.([]interface{}); ok {
 		errs1 := make([]error, len(errs))
 		for i, e := range errs {
-			fmt.Println("get Aggregate errors2", e)
+			//fmt.Println("get Aggregate errors2", e)
 			errs1[i] = errors.New(fmt.Sprintf("%v", e))
 		}
 		return &errorLinq{text, errs1}
@@ -533,6 +533,15 @@ func NewLinqError(text string, err interface{}) error {
 		//}
 
 		return &errorLinq{text, errs}
+	} else if e, ok := err.(error); ok {
+		//v := reflect.ValueOf(err)
+		//fmt.Println("\nget Aggregate errors3", len(errs))
+		//for i := 0; i < v.Len(); i++ {
+		//	se := v.Index(i).Interface().(stepErr)
+		//	fmt.Println("item", i, "=", (&se).Error())
+		//}
+
+		return &errorLinq{text, []error{e}}
 	} else {
 		panic(errors.New("unsupport error type"))
 	}
@@ -612,7 +621,7 @@ func stepTypToString(typ int) string {
 	case ACT_TAKEWHILE:
 		return "TakeWhile opretion"
 	default:
-		return "unknown opretion"
+		return "unknown opretion" + strconv.Itoa(typ)
 	}
 
 }
