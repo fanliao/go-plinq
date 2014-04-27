@@ -1173,6 +1173,7 @@ func TestSkipAndTake(t *testing.T) {
 	}
 
 	indexses := getIndexses(l)
+	//indexses := [][]int{[]int{0, 1, 3, 2, 4}}
 
 	getSkipResult := func(i int) []interface{} {
 		r := make([]interface{}, count-i)
@@ -1378,12 +1379,13 @@ func TestSkipAndTake(t *testing.T) {
 			})
 			c.Convey("SkipWhile 12", func() {
 				for _, v := range indexses {
+					//fmt.Println("\nSkipWhile 12 for", v)
 					r, err := From(getCChunkSrc(v, ints)).SetSizeOfChunk(size).SkipWhile(func(v interface{}) bool {
 						return v.(int) < 12
 					}).Results()
 					c.So(err, c.ShouldBeNil)
 					if shouldSlicesResemble(r, getSkipResult(12)) != "" {
-						fmt.Println("SkipWhile 12 for", v, "return", r)
+						fmt.Println("!!!!!!!SkipWhile 12 for", v, "return", r)
 					}
 					c.So(r, shouldSlicesResemble, getSkipResult(12))
 				}
@@ -1452,6 +1454,7 @@ func TestSkipAndTake(t *testing.T) {
 				}
 			})
 			c.Convey("TakeWhile 12", func() {
+				//fmt.Println("\nTakeWhile 12")
 				for _, v := range indexses {
 					r, err := From(getCChunkSrc(v, ints)).SetSizeOfChunk(size).TakeWhile(func(v interface{}) bool {
 						return v.(int) < 12
