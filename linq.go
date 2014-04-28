@@ -1795,25 +1795,7 @@ func getSkipTakeCount(count int, isTake bool) stepAction {
 }
 
 func getSkipTakeWhile(predicate predicateFunc, isTake bool) stepAction {
-	return getSkipTake(func(c *Chunk, canceller promise.Canceller) (r int, found bool) {
-		r = -1
-		//for i, v := range c.Data {
-		//TODO:can be improve like forEachSlicer
-		size := c.Data.Len()
-		for i := 0; i < size; i++ {
-			v := c.Data.Index(i)
-			if canceller != nil && canceller.IsCancellationRequested() {
-				canceller.SetCancelled()
-				break
-			}
-			if !predicate(v) {
-				r = i
-				found = true
-				break
-			}
-		}
-		return
-	}, isTake, false)
+	return getSkipTake(foundMatchFunc(invFunc(predicate)), isTake, false)
 }
 
 type chunkWhileResult struct {
@@ -1835,8 +1817,7 @@ func getSkipTake(foundMatch func(*Chunk, promise.Canceller) (int, bool), isTake 
 			if useIndex {
 				i, _ = foundMatch(&Chunk{s.data, 0, 0}, nil)
 			} else {
-				i, found, e = getFirstOrLastIndex(s, foundMatch, option)
-				if !found {
+				if i, found, e = getFirstOrLastIndex(s, foundMatch, option); !found{
 					i = s.data.Len()
 				}
 			}
@@ -1970,9 +1951,14 @@ func getFirstOrLastIndex(src *listSource, predicate func(c *Chunk, canceller pro
 	}
 }
 
-//根据条件查找第一个符合的元素
-func getFirstBy(src DataSource, f func(interface{}) bool, option *ParallelOption) (element interface{}, found bool, err error) {
-	return getFirstElement(src, func(c *Chunk, canceller promise.Canceller) (r int, found bool) {
+func invFunc(predicate predicateFunc) predicateFunc {
+	return func(v interface{}) bool {
+		return !predicate(v)
+	}
+}
+
+func foundMatchFunc(predicate predicateFunc) func(c *Chunk, canceller promise.Canceller) (r int, found bool) {
+	return func(c *Chunk, canceller promise.Canceller) (r int, found bool) {
 		r = -1
 		size := c.Data.Len()
 		for i := 0; i < size; i++ {
@@ -1981,7 +1967,7 @@ func getFirstBy(src DataSource, f func(interface{}) bool, option *ParallelOption
 				canceller.SetCancelled()
 				break
 			}
-			if f(v) {
+			if predicate(v) {
 				r = i
 				//fmt.Println("firstof find", j, )
 				found = true
@@ -1989,7 +1975,12 @@ func getFirstBy(src DataSource, f func(interface{}) bool, option *ParallelOption
 			}
 		}
 		return
-	}, false, option)
+	}
+}
+
+//根据条件查找第一个符合的元素
+func getFirstBy(src DataSource, predicate predicateFunc, option *ParallelOption) (element interface{}, found bool, err error) {
+	return getFirstElement(src, foundMatchFunc(predicate), false, option)
 }
 
 func getFirstElement(src DataSource, foundMatch func(c *Chunk, canceller promise.Canceller) (r int, found bool), useIndex bool, option *ParallelOption) (element interface{}, found bool, err error) {
