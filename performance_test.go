@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	countForB    int  = 500
-	rptCountForB int  = 550
+	countForB    int  = 10000
+	rptCountForB int  = 11000
 	testGoLinq   bool = true
 )
 
@@ -389,10 +389,51 @@ func BenchmarkGoLinq_Aggregate(b *testing.B) {
 	}
 }
 
-//test FirstOf ---------------------------------------
+//test SkipWhile/TakeWhile ---------------------------------------
+func testPlinqSkipWhile(b *testing.B, i int) {
+	//fmt.Println("find", i)
+	if r, err := From(bInts).SkipWhile(func(v interface{}) bool {
+		return v.(int) < i
+	}).Results(); err != nil {
+		b.Fail()
+		b.Error(err)
+	} else if len(r) != countForB-i {
+		b.Fail()
+		b.Error(len(r), i)
+	}
+}
+
+func BenchmarkGoPLinq_SkipWhile(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		testPlinqSkipWhile(b, countForB/3)
+		testPlinqSkipWhile(b, 2*countForB/3)
+		testPlinqSkipWhile(b, 5*countForB/6)
+	}
+}
+
+func testLinqSkipWhile(b *testing.B, i int) {
+	if r, err := linq.From(bInts).SkipWhile(func(v linq.T) (bool, error) {
+		return v.(int) < i, nil
+	}).Results(); err != nil {
+		b.Fail()
+		b.Error(err)
+	} else if len(r) != countForB-i {
+		b.Fail()
+		b.Error(len(r), i)
+	}
+}
+func BenchmarkGoLinq_SkipWhile(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		testLinqSkipWhile(b, countForB/3)
+		testLinqSkipWhile(b, 2*countForB/3)
+		testLinqSkipWhile(b, 5*countForB/6)
+	}
+}
+
+//test FirstBy ---------------------------------------
 func testPlinqFirst(b *testing.B, i int) {
 	//fmt.Println("find", i)
-	if r, found, err := From(bInts).FirstOf(func(v interface{}) bool {
+	if r, found, err := From(bInts).FirstBy(func(v interface{}) bool {
 		return v.(int) == i
 	}); err != nil {
 		b.Fail()
@@ -403,7 +444,7 @@ func testPlinqFirst(b *testing.B, i int) {
 	}
 }
 
-func BenchmarkGoPLinq_FirstOf(b *testing.B) {
+func BenchmarkGoPLinq_FirstBy(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		testPlinqFirst(b, countForB/3)
 		testPlinqFirst(b, 2*countForB/3)
@@ -422,7 +463,7 @@ func testLinqFirst(b *testing.B, i int) {
 		b.Error(j, i, found)
 	}
 }
-func BenchmarkGoLinq_FirstOf(b *testing.B) {
+func BenchmarkGoLinq_FirstBy(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		testLinqFirst(b, countForB/3)
 		testLinqFirst(b, 2*countForB/3)

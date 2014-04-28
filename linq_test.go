@@ -1226,6 +1226,7 @@ func TestSkipAndTake(t *testing.T) {
 			})
 
 			c.Convey("SkipWhile nothing", func() {
+				//fmt.Println("SkipWhile nothing")
 				r, err := From(ints).SetSizeOfChunk(size).SkipWhile(func(v interface{}) bool {
 					return v.(int) < -1
 				}).Results()
@@ -1235,6 +1236,7 @@ func TestSkipAndTake(t *testing.T) {
 			})
 
 			c.Convey("SkipWhile all", func() {
+				//fmt.Println("SkipWhile all")
 				r, err := From(ints).SetSizeOfChunk(size).SkipWhile(func(v interface{}) bool {
 					return v.(int) < 100
 				}).Results()
@@ -1244,6 +1246,7 @@ func TestSkipAndTake(t *testing.T) {
 			})
 
 			c.Convey("SkipWhile 12", func() {
+				//fmt.Println("SkipWhile 12")
 				r, err := From(ints).SetSizeOfChunk(size).SkipWhile(func(v interface{}) bool {
 					return v.(int) < 12
 				}).Results()
@@ -1283,6 +1286,7 @@ func TestSkipAndTake(t *testing.T) {
 			})
 
 			c.Convey("TakeWhile nothing", func() {
+				//fmt.Println("TakeWhile nothing")
 				r, err := From(ints).SetSizeOfChunk(size).TakeWhile(func(v interface{}) bool {
 					return v.(int) < -1
 				}).Results()
@@ -1292,6 +1296,7 @@ func TestSkipAndTake(t *testing.T) {
 			})
 
 			c.Convey("TakeWhile all", func() {
+				//fmt.Println("TakeWhile all")
 				r, err := From(ints).SetSizeOfChunk(size).TakeWhile(func(v interface{}) bool {
 					return v.(int) < 100
 				}).Results()
@@ -1301,6 +1306,7 @@ func TestSkipAndTake(t *testing.T) {
 			})
 
 			c.Convey("TakeWhile 12", func() {
+				//fmt.Println("TakeWhile 12")
 				r, err := From(ints).SetSizeOfChunk(size).TakeWhile(func(v interface{}) bool {
 					return v.(int) < 12
 				}).Results()
@@ -1519,6 +1525,87 @@ func TestElementAt(t *testing.T) {
 		})
 		c.Convey("ElementAt 12", func() {
 			r, found, err := From(tInts).ElementAt(12)
+			c.So(err, c.ShouldBeNil)
+			c.So(r, c.ShouldEqual, 12)
+			c.So(found, c.ShouldEqual, true)
+		})
+	})
+}
+
+func TestFirstBy(t *testing.T) {
+	ints := make([]interface{}, count)
+	for i := 0; i < count; i++ {
+		ints[i] = i
+	}
+
+	indexses := getIndexses(l)
+
+	c.Convey("Test FirstBy in channel", t, func() {
+		c.Convey("FirstBy with panic an error", func() {
+			for _, v := range indexses {
+				_, found, err := From(getCChunkSrc(v, ints)).FirstBy(func(v interface{}) bool {
+					panic(errors.New("!error"))
+				})
+				c.So(err, c.ShouldNotBeNil)
+				c.So(found, c.ShouldEqual, false)
+			}
+		})
+		c.Convey("FirstBy nothing", func() {
+			for _, v := range indexses {
+				_, found, err := From(getCChunkSrc(v, ints)).FirstBy(func(v interface{}) bool {
+					return v.(int) == -1
+				})
+				c.So(err, c.ShouldBeNil)
+				c.So(found, c.ShouldEqual, false)
+			}
+		})
+		c.Convey("FirstBy nothing", func() {
+			for _, v := range indexses {
+				_, found, err := From(getCChunkSrc(v, ints)).FirstBy(func(v interface{}) bool {
+					return v.(int) == count
+				})
+				c.So(err, c.ShouldBeNil)
+				c.So(found, c.ShouldEqual, false)
+			}
+		})
+		c.Convey("FirstBy 12", func() {
+			for _, v := range indexses {
+				r, found, err := From(getCChunkSrc(v, ints)).FirstBy(func(v interface{}) bool {
+					return v.(int) == 12
+				})
+				c.So(err, c.ShouldBeNil)
+				c.So(r, c.ShouldEqual, 12)
+				c.So(found, c.ShouldEqual, true)
+			}
+		})
+	})
+
+	c.Convey("Test FirstBy in list", t, func() {
+		c.Convey("FirstBy with panic an error", func() {
+			_, found, err := From(tInts).FirstBy(func(v interface{}) bool {
+				panic(errors.New("!error"))
+			})
+			c.So(err, c.ShouldNotBeNil)
+			c.So(found, c.ShouldEqual, false)
+		})
+		c.Convey("FirstBy nothing", func() {
+			_, found, err := From(tInts).FirstBy(func(v interface{}) bool {
+				return v.(int) == -1
+			})
+			c.So(err, c.ShouldBeNil)
+			c.So(found, c.ShouldEqual, false)
+		})
+		c.Convey("FirstBy nothing", func() {
+			_, found, err := From(tInts).FirstBy(func(v interface{}) bool {
+				return v.(int) == 100
+			})
+			c.So(err, c.ShouldBeNil)
+			c.So(found, c.ShouldEqual, false)
+		})
+		c.Convey("FirstBy 12", func() {
+			r, found, err := From(tInts).FirstBy(func(v interface{}) bool {
+				return v.(int) == 12
+			})
 			c.So(err, c.ShouldBeNil)
 			c.So(r, c.ShouldEqual, 12)
 			c.So(found, c.ShouldEqual, true)

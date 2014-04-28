@@ -184,13 +184,13 @@ func (this *Queryable) ElementAt(i int) (result interface{}, found bool, err err
 	}
 }
 
-func (this *Queryable) FirstOf(predicate predicateFunc) (result interface{}, found bool, err error) {
+func (this *Queryable) FirstBy(predicate predicateFunc) (result interface{}, found bool, err error) {
 	if ds, e := this.execute(); e == nil {
 		if err = this.stepErrs(); err != nil {
 			return nil, false, err
 		}
 
-		return getFirstOf(ds, predicate, &(this.ParallelOption))
+		return getFirstBy(ds, predicate, &(this.ParallelOption))
 	} else {
 		return nil, false, e
 	}
@@ -1491,7 +1491,7 @@ func getSkipTakeCount(count int, isTake bool) stepAction {
 	if count < 0 {
 		count = 0
 	}
-	return getSkipTake(func(c *Chunk) (i int, find bool) {
+	return getSkipTake(func(c *Chunk, canceller promise.Canceller) (i int, find bool) {
 		if c.StartIndex > count {
 			i, find = 0, true
 		} else if c.StartIndex+len(c.Data) >= count {
@@ -1504,14 +1504,31 @@ func getSkipTakeCount(count int, isTake bool) stepAction {
 }
 
 func getSkipTakeWhile(predicate predicateFunc, isTake bool) stepAction {
-	return getSkipTake(func(c *Chunk) (int, bool) {
-		rs := c.Data
-		for i, v := range rs {
+	return getSkipTake(func(c *Chunk, canceller promise.Canceller) (r int, found bool) {
+		//rs := c.Data
+		//for i, v := range rs {
+		//	if canceller != nil && canceller.IsCancellationRequested() {
+		//		canceller.SetCancelled()
+		//		break
+		//	}
+		//	if !predicate(v) {
+		//		return i, true
+		//	}
+		//}
+		//return len(rs), false
+		r = -1
+		for i, v := range c.Data {
+			if canceller != nil && canceller.IsCancellationRequested() {
+				canceller.SetCancelled()
+				break
+			}
 			if !predicate(v) {
-				return i, true
+				r = i
+				found = true
+				break
 			}
 		}
-		return len(rs), false
+		return
 	}, isTake, false)
 }
 
@@ -1521,18 +1538,28 @@ type chunkWhileResult struct {
 	whileIdx int
 }
 
-func getSkipTake(foundNoMatch func(*Chunk) (int, bool), isTake bool, useIndex bool) stepAction {
+func getSkipTake(foundNoMatch func(*Chunk, promise.Canceller) (int, bool), isTake bool, useIndex bool) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption) (dst DataSource, sf *promise.Future, keep bool, e error) {
 		switch s := src.(type) {
 		case *listSource:
 			rs := s.ToSlice(false)
-			var i int
-			i, _ = foundNoMatch(&Chunk{rs, 0, 0})
+			var (
+				i     int
+				found bool
+			)
+			if useIndex {
+				i, _ = foundNoMatch(&Chunk{rs, 0, 0}, nil)
+			} else {
+				i, found, e = getFirstOrLastIndex(&listSource{rs}, foundNoMatch, option)
+				if !found {
+					i = len(rs)
+				}
+			}
 
 			if isTake {
-				return &listSource{rs[0:i]}, nil, option.KeepOrder, nil
+				return &listSource{rs[0:i]}, nil, option.KeepOrder, e
 			} else {
-				return &listSource{rs[i:]}, nil, option.KeepOrder, nil
+				return &listSource{rs[i:]}, nil, option.KeepOrder, e
 			}
 		case *chanSource:
 			out := make(chan *Chunk)
@@ -1540,7 +1567,7 @@ func getSkipTake(foundNoMatch func(*Chunk) (int, bool), isTake bool, useIndex bo
 			beforeNoMatchAct := func(c *chunkWhileResult) (while bool) {
 				//如果useIndex，则只有等到前置块都判断完成时才能得出正确的起始索引号，所以在这里判断是否不匹配
 				if useIndex {
-					if i, found := foundNoMatch(c.chunk); found {
+					if i, found := foundNoMatch(c.chunk, nil); found {
 						c.noMatch = true
 						c.whileIdx = i
 					}
@@ -1599,7 +1626,7 @@ func getSkipTake(foundNoMatch func(*Chunk) (int, bool), isTake bool, useIndex bo
 						//检查块是否存在不匹配的数据，按Index计算的总是返回flase，因为必须要等前面的块准备好才能得到正确的索引
 						chunkResult := &chunkWhileResult{chunk: c}
 						if !useIndex {
-							chunkResult.whileIdx, chunkResult.noMatch = foundNoMatch(c)
+							chunkResult.whileIdx, chunkResult.noMatch = foundNoMatch(c, nil)
 							//fmt.Println("\nfound no match---", c, chunkResult.noMatch)
 						}
 
@@ -1707,27 +1734,25 @@ func getElementAt(src DataSource, i int, option *ParallelOption) (element interf
 	panic(ErrUnsupportSource)
 }
 
-func getFirstOrLastIndex(src *listSource, predicate func(interface{}) bool, option *ParallelOption) (idx int, found bool, err error) {
+func getFirstOrLastIndex(src *listSource, predicate func(c *Chunk, canceller promise.Canceller) (r int, found bool), option *ParallelOption) (idx int, found bool, err error) {
 	//rs := src.ToSlice(false)
-	getAction := func(c *Chunk) func(promise.Canceller) (interface{}, error) {
-		return func(canceller promise.Canceller) (r interface{}, e error) {
-			//ok := false
-			r = -1
-			for i, v := range c.Data {
-				if canceller != nil && canceller.IsCancellationRequested() {
-					canceller.SetCancelled()
-					break
-				}
-				if predicate(v) {
-					r = i
-					//ok = true
-					break
-				}
-			}
-			return r, nil
-		}
-	}
-	f := parallelMatchListWithPriority(src, getAction, option, -1)
+	//getAction := func(c *Chunk, canceller promise.Canceller) (r interface{}, found bool) {
+	//	//ok := false
+	//	r = -1
+	//	for i, v := range c.Data {
+	//		if canceller != nil && canceller.IsCancellationRequested() {
+	//			canceller.SetCancelled()
+	//			break
+	//		}
+	//		if predicate(v) {
+	//			r = i
+	//			found = true
+	//			break
+	//		}
+	//	}
+	//	return
+	//}
+	f := parallelMatchListWithPriority(src, predicate, option, -1)
 	if i, e := f.Get(); e != nil {
 		return -1, false, e
 	} else if i == -1 {
@@ -1737,18 +1762,21 @@ func getFirstOrLastIndex(src *listSource, predicate func(interface{}) bool, opti
 	}
 }
 
-func getFirstOf(src DataSource, f func(interface{}) bool, option *ParallelOption) (element interface{}, found bool, err error) {
-	foundMatch := func(c *Chunk) (r int, found bool) {
-		j := -1
+func getFirstBy(src DataSource, f func(interface{}) bool, option *ParallelOption) (element interface{}, found bool, err error) {
+	foundMatch := func(c *Chunk, canceller promise.Canceller) (r int, found bool) {
+		r = -1
 		for i, v := range c.Data {
-			j = i
+			if canceller != nil && canceller.IsCancellationRequested() {
+				canceller.SetCancelled()
+				break
+			}
 			if f(v) {
+				r = i
 				//fmt.Println("firstof find", j, )
 				found = true
 				break
 			}
 		}
-		r = j
 		return
 	}
 	useIndex := false
@@ -1756,7 +1784,7 @@ func getFirstOf(src DataSource, f func(interface{}) bool, option *ParallelOption
 	switch s := src.(type) {
 	case *listSource:
 		rs := s.ToSlice(false)
-		if i, found, err := getFirstOrLastIndex(&listSource{rs}, f, option); err != nil {
+		if i, found, err := getFirstOrLastIndex(&listSource{rs}, foundMatch, option); err != nil {
 			return nil, false, err
 		} else if !found {
 			return nil, false, nil
@@ -1793,7 +1821,7 @@ func getFirstOf(src DataSource, f func(interface{}) bool, option *ParallelOption
 	case *chanSource:
 		beforeNoMatchAct := func(c *chunkWhileResult) (while bool) {
 			//判断是否满足条件
-			if idx, found := foundMatch(c.chunk); found {
+			if idx, found := foundMatch(c.chunk, nil); found {
 				element = c.chunk.Data[idx]
 				return true
 			}
@@ -1819,7 +1847,7 @@ func getFirstOf(src DataSource, f func(interface{}) bool, option *ParallelOption
 
 				if !found {
 					chunkResult := &chunkWhileResult{chunk: c}
-					chunkResult.whileIdx, chunkResult.noMatch = foundMatch(c)
+					chunkResult.whileIdx, chunkResult.noMatch = foundMatch(c, nil)
 					//fmt.Println("check", c, chunkResult, found)
 					found = avl.handleChunk(chunkResult)
 					//fmt.Println("after check", c, chunkResult, found)
@@ -2373,7 +2401,7 @@ func parallelMapList(src DataSource, getAction func(*Chunk) func() (interface{},
 	return
 }
 
-func parallelMatchListWithPriority(src DataSource, getAction func(*Chunk) func(promise.Canceller) (interface{}, error), option *ParallelOption, priorityOrder int) (f *promise.Future) {
+func parallelMatchListWithPriority(src DataSource, getAction func(*Chunk, promise.Canceller) (int, bool), option *ParallelOption, priorityOrder int) (f *promise.Future) {
 	data := src.ToSlice(false)
 	if len(data) == 0 {
 		return promise.Wrap(-1)
@@ -2393,10 +2421,10 @@ func parallelMatchListWithPriority(src DataSource, getAction func(*Chunk) func(p
 				}
 			}()
 			c := &Chunk{data, 0, 0}
-			if r, err := getAction(c)(nil); err != nil {
-				f.Reject(err)
-			} else {
+			if r, found := getAction(c, nil); found {
 				f.Reslove(r)
+			} else {
+				f.Reslove(-1)
 			}
 		}()
 		return f.Future
@@ -2412,11 +2440,11 @@ func parallelMatchListWithPriority(src DataSource, getAction func(*Chunk) func(p
 
 		startIndex := i * size
 		f = promise.StartCanCancel(func(canceller promise.Canceller) (interface{}, error) {
-			r, err := getAction(c)(canceller)
-			if err == nil && r.(int) != -1 {
-				r = r.(int) + startIndex
+			r, found := getAction(c, canceller)
+			if found && r != -1 {
+				r = r + startIndex
 			}
-			return r, err
+			return r, nil
 		})
 		fs = append(fs, f)
 		//count++
