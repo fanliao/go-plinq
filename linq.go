@@ -184,6 +184,16 @@ func (this *Queryable) ElementAt(i int) (result interface{}, found bool, err err
 	}
 }
 
+// FirstBy returns the first element in the data source that matchs the
+// provided predicate. If source is empty or such element is not found, found
+// value will be false, otherwise elem is returned.
+// Example:
+// 	r, found, err := From([]int{0,1,2,3}).FirstBy(func (i interface{})bool{
+//		return i.(int) % 2 == 1
+// 	})
+// 	if err == nil && found {
+//		// r is 1
+// 	}
 func (this *Queryable) FirstBy(predicate predicateFunc, chunkSizes ...int) (result interface{}, found bool, err error) {
 	if ds, e := this.execute(); e == nil {
 		if err = this.stepErrs(); err != nil {
