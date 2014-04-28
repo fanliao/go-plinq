@@ -184,13 +184,17 @@ func (this *Queryable) ElementAt(i int) (result interface{}, found bool, err err
 	}
 }
 
-func (this *Queryable) FirstBy(predicate predicateFunc) (result interface{}, found bool, err error) {
+func (this *Queryable) FirstBy(predicate predicateFunc, chunkSizes ...int) (result interface{}, found bool, err error) {
 	if ds, e := this.execute(); e == nil {
 		if err = this.stepErrs(); err != nil {
 			return nil, false, err
 		}
 
-		return getFirstBy(ds, predicate, &(this.ParallelOption))
+		option, chunkSize := this.ParallelOption, getChunkSizeArg(chunkSizes...)
+		if chunkSize != 0 {
+			option.ChunkSize = chunkSize
+		}
+		return getFirstBy(ds, predicate, &option)
 	} else {
 		return nil, false, e
 	}
@@ -349,10 +353,10 @@ func (this *Queryable) Min(lesses ...func(interface{}, interface{}) bool) (resul
 // 	q := From(users).Where(func (v interface{}) bool{
 //		return v.(*User).Age > 18
 // 	})
-func (this *Queryable) Where(predicate predicateFunc, degrees ...int) *Queryable {
+func (this *Queryable) Where(predicate predicateFunc, chunkSizes ...int) *Queryable {
 	mustNotNil(predicate, ErrNilAction)
 
-	this.steps = append(this.steps, commonStep{ACT_WHERE, predicate, getDegreeArg(degrees...)})
+	this.steps = append(this.steps, commonStep{ACT_WHERE, predicate, getChunkSizeArg(chunkSizes...)})
 	return this
 }
 
@@ -364,10 +368,10 @@ func (this *Queryable) Where(predicate predicateFunc, degrees ...int) *Queryable
 // 	q := From(users).Select(func (v interface{}) interface{}{
 //		return v.(*User).Name
 // 	})
-func (this *Queryable) Select(selectFunc oneArgsFunc, degrees ...int) *Queryable {
+func (this *Queryable) Select(selectFunc oneArgsFunc, chunkSizes ...int) *Queryable {
 	mustNotNil(selectFunc, ErrNilAction)
 
-	this.steps = append(this.steps, commonStep{ACT_SELECT, selectFunc, getDegreeArg(degrees...)})
+	this.steps = append(this.steps, commonStep{ACT_SELECT, selectFunc, getChunkSizeArg(chunkSizes...)})
 	return this
 }
 
@@ -376,7 +380,7 @@ func (this *Queryable) Select(selectFunc oneArgsFunc, degrees ...int) *Queryable
 //
 // Example:
 // 	q := From(users).Distinct()
-func (this *Queryable) Distinct(degrees ...int) *Queryable {
+func (this *Queryable) Distinct(chunkSizes ...int) *Queryable {
 	return this.DistinctBy(func(v interface{}) interface{} { return v })
 }
 
@@ -390,9 +394,9 @@ func (this *Queryable) Distinct(degrees ...int) *Queryable {
 // 	q := From(user).DistinctBy(func (p interface{}) interface{}{
 //		return p.(*Person).FirstName
 // 	})
-func (this *Queryable) DistinctBy(distinctFunc oneArgsFunc, degrees ...int) *Queryable {
+func (this *Queryable) DistinctBy(distinctFunc oneArgsFunc, chunkSizes ...int) *Queryable {
 	mustNotNil(distinctFunc, ErrNilAction)
-	this.steps = append(this.steps, commonStep{ACT_DISTINCT, distinctFunc, getDegreeArg(degrees...)})
+	this.steps = append(this.steps, commonStep{ACT_DISTINCT, distinctFunc, getChunkSizeArg(chunkSizes...)})
 	return this
 }
 
@@ -422,10 +426,10 @@ func (this *Queryable) OrderBy(compare func(interface{}, interface{}) int) *Quer
 //	q := From(user).GroupBy(func (v interface{}) interface{} {
 //		return this.(*User).Age
 // 	})
-func (this *Queryable) GroupBy(keySelector oneArgsFunc, degrees ...int) *Queryable {
+func (this *Queryable) GroupBy(keySelector oneArgsFunc, chunkSizes ...int) *Queryable {
 	mustNotNil(keySelector, ErrNilAction)
 
-	this.steps = append(this.steps, commonStep{ACT_GROUPBY, keySelector, getDegreeArg(degrees...)})
+	this.steps = append(this.steps, commonStep{ACT_GROUPBY, keySelector, getChunkSizeArg(chunkSizes...)})
 	return this
 }
 
@@ -439,10 +443,10 @@ func (this *Queryable) GroupBy(keySelector oneArgsFunc, degrees ...int) *Queryab
 // Example:
 // 	q := From(int[]{1,2,3,4,5}).Union(int[]{3,4,5,6})
 // 	// q.Results() returns {1,2,3,4,5,6}
-func (this *Queryable) Union(source2 interface{}, degrees ...int) *Queryable {
+func (this *Queryable) Union(source2 interface{}, chunkSizes ...int) *Queryable {
 	mustNotNil(source2, ErrUnionNilSource)
 
-	this.steps = append(this.steps, commonStep{ACT_UNION, source2, getDegreeArg(degrees...)})
+	this.steps = append(this.steps, commonStep{ACT_UNION, source2, getChunkSizeArg(chunkSizes...)})
 	return this
 }
 
@@ -468,10 +472,10 @@ func (this *Queryable) Concat(source2 interface{}) *Queryable {
 // Example:
 // 	q := From(int[]{1,2,3,4,5}).Intersect(int[]{3,4,5,6})
 // 	// q.Results() returns {3,4,5}
-func (this *Queryable) Intersect(source2 interface{}, degrees ...int) *Queryable {
+func (this *Queryable) Intersect(source2 interface{}, chunkSizes ...int) *Queryable {
 	mustNotNil(source2, ErrInterestNilSource)
 
-	this.steps = append(this.steps, commonStep{ACT_INTERSECT, source2, getDegreeArg(degrees...)})
+	this.steps = append(this.steps, commonStep{ACT_INTERSECT, source2, getChunkSizeArg(chunkSizes...)})
 	return this
 }
 
@@ -483,10 +487,10 @@ func (this *Queryable) Intersect(source2 interface{}, degrees ...int) *Queryable
 // Example:
 // 	q := From(int[]{1,2,3,4,5}).Except(int[]{3,4,5,6})
 // 	// q.Results() returns {1,2}
-func (this *Queryable) Except(source2 interface{}, degrees ...int) *Queryable {
+func (this *Queryable) Except(source2 interface{}, chunkSizes ...int) *Queryable {
 	mustNotNil(source2, ErrExceptNilSource)
 
-	this.steps = append(this.steps, commonStep{ACT_EXCEPT, source2, getDegreeArg(degrees...)})
+	this.steps = append(this.steps, commonStep{ACT_EXCEPT, source2, getChunkSizeArg(chunkSizes...)})
 	return this
 }
 
@@ -505,13 +509,13 @@ func (this *Queryable) Except(source2 interface{}, degrees ...int) *Queryable {
 func (this *Queryable) Join(inner interface{},
 	outerKeySelector oneArgsFunc,
 	innerKeySelector oneArgsFunc,
-	resultSelector twoArgsFunc, degrees ...int) *Queryable {
+	resultSelector twoArgsFunc, chunkSizes ...int) *Queryable {
 	mustNotNil(inner, ErrJoinNilSource)
 	mustNotNil(outerKeySelector, ErrOuterKeySelector)
 	mustNotNil(innerKeySelector, ErrInnerKeySelector)
 	mustNotNil(resultSelector, ErrResultSelector)
 
-	this.steps = append(this.steps, joinStep{commonStep{ACT_JOIN, inner, getDegreeArg(degrees...)}, outerKeySelector, innerKeySelector, resultSelector, false})
+	this.steps = append(this.steps, joinStep{commonStep{ACT_JOIN, inner, getChunkSizeArg(chunkSizes...)}, outerKeySelector, innerKeySelector, resultSelector, false})
 	return this
 }
 
@@ -522,13 +526,13 @@ func (this *Queryable) Join(inner interface{},
 func (this *Queryable) LeftJoin(inner interface{},
 	outerKeySelector oneArgsFunc,
 	innerKeySelector oneArgsFunc,
-	resultSelector twoArgsFunc, degrees ...int) *Queryable {
+	resultSelector twoArgsFunc, chunkSizes ...int) *Queryable {
 	mustNotNil(inner, ErrJoinNilSource)
 	mustNotNil(outerKeySelector, ErrOuterKeySelector)
 	mustNotNil(innerKeySelector, ErrInnerKeySelector)
 	mustNotNil(resultSelector, ErrResultSelector)
 
-	this.steps = append(this.steps, joinStep{commonStep{ACT_JOIN, inner, getDegreeArg(degrees...)}, outerKeySelector, innerKeySelector, resultSelector, true})
+	this.steps = append(this.steps, joinStep{commonStep{ACT_JOIN, inner, getChunkSizeArg(chunkSizes...)}, outerKeySelector, innerKeySelector, resultSelector, true})
 	return this
 }
 
@@ -539,13 +543,13 @@ func (this *Queryable) LeftJoin(inner interface{},
 func (this *Queryable) GroupJoin(inner interface{},
 	outerKeySelector oneArgsFunc,
 	innerKeySelector oneArgsFunc,
-	resultSelector func(interface{}, []interface{}) interface{}, degrees ...int) *Queryable {
+	resultSelector func(interface{}, []interface{}) interface{}, chunkSizes ...int) *Queryable {
 	mustNotNil(inner, ErrJoinNilSource)
 	mustNotNil(outerKeySelector, ErrOuterKeySelector)
 	mustNotNil(innerKeySelector, ErrInnerKeySelector)
 	mustNotNil(resultSelector, ErrResultSelector)
 
-	this.steps = append(this.steps, joinStep{commonStep{ACT_GROUPJOIN, inner, getDegreeArg(degrees...)}, outerKeySelector, innerKeySelector, resultSelector, false})
+	this.steps = append(this.steps, joinStep{commonStep{ACT_GROUPJOIN, inner, getChunkSizeArg(chunkSizes...)}, outerKeySelector, innerKeySelector, resultSelector, false})
 	return this
 }
 
@@ -556,13 +560,13 @@ func (this *Queryable) GroupJoin(inner interface{},
 func (this *Queryable) LeftGroupJoin(inner interface{},
 	outerKeySelector oneArgsFunc,
 	innerKeySelector oneArgsFunc,
-	resultSelector func(interface{}, []interface{}) interface{}, degrees ...int) *Queryable {
+	resultSelector func(interface{}, []interface{}) interface{}, chunkSizes ...int) *Queryable {
 	mustNotNil(inner, ErrJoinNilSource)
 	mustNotNil(outerKeySelector, ErrOuterKeySelector)
 	mustNotNil(innerKeySelector, ErrInnerKeySelector)
 	mustNotNil(resultSelector, ErrResultSelector)
 
-	this.steps = append(this.steps, joinStep{commonStep{ACT_GROUPJOIN, inner, getDegreeArg(degrees...)}, outerKeySelector, innerKeySelector, resultSelector, true})
+	this.steps = append(this.steps, joinStep{commonStep{ACT_GROUPJOIN, inner, getChunkSizeArg(chunkSizes...)}, outerKeySelector, innerKeySelector, resultSelector, true})
 	return this
 }
 
@@ -572,8 +576,8 @@ func (this *Queryable) LeftGroupJoin(inner interface{},
 // Example:
 // 	q := From([]int{1,2,3,4,5}).Reverse()
 // 	// q.Results() returns {5,4,3,2,1}
-func (this *Queryable) Reverse(degrees ...int) *Queryable {
-	this.steps = append(this.steps, commonStep{ACT_REVERSE, nil, getDegreeArg(degrees...)})
+func (this *Queryable) Reverse(chunkSizes ...int) *Queryable {
+	this.steps = append(this.steps, commonStep{ACT_REVERSE, nil, getChunkSizeArg(chunkSizes...)})
 	return this
 }
 
@@ -598,10 +602,10 @@ func (this *Queryable) Skip(count int) *Queryable {
 // 	arr, err := From([]int{1,2,3,4,5,6}).
 // 				SkipWhile(func(v interface{}) bool { return v.(int)%3 == 0 }).Results()
 //		// arr will be 3,4,5,6
-func (this *Queryable) SkipWhile(predicate func(interface{}) bool) *Queryable {
+func (this *Queryable) SkipWhile(predicate func(interface{}) bool, chunkSizes ...int) *Queryable {
 	mustNotNil(predicate, ErrNilAction)
 	//this.act.(predicate predicateFunc)
-	this.steps = append(this.steps, commonStep{ACT_SKIPWHILE, predicateFunc(predicate), 0})
+	this.steps = append(this.steps, commonStep{ACT_SKIPWHILE, predicateFunc(predicate), getChunkSizeArg(chunkSizes...)})
 	return this
 }
 
@@ -626,10 +630,10 @@ func (this *Queryable) Take(count int) *Queryable {
 // 	arr, err := From([]int{1,2,3,4,5,6}).
 //				TakeWhile(func(v interface{}) bool { return v.(int)%3 == 0 }).Results()
 //		// arr will be 1,2
-func (this *Queryable) TakeWhile(predicate func(interface{}) bool) *Queryable {
+func (this *Queryable) TakeWhile(predicate func(interface{}) bool, chunkSizes ...int) *Queryable {
 	mustNotNil(predicate, ErrNilAction)
 	//this.act.(predicate predicateFunc)
-	this.steps = append(this.steps, commonStep{ACT_TAKEWHILE, predicateFunc(predicate), 0})
+	this.steps = append(this.steps, commonStep{ACT_TAKEWHILE, predicateFunc(predicate), getChunkSizeArg(chunkSizes...)})
 	return this
 }
 
@@ -662,7 +666,7 @@ func (this *Queryable) aggregate(aggregateFuncs ...twoArgsFunc) *Queryable {
 	return this
 }
 
-func (this *Queryable) hGroupBy(keySelector oneArgsFunc, degrees ...int) *Queryable {
+func (this *Queryable) hGroupBy(keySelector oneArgsFunc, chunkSizes ...int) *Queryable {
 	this.steps = append(this.steps, commonStep{ACT_HGROUPBY, keySelector, 0})
 	return this
 }
@@ -1103,14 +1107,14 @@ type stepAction func(DataSource, *ParallelOption) (DataSource, *promise.Future, 
 type step interface {
 	Action() stepAction
 	Typ() int
-	Degree() int
+	ChunkSize() int
 	POption(option ParallelOption) *ParallelOption
 }
 
 type commonStep struct {
-	typ    int
-	act    interface{}
-	degree int
+	typ       int
+	act       interface{}
+	chunkSize int
 }
 
 type joinStep struct {
@@ -1121,11 +1125,16 @@ type joinStep struct {
 	isLeftJoin       bool
 }
 
-func (this commonStep) Typ() int    { return this.typ }
-func (this commonStep) Degree() int { return this.degree }
+func (this commonStep) Typ() int       { return this.typ }
+func (this commonStep) ChunkSize() int { return this.chunkSize }
 func (this commonStep) POption(option ParallelOption) *ParallelOption {
-	if this.degree != 0 {
-		option.Degree = this.degree
+	if this.typ == ACT_DISTINCT || this.typ == ACT_JOIN {
+		option.ChunkSize = DEFAULTMINCUNKSIZE
+	} else if this.typ == ACT_REVERSE {
+		option.ChunkSize = DEFAULTCHUNKSIZE * 5
+	}
+	if this.chunkSize != 0 {
+		option.ChunkSize = this.chunkSize
 	}
 	return &option
 }
@@ -2412,7 +2421,7 @@ func parallelMatchListWithPriority(src DataSource, getAction func(*Chunk, promis
 		size = option.ChunkSize
 	}
 
-	if size*2 >= lenOfData {
+	if size >= lenOfData {
 		f := promise.NewPromise()
 		func() {
 			defer func() {
@@ -2772,15 +2781,15 @@ func iif(predicate bool, trueVal interface{}, falseVal interface{}) interface{} 
 	}
 }
 
-func getDegreeArg(degrees ...int) int {
-	degree := 0
-	if degrees != nil && len(degrees) > 0 {
-		degree = degrees[0]
-		if degree == 0 {
-			degree = 1
+func getChunkSizeArg(chunkSizes ...int) int {
+	chunkSize := 0
+	if chunkSizes != nil && len(chunkSizes) > 0 {
+		chunkSize = chunkSizes[0]
+		if chunkSize == 0 {
+			chunkSize = 1
 		}
 	}
-	return degree
+	return chunkSize
 }
 
 //aggregate functions---------------------------------------------------------------

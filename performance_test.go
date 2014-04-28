@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	countForB    int  = 10000
-	rptCountForB int  = 11000
+	countForB    int  = 5000
+	rptCountForB int  = 5500
 	testGoLinq   bool = true
 )
 
@@ -46,7 +46,7 @@ func init() {
 
 func BenchmarkGoPLinq_Where(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		dst, _ := From(bUsers).Where(filterUser).Results()
+		dst, _ := From(bUsers).Where(filterUser, 2000).Results()
 		if len(dst) != countForB/2 {
 			b.Fail()
 			b.Error("size is ", len(dst))
@@ -394,7 +394,7 @@ func testPlinqSkipWhile(b *testing.B, i int) {
 	//fmt.Println("find", i)
 	if r, err := From(bInts).SkipWhile(func(v interface{}) bool {
 		return v.(int) < i
-	}).Results(); err != nil {
+	}, 2000).Results(); err != nil {
 		b.Fail()
 		b.Error(err)
 	} else if len(r) != countForB-i {
@@ -435,7 +435,7 @@ func testPlinqFirst(b *testing.B, i int) {
 	//fmt.Println("find", i)
 	if r, found, err := From(bInts).FirstBy(func(v interface{}) bool {
 		return v.(int) == i
-	}); err != nil {
+	}, 2000); err != nil {
 		b.Fail()
 		b.Error(err)
 	} else if r != i || !found {
