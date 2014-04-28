@@ -368,7 +368,6 @@ func BenchmarkGoLinq_Union(b *testing.B) {
 
 ////test except--------------------------------------------------------------------
 func BenchmarkGoPLinq_Except(b *testing.B) {
-	filteri = 1
 	for i := 0; i < b.N; i++ {
 		dst, _ := From(bUsers).Except(bUsers2).Results()
 		if len(dst) != countForB/2 {
@@ -395,7 +394,6 @@ func BenchmarkGoLinq_Except(b *testing.B) {
 
 ////test except--------------------------------------------------------------------
 func BenchmarkGoPLinq_Intersect(b *testing.B) {
-	filteri = 1
 	for i := 0; i < b.N; i++ {
 		dst, _ := From(bUsers).Intersect(bUsers2).Results()
 		if len(dst) != countForB/2 {

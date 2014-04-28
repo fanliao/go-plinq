@@ -1782,13 +1782,13 @@ func getSkipTakeCount(count int, isTake bool) stepAction {
 	if count < 0 {
 		count = 0
 	}
-	return getSkipTake(func(c *Chunk, canceller promise.Canceller) (i int, find bool) {
+	return getSkipTake(func(c *Chunk, canceller promise.Canceller) (i int, found bool) {
 		if c.StartIndex > count {
-			i, find = 0, true
+			i, found = 0, true
 		} else if c.StartIndex+c.Data.Len() >= count {
-			i, find = count-c.StartIndex, true
+			i, found = count-c.StartIndex, true
 		} else {
-			i, find = c.StartIndex+c.Data.Len(), false
+			i, found = c.StartIndex+c.Data.Len(), false
 		}
 		return
 	}, isTake, true)
@@ -1818,11 +1818,11 @@ func getSkipTakeWhile(predicate predicateFunc, isTake bool) stepAction {
 
 type chunkWhileResult struct {
 	chunk    *Chunk
-	noMatch  bool
+	match    bool
 	whileIdx int
 }
 
-func getSkipTake(foundNoMatch func(*Chunk, promise.Canceller) (int, bool), isTake bool, useIndex bool) stepAction {
+func getSkipTake(foundMatch func(*Chunk, promise.Canceller) (int, bool), isTake bool, useIndex bool) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption, first bool) (dst DataSource, sf *promise.Future, keep bool, e error) {
 		switch s := src.(type) {
 		case *listSource:
@@ -1831,15 +1831,17 @@ func getSkipTake(foundNoMatch func(*Chunk, promise.Canceller) (int, bool), isTak
 				i     int
 				found bool
 			)
+			//如果是根据索引查询列表，可以直接计算，否则要一个个判断
 			if useIndex {
-				i, _ = foundNoMatch(&Chunk{s.data, 0, 0}, nil)
+				i, _ = foundMatch(&Chunk{s.data, 0, 0}, nil)
 			} else {
-				i, found, e = getFirstOrLastIndex(s, foundNoMatch, option)
+				i, found, e = getFirstOrLastIndex(s, foundMatch, option)
 				if !found {
 					i = s.data.Len()
 				}
 			}
 
+			//根据Take还是Skip返回结果
 			if isTake {
 				return newDataSource(s.data.Slice(0, i)), nil, option.KeepOrder, e
 			} else {
@@ -1847,23 +1849,26 @@ func getSkipTake(foundNoMatch func(*Chunk, promise.Canceller) (int, bool), isTak
 			}
 		case *chanSource:
 			out := make(chan *Chunk)
-			//如果一个块的前置块都已经判断完成，而自身未发现不匹配数据时，调用beforeNoMatchAct
-			beforeNoMatchAct := func(c *chunkWhileResult) (while bool) {
+			sendMatchChunk := func(c *Chunk, idx int) {
+				if isTake {
+					sendChunk(out, &Chunk{c.Data.Slice(0, idx), c.Order, c.StartIndex})
+				} else {
+					sendChunk(out, &Chunk{c.Data.Slice(idx, c.Data.Len()), c.Order, c.StartIndex})
+				}
+			}
+
+			//如果一个块的前置块都已经判断完成，而自身发现不匹配数据时，调用beforeMatchAct
+			beforeMatchAct := func(c *chunkWhileResult) (while bool) {
 				//如果useIndex，则只有等到前置块都判断完成时才能得出正确的起始索引号，所以在这里判断是否不匹配
 				if useIndex {
-					if i, found := foundNoMatch(c.chunk, nil); found {
-						c.noMatch = true
+					if i, found := foundMatch(c.chunk, nil); found {
+						c.match = true
 						c.whileIdx = i
 					}
 				}
-
-				if c.noMatch {
+				if c.match {
 					//如果发现不满足条件的item，则必然是第一个不满足条件的块
-					if isTake {
-						sendChunk(out, &Chunk{c.chunk.Data.Slice(0, c.whileIdx), c.chunk.Order, c.chunk.StartIndex})
-					} else {
-						sendChunk(out, &Chunk{c.chunk.Data.Slice(c.whileIdx, c.chunk.Data.Len()), c.chunk.Order, c.chunk.StartIndex})
-					}
+					sendMatchChunk(c.chunk, c.whileIdx)
 					return true
 				} else if isTake {
 					//如果没有发现不满足条件的，那可以take
@@ -1873,27 +1878,23 @@ func getSkipTake(foundNoMatch func(*Chunk, promise.Canceller) (int, bool), isTak
 				return false
 			}
 
-			//如果一个块在某个发现了不匹配数据的块的后面，将调用afterNoMatchAct，意味着可以作为Skip的输出
-			afterNoMatchAct := func(c *chunkWhileResult) {
+			//如果一个块在某个发现了匹配块的后面，将调用afterMatchAct，意味着可以作为Skip的输出
+			afterMatchAct := func(c *chunkWhileResult) {
 				if !isTake {
 					sendChunk(out, c.chunk)
 				}
 			}
 
-			//如果一个块是第一个发现不匹配的块，将调用beNoMatchAct
-			beNoMatchAct := func(c *chunkWhileResult) {
-				if isTake {
-					sendChunk(out, &Chunk{c.chunk.Data.Slice(0, c.whileIdx), c.chunk.Order, c.chunk.StartIndex})
-				} else {
-					sendChunk(out, &Chunk{c.chunk.Data.Slice(c.whileIdx, c.chunk.Data.Len()), c.chunk.Order, c.chunk.StartIndex})
-				}
+			//如果一个块是第一个匹配的块，将调用beMatchAct
+			beMatchAct := func(c *chunkWhileResult) {
+				sendMatchChunk(c.chunk, c.whileIdx)
 			}
 
 			//开始处理channel中的块
 			srcChan := s.ChunkChan(option.ChunkSize)
 			f := promise.Start(func() (interface{}, error) {
-				foundFirstNoMatch := false
-				avl := newChunkWhileResultTree(beforeNoMatchAct, afterNoMatchAct, beNoMatchAct, useIndex)
+				foundFirstMatch := false
+				avl := newChunkWhileResultTree(beforeMatchAct, afterMatchAct, beMatchAct, useIndex)
 
 				//Noted the order of sent from source chan maybe confused
 				for c := range srcChan {
@@ -1906,23 +1907,23 @@ func getSkipTake(foundNoMatch func(*Chunk, promise.Canceller) (int, bool), isTak
 						}
 					}
 
-					if !foundFirstNoMatch {
-						//检查块是否存在不匹配的数据，按Index计算的总是返回flase，因为必须要等前面的块准备好才能得到正确的索引
+					if !foundFirstMatch {
+						//检查块是否存在不匹配的数据，按Index计算的总是返回flase，因为必须要等前面所有的块已经排好序后才能得到正确的索引
 						chunkResult := &chunkWhileResult{chunk: c}
 						if !useIndex {
-							chunkResult.whileIdx, chunkResult.noMatch = foundNoMatch(c, nil)
-							//fmt.Println("\nfound no match---", c, chunkResult.noMatch)
+							chunkResult.whileIdx, chunkResult.match = foundMatch(c, nil)
+							//fmt.Println("\nfound no match---", c, chunkResult.match)
 						}
 
-						//判断是否找到了第一个不匹配的块
-						if foundFirstNoMatch = avl.handleChunk(chunkResult); foundFirstNoMatch {
+						//判断是否找到了第一个匹配的块
+						if foundFirstMatch = avl.handleChunk(chunkResult); foundFirstMatch {
 							if isTake {
 								s.Close()
 								break
 							}
 						}
 					} else {
-						//如果已经找到了第一个不匹配的块，则此后的块直接处理即可
+						//如果已经找到了第一个匹配的块，则此后的块直接处理即可
 						if !isTake {
 							sendChunk(out, c)
 						} else {
@@ -1946,77 +1947,16 @@ func getSkipTake(foundNoMatch func(*Chunk, promise.Canceller) (int, bool), isTak
 	})
 }
 
+//根据索引查找单个元素
 func getElementAt(src DataSource, i int, option *ParallelOption) (element interface{}, found bool, err error) {
-	foundNoMatch := func(c *Chunk) (int, bool) {
+	return getFirstElement(src, func(c *Chunk, canceller promise.Canceller) (int, bool) {
 		size := c.Data.Len()
 		if c.StartIndex <= i && c.StartIndex+size-1 >= i {
 			return i - c.StartIndex, true
 		} else {
 			return size, false
 		}
-	}
-	useIndex := true
-
-	switch s := src.(type) {
-	case *listSource:
-		rs := s.data
-		if i, found := foundNoMatch(&Chunk{rs, 0, 0}); found {
-			return rs.Index(i), true, nil
-		} else {
-			return nil, false, nil
-		}
-	case *chanSource:
-		beforeNoMatchAct := func(c *chunkWhileResult) (while bool) {
-			//判断是否满足条件
-			if idx, found := foundNoMatch(c.chunk); found {
-				element = c.chunk.Data.Index(idx)
-				return true
-			}
-			return false
-		}
-		afterNoMatchAct, beNoMatchAct := func(c *chunkWhileResult) {}, func(c *chunkWhileResult) {}
-
-		srcChan := s.ChunkChan(option.ChunkSize)
-		f := promise.Start(func() (interface{}, error) {
-			avl := newChunkWhileResultTree(beforeNoMatchAct, afterNoMatchAct, beNoMatchAct, useIndex)
-
-			for c := range srcChan {
-				if isNil(c) {
-					if cap(srcChan) > 0 {
-						s.Close()
-						break
-					} else {
-						continue
-					}
-				}
-
-				if !found {
-					found = avl.handleMatchChunk(&chunkWhileResult{chunk: c})
-					if found {
-						s.Close()
-						break
-					}
-				} else {
-					//如果已经找到了正确的块，则此后的块直接跳过
-					break
-				}
-			}
-
-			return nil, nil
-		})
-
-		if s.future != nil {
-			if _, err := s.future.Get(); err != nil {
-				return nil, false, err
-			}
-		}
-
-		if _, err := f.Get(); err != nil {
-			return nil, false, err
-		}
-		return
-	}
-	panic(ErrUnsupportSource)
+	}, true, option)
 }
 
 func getFirstOrLastIndex(src *listSource, predicate func(c *Chunk, canceller promise.Canceller) (r int, found bool), option *ParallelOption) (idx int, found bool, err error) {
@@ -2030,10 +1970,10 @@ func getFirstOrLastIndex(src *listSource, predicate func(c *Chunk, canceller pro
 	}
 }
 
+//根据条件查找第一个符合的元素
 func getFirstBy(src DataSource, f func(interface{}) bool, option *ParallelOption) (element interface{}, found bool, err error) {
-	foundMatch := func(c *Chunk, canceller promise.Canceller) (r int, found bool) {
+	return getFirstElement(src, func(c *Chunk, canceller promise.Canceller) (r int, found bool) {
 		r = -1
-		//TODO: repeated code
 		size := c.Data.Len()
 		for i := 0; i < size; i++ {
 			v := c.Data.Index(i)
@@ -2049,35 +1989,52 @@ func getFirstBy(src DataSource, f func(interface{}) bool, option *ParallelOption
 			}
 		}
 		return
-	}
-	useIndex := false
+	}, false, option)
+}
 
+func getFirstElement(src DataSource, foundMatch func(c *Chunk, canceller promise.Canceller) (r int, found bool), useIndex bool, option *ParallelOption) (element interface{}, found bool, err error) {
 	switch s := src.(type) {
 	case *listSource:
 		rs := s.data
-		if i, found, err := getFirstOrLastIndex(newListSource(rs), foundMatch, option); err != nil {
-			return nil, false, err
-		} else if !found {
-			return nil, false, nil
+		if useIndex {
+			//使用索引查找列表非常简单，无需并行
+			if i, found := foundMatch(&Chunk{rs, 0, 0}, nil); found {
+				return rs.Index(i), true, nil
+			} else {
+				return nil, false, nil
+			}
 		} else {
-			return rs.Index(i), true, nil
+			//根据数据量大小进行并行或串行查找
+			if i, found, err := getFirstOrLastIndex(newListSource(rs), foundMatch, option); err != nil {
+				return nil, false, err
+			} else if !found {
+				return nil, false, nil
+			} else {
+				return rs.Index(i), true, nil
+			}
 		}
 	case *chanSource:
-		beforeNoMatchAct := func(c *chunkWhileResult) (while bool) {
-			//判断是否满足条件
-			if idx, found := foundMatch(c.chunk, nil); found {
-				element = c.chunk.Data.Index(idx)
+		beforeMatchAct := func(c *chunkWhileResult) (while bool) {
+			if useIndex {
+				//判断是否满足条件
+				if idx, found := foundMatch(c.chunk, nil); found {
+					element = c.chunk.Data.Index(idx)
+					return true
+				}
+			} else if c.match {
+				element = c.chunk.Data.Index(c.whileIdx)
 				return true
 			}
 			return false
 		}
-		afterNoMatchAct, beNoMatchAct := func(c *chunkWhileResult) {}, func(c *chunkWhileResult) {
+		afterMatchAct, beMatchAct := func(c *chunkWhileResult) {}, func(c *chunkWhileResult) {
+			//处理第一个匹配块
 			element = c.chunk.Data.Index(c.whileIdx)
 		}
 
 		srcChan := s.ChunkChan(option.ChunkSize)
 		f := promise.Start(func() (interface{}, error) {
-			avl := newChunkWhileResultTree(beforeNoMatchAct, afterNoMatchAct, beNoMatchAct, useIndex)
+			avl := newChunkWhileResultTree(beforeMatchAct, afterMatchAct, beMatchAct, useIndex)
 
 			for c := range srcChan {
 				if isNil(c) {
@@ -2091,7 +2048,9 @@ func getFirstBy(src DataSource, f func(interface{}) bool, option *ParallelOption
 
 				if !found {
 					chunkResult := &chunkWhileResult{chunk: c}
-					chunkResult.whileIdx, chunkResult.noMatch = foundMatch(c, nil)
+					if !useIndex {
+						chunkResult.whileIdx, chunkResult.match = foundMatch(c, nil)
+					}
 					//fmt.Println("check", c, chunkResult, found)
 					found = avl.handleChunk(chunkResult)
 					//fmt.Println("after check", c, chunkResult, found)
@@ -2185,8 +2144,6 @@ func getAggregate(src DataSource, aggregateFuncs []*AggregateOpretion, option *P
 	}
 
 }
-
-var filteri int = 1
 
 func filterSet(src DataSource, source2 interface{}, isExcept bool, option *ParallelOption) (DataSource, *promise.Future, error) {
 	src2 := newDataSource(source2)
@@ -3223,20 +3180,20 @@ func divide(a interface{}, count float64) (r float64) {
 //如果一个块不在从头开始连续填充的区域中，则判断是否在前面有包含不匹配数据的块，如果有的话，则可以执行Skip操作
 //avl中始终只保留一个最靠前的不匹配的块，其后的块可以直接进行Skip操作，无需插入avl树
 type chunkWhileTree struct {
-	avl              *avlTree          //保留了待处理块的avl树
-	startOrder       int               //下一个头块的顺序号
-	startIndex       int               //下一个头块的起始索引号
-	whileChunk       *chunkWhileResult //当前最靠前的包含不匹配数据的块
-	beforeNoMatchAct func(*chunkWhileResult) bool
-	afterNoMatchAct  func(*chunkWhileResult)
-	beNoMatchAct     func(*chunkWhileResult)
-	useIndex         bool //是否根据索引进行判断，如果是的话，每个块都必须成为头块后才根据StartIndex进行计算。因为某些操作比如Where将导致块内的数据量不等于原始的数据量
-	foundNoMatch     bool //是否已经发现第一个不匹配的块
+	avl            *avlTree          //保留了待处理块的avl树
+	startOrder     int               //下一个头块的顺序号
+	startIndex     int               //下一个头块的起始索引号
+	whileChunk     *chunkWhileResult //当前最靠前的包含不匹配数据的块
+	beforeMatchAct func(*chunkWhileResult) bool
+	afterMatchAct  func(*chunkWhileResult)
+	beMatchAct     func(*chunkWhileResult)
+	useIndex       bool //是否根据索引进行判断，如果是的话，每个块都必须成为头块后才根据StartIndex进行计算。因为某些操作比如Where将导致块内的数据量不等于原始的数据量
+	foundMatch     bool //是否已经发现第一个不匹配的块
 }
 
 func (this *chunkWhileTree) Insert(node *chunkWhileResult) {
 	this.avl.Insert(node)
-	if node.noMatch {
+	if node.match {
 		this.whileChunk = node
 	}
 }
@@ -3245,15 +3202,15 @@ func (this *chunkWhileTree) getWhileChunk() *chunkWhileResult {
 	return this.whileChunk
 }
 
-func (this *chunkWhileTree) handleChunk(chunkResult *chunkWhileResult) (foundFirstNoMatch bool) {
+func (this *chunkWhileTree) handleChunk(chunkResult *chunkWhileResult) (foundFirstMatch bool) {
 	//fmt.Println("check handleChunk=", chunkResult, chunkResult.chunk.Order)
-	if chunkResult.noMatch {
+	if chunkResult.match {
 		//如果块中发现不匹配的数据
-		foundFirstNoMatch = this.handleNoMatchChunk(chunkResult)
+		foundFirstMatch = this.handleNoMatchChunk(chunkResult)
 	} else {
-		foundFirstNoMatch = this.handleMatchChunk(chunkResult)
+		foundFirstMatch = this.handleMatchChunk(chunkResult)
 	}
-	//fmt.Println("after check handleChunk=", foundFirstNoMatch)
+	//fmt.Println("after check handleChunk=", foundFirstMatch)
 	return
 }
 
@@ -3263,10 +3220,10 @@ func (this *chunkWhileTree) handleMatchChunk(chunkResult *chunkWhileResult) bool
 	//如果不满足，则检查当前块order是否等于下一个order，如果是，则进行beforeWhile处理，并更新startOrder
 	if chunkResult.chunk.Order == this.startOrder {
 		chunkResult.chunk.StartIndex = this.startIndex
-		//fmt.Println("call beforeNoMatchAct=", chunkResult.chunk.Order)
-		if find := this.beforeNoMatchAct(chunkResult); find {
-			//fmt.Println("call beforeNoMatchAct get", find)
-			this.foundNoMatch = true
+		//fmt.Println("call beforeMatchAct=", chunkResult.chunk.Order)
+		if find := this.beforeMatchAct(chunkResult); find {
+			//fmt.Println("call beforeMatchAct get", find)
+			this.foundMatch = true
 			if !this.useIndex {
 				return true
 			}
@@ -3276,14 +3233,14 @@ func (this *chunkWhileTree) handleMatchChunk(chunkResult *chunkWhileResult) bool
 		//检查avl中是否还有符合顺序的块
 		_ = this.handleOrderedChunks()
 
-		if this.foundNoMatch {
+		if this.foundMatch {
 			return true
 		}
 	} else {
 		//如果不是，则检查是否存在已经满足while条件的前置块
 		if this.whileChunk != nil && this.whileChunk.chunk.Order < chunkResult.chunk.Order {
 			//如果存在，则当前块是while之后的块，根据take和skip进行处理
-			this.afterNoMatchAct(chunkResult)
+			this.afterMatchAct(chunkResult)
 		} else {
 			//如果不存在，则插入avl
 			this.Insert(chunkResult)
@@ -3307,7 +3264,7 @@ func (this *chunkWhileTree) handleNoMatchChunk(chunkResult *chunkWhileResult) bo
 			}
 		} else {
 			//如果是之后，则对当前块执行对应的take或while操作
-			this.afterNoMatchAct(chunkResult)
+			this.afterMatchAct(chunkResult)
 		}
 	} else {
 		//如果avl中不存在符合while的块，则检查当前块order是否等于下一个order，如果是，则找到了while块，并进行对应处理
@@ -3325,7 +3282,7 @@ func (this *chunkWhileTree) handleWhileAfterChunks(c *chunkWhileResult) {
 	pResult := &result
 	this.forEachAfterChunks(c.chunk.Order, this.avl.root, pResult)
 	for _, c := range result {
-		this.afterNoMatchAct(c)
+		this.afterMatchAct(c)
 	}
 }
 
@@ -3389,7 +3346,7 @@ func (this *chunkWhileTree) forEachAfterChunks(currentOrder int, root *avlNode, 
 			}
 		}
 		//如果当前节点是while节点，则结束查找
-		if rootResult.noMatch {
+		if rootResult.match {
 			return true, true
 		}
 		return false, false
@@ -3401,23 +3358,23 @@ func (this *chunkWhileTree) forEachAfterChunks(currentOrder int, root *avlNode, 
 //如果是SkipWhile/TakeWhile，如果找到第一个符合顺序的while块，就会结束查找。因为SkipWhile/TakeWhile的avl中不会有2个符合while的块存在
 func (this *chunkWhileTree) forEachOrderedChunks(currentOrder int, root *avlNode, result *[]*chunkWhileResult) bool {
 	return this.forEachChunks(currentOrder, root, func(rootResult *chunkWhileResult) (bool, bool) {
-		//fmt.Println("check ordered----", this.startOrder, this.foundNoMatch, this.useIndex, "chunk =", rootResult.chunk, rootResult)
+		//fmt.Println("check ordered----", this.startOrder, this.foundMatch, this.useIndex, "chunk =", rootResult.chunk, rootResult)
 		rootOrder := rootResult.chunk.Order
 		if rootResult.chunk.Order < this.startOrder {
 			return false, false
 		}
-		if this.foundNoMatch && this.useIndex {
+		if this.foundMatch && this.useIndex {
 			//前面已经找到了while元素，那只有根据index查找才需要判断后面的块,并且所有后面的块都需要返回
-			this.afterNoMatchAct(rootResult)
+			this.afterMatchAct(rootResult)
 		} else if rootOrder == this.startOrder { //currentOrder {
 			//如果当前节点的order等于指定order，则找到了要遍历的第一个元素
 			*result = append(*result, rootResult)
 			rootResult.chunk.StartIndex = this.startIndex
 
-			if this.useIndex || !rootResult.noMatch {
-				if find := this.beforeNoMatchAct(rootResult); find {
+			if this.useIndex || !rootResult.match {
+				if find := this.beforeMatchAct(rootResult); find {
 					//fmt.Println("find before no match-------", rootResult.chunk)
-					this.foundNoMatch = true
+					this.foundMatch = true
 				}
 			}
 			if root.sameList != nil {
@@ -3432,10 +3389,10 @@ func (this *chunkWhileTree) forEachOrderedChunks(currentOrder int, root *avlNode
 		}
 		//如果是SkipWhile/TakeWhile，并且当前节点是while节点，则结束查找
 		//如果是Skip/Take，则不能结束
-		if rootResult.noMatch && !this.useIndex {
-			this.foundNoMatch = true
-			this.beNoMatchAct(rootResult)
-			//fmt.Println("find while", this.startOrder, this.foundNoMatch, this.useIndex, rootResult.chunk, rootResult)
+		if rootResult.match && !this.useIndex {
+			this.foundMatch = true
+			this.beMatchAct(rootResult)
+			//fmt.Println("find while", this.startOrder, this.foundMatch, this.useIndex, rootResult.chunk, rootResult)
 			return true, true
 		}
 		return false, false
@@ -3446,8 +3403,8 @@ func (this *chunkWhileTree) setWhileChunk(c *chunkWhileResult) bool {
 	//检查当前块order是否等于下一个order，如果是，则找到了while块，并进行对应处理
 	//如果不是下一个order，则插入AVL，以备后面的检查
 	if c.chunk.Order == this.startOrder {
-		this.beNoMatchAct(c)
-		//this.beforeNoMatchAct(c)
+		this.beMatchAct(c)
+		//this.beforeMatchAct(c)
 		return true
 	} else {
 		this.Insert(c)
@@ -3455,7 +3412,7 @@ func (this *chunkWhileTree) setWhileChunk(c *chunkWhileResult) bool {
 	}
 }
 
-func newChunkWhileResultTree(beforeNoMatchAct func(*chunkWhileResult) bool, afterNoMatchAct func(*chunkWhileResult), beNoMatchAct func(*chunkWhileResult), useIndex bool) *chunkWhileTree {
+func newChunkWhileResultTree(beforeMatchAct func(*chunkWhileResult) bool, afterMatchAct func(*chunkWhileResult), beMatchAct func(*chunkWhileResult), useIndex bool) *chunkWhileTree {
 	return &chunkWhileTree{NewAvlTree(func(a interface{}, b interface{}) int {
 		c1, c2 := a.(*chunkWhileResult), b.(*chunkWhileResult)
 		if c1.chunk.Order < c2.chunk.Order {
@@ -3465,5 +3422,5 @@ func newChunkWhileResultTree(beforeNoMatchAct func(*chunkWhileResult) bool, afte
 		} else {
 			return 1
 		}
-	}), 0, 0, nil, beforeNoMatchAct, afterNoMatchAct, beNoMatchAct, useIndex, false}
+	}), 0, 0, nil, beforeMatchAct, afterMatchAct, beMatchAct, useIndex, false}
 }
