@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 	"unsafe"
 )
 
@@ -695,4 +696,274 @@ func isNil(v interface{}) bool {
 		}
 	}
 	return false
+}
+
+//aggregate functions---------------------------------------------------------------
+func sumOpr(v interface{}, t interface{}) interface{} {
+	switch val := v.(type) {
+	case int:
+		return val + t.(int)
+	case int8:
+		return val + t.(int8)
+	case int16:
+		return val + t.(int16)
+	case int32:
+		return val + t.(int32)
+	case int64:
+		return val + t.(int64)
+	case uint:
+		return val + t.(uint)
+	case uint8:
+		return val + t.(uint8)
+	case uint16:
+		return val + t.(uint16)
+	case uint32:
+		return val + t.(uint32)
+	case uint64:
+		return val + t.(uint64)
+	case float32:
+		return val + t.(float32)
+	case float64:
+		return val + t.(float64)
+	case string:
+		return val + t.(string)
+	default:
+		panic(errors.New("unsupport aggregate type")) //reflect.NewAt(t, ptr).Elem().Interface()
+	}
+}
+
+func countOpr(v interface{}, t interface{}) interface{} {
+	return t.(int) + 1
+}
+
+func minOpr(v interface{}, t interface{}, less func(interface{}, interface{}) bool) interface{} {
+	if t == nil {
+		return v
+	}
+	if less(v, t) {
+		return v
+	} else {
+		return t
+	}
+}
+
+func maxOpr(v interface{}, t interface{}, less func(interface{}, interface{}) bool) interface{} {
+	if t == nil {
+		return v
+	}
+	if less(v, t) {
+		return t
+	} else {
+		return v
+	}
+}
+
+func getMinOpr(less func(interface{}, interface{}) bool) *AggregateOpretion {
+	fun := func(a interface{}, b interface{}) interface{} {
+		return minOpr(a, b, less)
+	}
+	return &AggregateOpretion{0, fun, fun}
+}
+
+func getMaxOpr(less func(interface{}, interface{}) bool) *AggregateOpretion {
+	fun := func(a interface{}, b interface{}) interface{} {
+		return maxOpr(a, b, less)
+	}
+	return &AggregateOpretion{0, fun, fun}
+}
+
+func getCountByOpr(predicate predicateFunc) *AggregateOpretion {
+	fun := func(v interface{}, t interface{}) interface{} {
+		if predicate(v) {
+			t = t.(int) + 1
+		}
+		return t
+	}
+	return &AggregateOpretion{0, fun, sumOpr}
+}
+
+func defLess(a interface{}, b interface{}) bool {
+	switch val := a.(type) {
+	case int:
+		return val < b.(int)
+	case int8:
+		return val < b.(int8)
+	case int16:
+		return val < b.(int16)
+	case int32:
+		return val < b.(int32)
+	case int64:
+		return val < b.(int64)
+	case uint:
+		return val < b.(uint)
+	case uint8:
+		return val < b.(uint8)
+	case uint16:
+		return val < b.(uint16)
+	case uint32:
+		return val < b.(uint32)
+	case uint64:
+		return val < b.(uint64)
+	case float32:
+		return val < b.(float32)
+	case float64:
+		return val < b.(float64)
+	case string:
+		return val < b.(string)
+	case time.Time:
+		return val.Before(b.(time.Time))
+	default:
+		panic(errors.New("unsupport aggregate type")) //reflect.NewAt(t, ptr).Elem().Interface()
+	}
+}
+
+func defCompare(a interface{}, b interface{}) int {
+	switch val := a.(type) {
+	case int:
+		if val < b.(int) {
+			return -1
+		} else if val == b.(int) {
+			return 0
+		} else {
+			return 1
+		}
+	case int8:
+		if val < b.(int8) {
+			return -1
+		} else if val == b.(int8) {
+			return 0
+		} else {
+			return 1
+		}
+	case int16:
+		if val < b.(int16) {
+			return -1
+		} else if val == b.(int16) {
+			return 0
+		} else {
+			return 1
+		}
+	case int32:
+		if val < b.(int32) {
+			return -1
+		} else if val == b.(int32) {
+			return 0
+		} else {
+			return 1
+		}
+	case int64:
+		if val < b.(int64) {
+			return -1
+		} else if val == b.(int64) {
+			return 0
+		} else {
+			return 1
+		}
+	case uint:
+		if val < b.(uint) {
+			return -1
+		} else if val == b.(uint) {
+			return 0
+		} else {
+			return 1
+		}
+	case uint8:
+		if val < b.(uint8) {
+			return -1
+		} else if val == b.(uint8) {
+			return 0
+		} else {
+			return 1
+		}
+	case uint16:
+		if val < b.(uint16) {
+			return -1
+		} else if val == b.(uint16) {
+			return 0
+		} else {
+			return 1
+		}
+	case uint32:
+		if val < b.(uint32) {
+			return -1
+		} else if val == b.(uint32) {
+			return 0
+		} else {
+			return 1
+		}
+	case uint64:
+		if val < b.(uint64) {
+			return -1
+		} else if val == b.(uint64) {
+			return 0
+		} else {
+			return 1
+		}
+	case float32:
+		if val < b.(float32) {
+			return -1
+		} else if val == b.(float32) {
+			return 0
+		} else {
+			return 1
+		}
+	case float64:
+		if val < b.(float64) {
+			return -1
+		} else if val == b.(float64) {
+			return 0
+		} else {
+			return 1
+		}
+	case string:
+		if val < b.(string) {
+			return -1
+		} else if val == b.(string) {
+			return 0
+		} else {
+			return 1
+		}
+	case time.Time:
+		if val.Before(b.(time.Time)) {
+			return -1
+		} else if val.After(b.(time.Time)) {
+			return 1
+		} else {
+			return 0
+		}
+	default:
+		panic(errors.New("unsupport aggregate type")) //reflect.NewAt(t, ptr).Elem().Interface()
+	}
+}
+
+func divide(a interface{}, count float64) (r float64) {
+	switch val := a.(type) {
+	case int:
+		r = float64(val) / count
+	case int8:
+		r = float64(val) / count
+	case int16:
+		r = float64(val) / count
+	case int32:
+		r = float64(val) / count
+	case int64:
+		r = float64(val) / count
+	case uint:
+		r = float64(val) / count
+	case uint8:
+		r = float64(val) / count
+	case uint16:
+		r = float64(val) / count
+	case uint32:
+		r = float64(val) / count
+	case uint64:
+		r = float64(val) / count
+	case float32:
+		r = float64(val) / count
+	case float64:
+		r = float64(val) / count
+	default:
+		panic(errors.New("unsupport aggregate type")) //reflect.NewAt(t, ptr).Elem().Interface()
+	}
+	return
 }
