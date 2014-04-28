@@ -3,23 +3,24 @@ package plinq
 import (
 	"fmt"
 	"github.com/ahmetalpbalkan/go-linq"
+	"reflect"
 	"runtime"
 	"strconv"
 	"testing"
 )
 
 const (
-	countForB    int  = 5000
-	rptCountForB int  = 5500
+	countForB    int  = 1000000
+	rptCountForB int  = 1100000
 	testGoLinq   bool = true
 )
 
 var (
-	bInts     []interface{} = make([]interface{}, countForB, countForB)
+	bInts     []int         = make([]int, countForB, countForB)
 	bUsers    []interface{} = make([]interface{}, countForB, countForB)
-	bRptUsers []interface{} = make([]interface{}, rptCountForB, rptCountForB)
-	bUsers2   []interface{} = make([]interface{}, countForB, countForB)
-	bRoles    []interface{} = make([]interface{}, countForB, countForB)
+	bRptUsers []user        = make([]user, rptCountForB, rptCountForB)
+	bUsers2   []user        = make([]user, countForB, countForB)
+	bRoles    []role        = make([]role, countForB, countForB)
 )
 
 func init() {
@@ -44,9 +45,87 @@ func init() {
 	}
 }
 
+func BenchmarkCopy1(b *testing.B) {
+	var rs []interface{}
+	for i := 0; i < b.N; i++ {
+		v := reflect.ValueOf(bUsers2)
+		size := len(bUsers2)
+		rs = make([]interface{}, size)
+		for i := 0; i < size; i++ {
+			rs[i] = v.Index(i).Interface()
+		}
+
+		if len(rs) != len(bUsers2) {
+			b.Fail()
+			b.Error("size is ", len(bUsers2))
+		}
+	}
+	b.StopTimer()
+	b.Log(rs[0])
+}
+
+func BenchmarkCopy2(b *testing.B) {
+	var rs []interface{}
+	for i := 0; i < b.N; i++ {
+		var i interface{}
+		i = bUsers2
+		v := reflect.ValueOf(i)
+		size := v.Len()
+		rs = make([]interface{}, size)
+		for i := 0; i < size; i++ {
+			rs[i] = v.Index(i).Interface()
+		}
+
+		if len(rs) != len(bUsers2) {
+			b.Fail()
+			b.Error("size is ", len(bUsers2))
+		}
+	}
+	b.StopTimer()
+	b.Log(rs[0])
+}
+
+func BenchmarkCopy3(b *testing.B) {
+	var rs reflect.Value
+	for i := 0; i < b.N; i++ {
+		var i interface{}
+		i = bUsers2
+		v := reflect.ValueOf(i)
+		size := v.Len()
+		rs = reflect.MakeSlice(reflect.SliceOf(v.Type().Elem()), size, size)
+		reflect.Copy(rs, v)
+		if rs.Len() != len(bUsers2) {
+			b.Fail()
+			b.Error("size is ", len(bUsers2))
+		}
+	}
+	b.StopTimer()
+	b.Log(rs.Index(0).Interface())
+}
+
+func BenchmarkFor1(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		for _, v := range bUsers {
+			_ = v
+		}
+	}
+}
+
+func BenchmarkFor2(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		var i interface{}
+		i = bUsers
+		v := reflect.ValueOf(i)
+		size := v.Len()
+		for i := 0; i < size; i++ {
+			_ = v.Index(i).Interface()
+		}
+	}
+}
+
 func BenchmarkGoPLinq_Where(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		dst, _ := From(bUsers).Where(filterUser, 2000).Results()
+		dst, _ := From(bUsers).Where(filterUser, 1000000).Results()
 		if len(dst) != countForB/2 {
 			b.Fail()
 			b.Error("size is ", len(dst))
@@ -63,7 +142,7 @@ func BenchmarkGoLinq_Where(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		dst, _ := linq.From(bUsers).Where(func(i linq.T) (bool, error) {
 			v := i.(user)
-			return v.id%2 == 0, nil
+			return strconv.Itoa(v.id%2) == "0", nil
 		}).Results()
 		if len(dst) != countForB/2 {
 			b.Fail()
@@ -394,7 +473,7 @@ func testPlinqSkipWhile(b *testing.B, i int) {
 	//fmt.Println("find", i)
 	if r, err := From(bInts).SkipWhile(func(v interface{}) bool {
 		return v.(int) < i
-	}, 2000).Results(); err != nil {
+	}, 5000).Results(); err != nil {
 		b.Fail()
 		b.Error(err)
 	} else if len(r) != countForB-i {
@@ -435,7 +514,7 @@ func testPlinqFirst(b *testing.B, i int) {
 	//fmt.Println("find", i)
 	if r, found, err := From(bInts).FirstBy(func(v interface{}) bool {
 		return v.(int) == i
-	}, 2000); err != nil {
+	}, 5000); err != nil {
 		b.Fail()
 		b.Error(err)
 	} else if r != i || !found {

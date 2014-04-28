@@ -51,17 +51,17 @@ type twoArgsFunc func(interface{}, interface{}) interface{}
 // the struct and interface about data DataSource---------------------------------------------------
 // A Chunk presents a data chunk, the paralleliam algorithm always handle a chunk in a paralleliam tasks.
 type Chunk struct {
-	Data       []interface{}
-	Order      int //a index presents the order of chunk
-	StartIndex int //a index presents the start index in whole data
+	Data       slicer //[]interface{}
+	Order      int    //a index presents the order of chunk
+	StartIndex int    //a index presents the start index in whole data
 }
 
 // The DataSource presents the data of linq operation
 // Most linq operations usually convert a DataSource to another DataSource
 type DataSource interface {
-	Typ() int                   //list or chan?
-	ToSlice(bool) []interface{} //Get a slice includes all datas
-	ToChan() chan interface{}   //will be implement in futures
+	Typ() int                 //list or chan?
+	ToSlice(bool) slicer      //Get a slice includes all datas
+	ToChan() chan interface{} //will be implement in futures
 }
 
 // KeyValue presents a key value pair, it be used by GroupBy, Join and Set operations
@@ -134,7 +134,7 @@ func From(src interface{}) (q *Queryable) {
 // 	results, err := From([]interface{}{"Jack", "Rock"}).Select(something).Results()
 func (this *Queryable) Results() (results []interface{}, err error) {
 	if ds, e := this.execute(); e == nil {
-		results = ds.ToSlice(this.KeepOrder)
+		results = ds.ToSlice(this.KeepOrder).ToInterfaces()
 	}
 	//if len(this.stepErrs) > 0 {
 	//	err = NewLinqError("Aggregate errors", this.stepErrs)
@@ -671,30 +671,30 @@ func (this *Queryable) hGroupBy(keySelector oneArgsFunc, chunkSizes ...int) *Que
 	return this
 }
 
-func (this *Queryable) makeCopiedSrc(force bool) DataSource {
-	copySrc := func() DataSource {
-		if listSrc, ok := this.data.(*listSource); ok {
-			switch data := listSrc.data.(type) {
-			case []interface{}:
-				newSlice := make([]interface{}, len(data))
-				_ = copy(newSlice, data)
-				return &listSource{newSlice}
-			default:
-				newSlice := listSrc.ToSlice(false)
-				return &listSource{newSlice}
-			}
-		}
-		return this.data
-	}
-	if len(this.steps) > 0 {
-		if typ := this.steps[0].Typ(); typ == ACT_REVERSE || typ == ACT_SELECT || typ == ACT_INTERSECT || typ == ACT_EXCEPT {
-			return copySrc()
-		}
-	} else if force {
-		return copySrc()
-	}
-	return this.data
-}
+//func (this *Queryable) makeCopiedSrc(force bool) DataSource {
+//	copySrc := func() DataSource {
+//		if listSrc, ok := this.data.(*listSource); ok {
+//			switch data := listSrc.data.(type) {
+//			case []interface{}:
+//				newSlice := make([]interface{}, len(data))
+//				_ = copy(newSlice, data)
+//				return &listSource{newSlice}
+//			default:
+//				newSlice := listSrc.ToSlice(false)
+//				return &listSource{newSlice}
+//			}
+//		}
+//		return this.data
+//	}
+//	if len(this.steps) > 0 {
+//		if typ := this.steps[0].Typ(); typ == ACT_REVERSE || typ == ACT_SELECT || typ == ACT_INTERSECT || typ == ACT_EXCEPT {
+//			return copySrc()
+//		}
+//	} else if force {
+//		return copySrc()
+//	}
+//	return this.data
+//}
 
 // get be used in queryable internal.
 // get will executes all linq operations included in Queryable
@@ -722,7 +722,8 @@ func (this *Queryable) execute() (data DataSource, err error) {
 		}
 	}()
 
-	data = this.makeCopiedSrc(false) //data
+	//data = this.makeCopiedSrc(false) //data
+	data = this.data
 	pOption, keepOrder := this.ParallelOption, this.ParallelOption.KeepOrder
 
 	for i, step := range this.steps {
@@ -787,11 +788,11 @@ func newDataSource(data interface{}) DataSource {
 
 	var ds DataSource
 	if v := reflect.ValueOf(data); v.Kind() == reflect.Slice || v.Kind() == reflect.Map {
-		ds = &listSource{data: data}
+		ds = newListSource(data) //&listSource{data: data}
 	} else if v.Kind() == reflect.Ptr {
 		ov := v.Elem()
 		if ov.Kind() == reflect.Slice || ov.Kind() == reflect.Map {
-			ds = &listSource{data: data}
+			ds = newListSource(data) //&listSource{data: data}
 		} else {
 			panic(ErrUnsupportSource)
 		}
@@ -818,10 +819,192 @@ func newQueryable(ds DataSource) (q *Queryable) {
 	return
 }
 
+//The slicer interface and structs----------------------------------
+type slicer interface {
+	Len() int
+	Slice(i, j int) slicer
+	Index(i int) interface{}
+	ToInterfaces() []interface{}
+	Elem() slicer
+}
+
+//interfaceSlicer
+type interfaceSlicer struct {
+	data []interface{}
+}
+
+func (this *interfaceSlicer) Len() int {
+	return len(this.data)
+}
+
+func (this *interfaceSlicer) Slice(i, j int) slicer {
+	return &interfaceSlicer{this.data[i:j]}
+}
+
+func (this *interfaceSlicer) Index(i int) interface{} {
+	return this.data[i]
+}
+
+func (this *interfaceSlicer) ToInterfaces() []interface{} {
+	return this.data
+}
+
+func (this *interfaceSlicer) Elem() slicer {
+	return this
+}
+
+//valueSlicer
+type valueSlicer struct {
+	data reflect.Value
+}
+
+func (this *valueSlicer) Len() int {
+	return this.data.Len()
+}
+
+func (this *valueSlicer) Slice(i, j int) slicer {
+	return &valueSlicer{this.data.Slice(i, i)}
+}
+
+func (this *valueSlicer) Index(i int) interface{} {
+	return this.data.Index(i)
+}
+
+func (this *valueSlicer) Elem() slicer {
+	return this
+}
+
+//TODO
+func (this *valueSlicer) ToInterfaces() []interface{} {
+	panic(errors.New("TODO"))
+}
+
+//ptrSlicer
+type ptrSlicer struct {
+	data reflect.Value
+}
+
+func (this *ptrSlicer) Len() int {
+	return this.data.Elem().Len()
+}
+
+func (this *ptrSlicer) Slice(i, j int) slicer {
+	return &valueSlicer{this.data.Elem().Slice(i, i)}
+}
+
+func (this *ptrSlicer) Index(i int) interface{} {
+	return this.data.Elem().Index(i)
+}
+
+func (this *ptrSlicer) Elem() slicer {
+	return &valueSlicer{this.data.Elem()}
+}
+
+//TODO
+func (this *ptrSlicer) ToInterfaces() []interface{} {
+	panic(errors.New("TODO"))
+}
+
+//stringSlicer
+type stringSlicer struct {
+	data []string
+}
+
+func (this *stringSlicer) Len() int {
+	return len(this.data)
+}
+
+func (this *stringSlicer) Slice(i, j int) slicer {
+	return &stringSlicer{this.data[i:j]}
+}
+
+func (this *stringSlicer) Index(i int) interface{} {
+	return this.data[i]
+}
+
+func (this *stringSlicer) Elem() slicer {
+	return this
+}
+
+//TODO
+func (this *stringSlicer) ToInterfaces() []interface{} {
+	panic(errors.New("TODO"))
+}
+
+//intSlicer
+type intSlicer struct {
+	data []int
+}
+
+func (this *intSlicer) Len() int {
+	return len(this.data)
+}
+
+func (this *intSlicer) Slice(i, j int) slicer {
+	return &intSlicer{this.data[i:j]}
+}
+
+func (this *intSlicer) Index(i int) interface{} {
+	return this.data[i]
+}
+
+//TODO
+func (this *intSlicer) ToInterfaces() []interface{} {
+	panic(errors.New("TODO"))
+}
+
+func (this *intSlicer) Elem() slicer {
+	return this
+}
+
+//timeSlicer
+type timeSlicer struct {
+	data []time.Time
+}
+
+func (this *timeSlicer) Len() int {
+	return len(this.data)
+}
+
+func (this *timeSlicer) Slice(i, j int) slicer {
+	return &timeSlicer{this.data[i:j]}
+}
+
+func (this *timeSlicer) Index(i int) interface{} {
+	return this.data[i]
+}
+
+//TODO
+func (this *timeSlicer) ToInterfaces() []interface{} {
+	panic(errors.New("TODO"))
+}
+
+func (this *timeSlicer) Elem() slicer {
+	return this
+}
+
+func newSlicer(data interface{}) slicer {
+	switch v := data.(type) {
+	case []interface{}:
+		return &interfaceSlicer{v}
+	case map[interface{}]interface{}:
+		i := 0
+		results := make([]interface{}, len(v))
+		for k, v := range v {
+			results[i] = &KeyValue{k, v}
+			i++
+		}
+		return &interfaceSlicer{results}
+	default:
+		return &valueSlicer{reflect.ValueOf(data)}
+	}
+}
+
 //The listsource and chanSource structs----------------------------------
 // listSource presents the slice or map source
 type listSource struct {
-	data interface{}
+	//data interface{}
+	data slicer
 }
 
 func (this listSource) Typ() int {
@@ -829,38 +1012,48 @@ func (this listSource) Typ() int {
 }
 
 // ToSlice returns the interface{} slice
-func (this listSource) ToSlice(keepOrder bool) []interface{} {
-	switch data := this.data.(type) {
-	case []interface{}:
-		if data != nil && len(data) > 0 {
-			if _, ok := data[0].(*Chunk); ok {
-				return expandChunks(data, keepOrder)
-			}
-		}
-		return data
-	case map[interface{}]interface{}:
-		i := 0
-		results := make([]interface{}, len(data))
-		for k, v := range data {
-			results[i] = &KeyValue{k, v}
-			i++
-		}
-		return results
-	default:
-		value := reflect.ValueOf(this.data)
-		return getSlice(value)
-
-		//return nil
-
-	}
-	return nil
+func (this listSource) ToSlice(keepOrder bool) slicer {
+	return this.data
 }
+
+//// ToSlice returns the interface{} slice
+//func (this listSource) ToSlice(keepOrder bool) []interface{} {
+//	return this.data.ToInterfaces()
+//	//switch data := this.data.(type) {
+//	//case []interface{}:
+//	//	if data != nil && len(data) > 0 {
+//	//		if _, ok := data[0].(*Chunk); ok {
+//	//			return expandChunks(data, keepOrder)
+//	//		}
+//	//	}
+//	//	return data
+//	//case map[interface{}]interface{}:
+//	//	i := 0
+//	//	results := make([]interface{}, len(data))
+//	//	for k, v := range data {
+//	//		results[i] = &KeyValue{k, v}
+//	//		i++
+//	//	}
+//	//	return results
+//	//default:
+//	//	value := reflect.ValueOf(this.data)
+//	//	return getSlice(value)
+
+//	//	//return nil
+
+//	//}
+//	//return nil
+//}
 
 func (this listSource) ToChan() chan interface{} {
 	out := make(chan interface{})
 	go func() {
-		for _, v := range this.ToSlice(false) {
-			out <- v
+		//for _, v := range this.ToSlice(false) {
+		//	out <- v
+		//}
+		size := this.data.Len()
+		for i := 0; i < size; i++ {
+			out <- this.data.Index(i)
 		}
 		close(out)
 	}()
@@ -888,6 +1081,24 @@ func getSlice(v reflect.Value) []interface{} {
 		return getSlice(ov)
 	}
 	return nil
+}
+
+func newListSource(data interface{}) *listSource {
+	return &listSource{newSlicer(data)}
+	//switch v := data.(type) {
+	//case []interface{}:
+	//	return &listSource{&interfaceSlicer{v}}
+	//case map[interface{}]interface{}:
+	//	i := 0
+	//	results := make([]interface{}, len(v))
+	//	for k, v := range v {
+	//		results[i] = &KeyValue{k, v}
+	//		i++
+	//	}
+	//	return &listSource{&interfaceSlicer{results}}
+	//default:
+	//	return &listSource{&valueSlicer{reflect.ValueOf(data)}}
+	//}
 }
 
 // chanSource presents the channel source
@@ -942,7 +1153,7 @@ func (this *chanSource) makeChunkChanSure(chunkSize int) {
 						i++
 						chunkData = append(chunkData, v.Interface())
 						if len(chunkData) == cap(chunkData) {
-							c := &Chunk{chunkData, j, lasti}
+							c := &Chunk{newSlicer(chunkData), j, lasti}
 							if closed := sendChunk(this.chunkChan, c); closed {
 								return nil, nil
 							}
@@ -957,7 +1168,7 @@ func (this *chanSource) makeChunkChanSure(chunkSize int) {
 				}
 
 				if len(chunkData) > 0 {
-					sendChunk(this.chunkChan, &Chunk{chunkData, j, lasti})
+					sendChunk(this.chunkChan, &Chunk{newSlicer(chunkData), j, lasti})
 				}
 
 				close(this.chunkChan)
@@ -987,7 +1198,7 @@ func (this chanSource) Close() {
 }
 
 //ToSlice returns a slice included all elements in the channel source
-func (this chanSource) ToSlice(keepOrder bool) []interface{} {
+func (this chanSource) ToSlice(keepOrder bool) slicer {
 	if this.chunkChan != nil {
 		chunks := make([]interface{}, 0, 2)
 		avl := newChunkAvlTree()
@@ -1012,7 +1223,7 @@ func (this chanSource) ToSlice(keepOrder bool) []interface{} {
 			chunks = avl.ToSlice()
 		}
 
-		return expandChunks(chunks, false)
+		return newSlicer(expandChunks(chunks, false))
 	} else {
 		srcChan := reflect.ValueOf(this.data)
 		if srcChan.Kind() != reflect.Chan {
@@ -1027,7 +1238,7 @@ func (this chanSource) ToSlice(keepOrder bool) []interface{} {
 				break
 			}
 		}
-		return result
+		return newSlicer(result)
 	}
 }
 
@@ -1043,10 +1254,12 @@ func (this chanSource) ToChan() chan interface{} {
 					}
 					continue
 				}
-
-				for _, v := range c.Data {
-					out <- v
+				for i := 0; i < c.Data.Len(); i++ {
+					out <- c.Data.Index(i)
 				}
+				//for _, v := range c.Data {
+				//	out <- v
+				//}
 			}
 			close(out)
 		}()
@@ -1192,8 +1405,8 @@ func getSelect(selectFunc oneArgsFunc) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption) (dst DataSource, sf *promise.Future, keep bool, e error) {
 		keep = option.KeepOrder
 		mapChunk := func(c *Chunk) *Chunk {
-			mapSlice(c.Data, selectFunc, &(c.Data))
-			return c
+			results := mapSlice(c.Data, selectFunc)
+			return &Chunk{newSlicer(results), c.Order, c.StartIndex}
 		}
 
 		//try to use sequentail if the size of the data is less than size of chunk
@@ -1241,22 +1454,25 @@ func getOrder(compare func(interface{}, interface{}) int) stepAction {
 		switch s := src.(type) {
 		case *listSource:
 			//quick sort
-			sorteds := sortSlice(s.ToSlice(false), func(this, that interface{}) bool {
+			//TODO:How to avoid the reflect?
+			sorteds := sortSlice(s.data.ToInterfaces(), func(this, that interface{}) bool {
 				return compare(this, that) == -1
 			})
-			return &listSource{sorteds}, nil, true, nil
+			return newDataSource(sorteds), nil, true, nil
 		case *chanSource:
 			//AVL tree sort
 			avl := NewAvlTree(compare)
 			f, _ := parallelMapChanToChan(s, nil, func(c *Chunk) *Chunk {
-				for _, v := range c.Data {
-					avl.Insert(v)
+				//for _, v := range c.Data {
+				size := c.Data.Len()
+				for i := 0; i < size; i++ {
+					avl.Insert(c.Data.Index(i))
 				}
 				return nil
 			}, option)
 
 			dst, e = getFutureResult(f, func(r []interface{}) DataSource {
-				return &listSource{avl.ToSlice()}
+				return newDataSource(avl.ToSlice())
 			})
 			keep = true
 			return
@@ -1268,7 +1484,7 @@ func getOrder(compare func(interface{}, interface{}) int) stepAction {
 func getDistinct(distinctFunc oneArgsFunc) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption) (DataSource, *promise.Future, bool, error) {
 		mapChunk := func(c *Chunk) (r *Chunk) {
-			r = &Chunk{getKeyValues(c, distinctFunc, nil), c.Order, c.StartIndex}
+			r = &Chunk{newSlicer(getKeyValues(c, distinctFunc, nil)), c.Order, c.StartIndex}
 			return
 		}
 
@@ -1292,7 +1508,7 @@ func getDistinct(distinctFunc oneArgsFunc) stepAction {
 func getGroupBy(groupFunc oneArgsFunc, hashAsKey bool) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption) (DataSource, *promise.Future, bool, error) {
 		mapChunk := func(c *Chunk) (r *Chunk) {
-			r = &Chunk{getKeyValues(c, groupFunc, nil), c.Order, c.StartIndex}
+			r = &Chunk{newSlicer(getKeyValues(c, groupFunc, nil)), c.Order, c.StartIndex}
 			return
 		}
 
@@ -1314,13 +1530,15 @@ func getGroupBy(groupFunc oneArgsFunc, hashAsKey bool) stepAction {
 		//reduce the keyValue map to get grouped slice
 		//get key with group values values
 		errs := reduceChan(f, reduceSrc, func(c *Chunk) {
-			for _, v := range c.Data {
-				groupKV(v)
+			//for _, v := range c.Data {
+			size := c.Data.Len()
+			for i := 0; i < size; i++ {
+				groupKV(c.Data.Index(i))
 			}
 		})
 
 		if errs == nil {
-			return &listSource{groupKVs}, nil, option.KeepOrder, nil
+			return newDataSource(groupKVs), nil, option.KeepOrder, nil
 		} else {
 			return nil, nil, option.KeepOrder, NewLinqError("Group error", errs)
 		}
@@ -1391,7 +1609,7 @@ func getJoinImpl(inner interface{},
 				}
 			}
 
-			return &Chunk{results, c.Order, c.StartIndex}
+			return &Chunk{newSlicer(results), c.Order, c.StartIndex}
 		}
 
 		//always use channel mode in Where operation
@@ -1405,7 +1623,7 @@ func getUnion(source2 interface{}) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption) (DataSource, *promise.Future, bool, error) {
 		reduceSrcChan := make(chan *Chunk)
 		mapChunk := func(c *Chunk) (r *Chunk) {
-			r = &Chunk{getKeyValues(c, func(v interface{}) interface{} { return v }, nil), c.Order, c.StartIndex}
+			r = &Chunk{newSlicer(getKeyValues(c, func(v interface{}) interface{} { return v }, nil)), c.Order, c.StartIndex}
 			return
 		}
 
@@ -1425,12 +1643,12 @@ func getUnion(source2 interface{}) stepAction {
 func getConcat(source2 interface{}) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption) (DataSource, *promise.Future, bool, error) {
 		//TODO: if the source is channel source, should use channel mode
-		slice1 := src.ToSlice(option.KeepOrder)
+		slice1 := src.ToSlice(option.KeepOrder).ToInterfaces()
 		if slice2, err2 := From(source2).SetKeepOrder(option.KeepOrder).Results(); err2 == nil {
 			result := make([]interface{}, len(slice1)+len(slice2))
 			_ = copy(result[0:len(slice1)], slice1)
 			_ = copy(result[len(slice1):len(slice1)+len(slice2)], slice2)
-			return &listSource{result}, nil, option.KeepOrder, nil
+			return newDataSource(result), nil, option.KeepOrder, nil
 		} else {
 			return nil, nil, option.KeepOrder, err2
 		}
@@ -1466,31 +1684,34 @@ func getExcept(source2 interface{}) stepAction {
 func getReverse() stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption) (dst DataSource, sf *promise.Future, keep bool, e error) {
 		keep = option.KeepOrder
-		wholeSlice := src.ToSlice(true)
-		srcSlice, size := wholeSlice[0:len(wholeSlice)/2], len(wholeSlice)
+		wholeSlice := src.ToSlice(true).ToInterfaces()
+		size := len(wholeSlice)
+		srcSlice := wholeSlice[0 : size/2]
 
 		mapChunk := func(c *Chunk) *Chunk {
-			for i := 0; i < len(c.Data); i++ {
+			size := c.Data.Len()
+			for i := 0; i < size; i++ {
 				j := c.StartIndex + i
 				t := wholeSlice[size-1-j]
-				wholeSlice[size-1-j] = c.Data[i]
-				c.Data[i] = t
+				wholeSlice[size-1-j] = c.Data.Index(i)
+				wholeSlice[j] = t
+				//c.Data[i] = t
 			}
 			return c
 		}
 
-		reverseSrc := &listSource{srcSlice}
+		reverseSrc := &listSource{newSlicer(srcSlice)} //newDataSource(srcSlice)
 
 		//try to use sequentail if the size of the data is less than size of chunk
 		if _, err, handled := trySequentialMap(reverseSrc, option, mapChunk); handled {
-			return &listSource{wholeSlice}, nil, option.KeepOrder, err
+			return newDataSource(newSlicer(wholeSlice)), nil, option.KeepOrder, err
 		}
 
 		f := parallelMapListToList(reverseSrc, func(c *Chunk) *Chunk {
 			return mapChunk(c)
 		}, option)
 		dst, e = getFutureResult(f, func(r []interface{}) DataSource {
-			return &listSource{wholeSlice}
+			return newDataSource(newSlicer(wholeSlice))
 		})
 		return
 	})
@@ -1503,10 +1724,10 @@ func getSkipTakeCount(count int, isTake bool) stepAction {
 	return getSkipTake(func(c *Chunk, canceller promise.Canceller) (i int, find bool) {
 		if c.StartIndex > count {
 			i, find = 0, true
-		} else if c.StartIndex+len(c.Data) >= count {
+		} else if c.StartIndex+c.Data.Len() >= count {
 			i, find = count-c.StartIndex, true
 		} else {
-			i, find = c.StartIndex+len(c.Data), false
+			i, find = c.StartIndex+c.Data.Len(), false
 		}
 		return
 	}, isTake, true)
@@ -1526,7 +1747,10 @@ func getSkipTakeWhile(predicate predicateFunc, isTake bool) stepAction {
 		//}
 		//return len(rs), false
 		r = -1
-		for i, v := range c.Data {
+		//for i, v := range c.Data {
+		size := c.Data.Len()
+		for i := 0; i < size; i++ {
+			v := c.Data.Index(i)
 			if canceller != nil && canceller.IsCancellationRequested() {
 				canceller.SetCancelled()
 				break
@@ -1551,24 +1775,29 @@ func getSkipTake(foundNoMatch func(*Chunk, promise.Canceller) (int, bool), isTak
 	return stepAction(func(src DataSource, option *ParallelOption) (dst DataSource, sf *promise.Future, keep bool, e error) {
 		switch s := src.(type) {
 		case *listSource:
-			rs := s.ToSlice(false)
+			//rs := s.ToSlice(false)
 			var (
 				i     int
 				found bool
 			)
 			if useIndex {
-				i, _ = foundNoMatch(&Chunk{rs, 0, 0}, nil)
+				i, _ = foundNoMatch(&Chunk{s.data, 0, 0}, nil)
 			} else {
-				i, found, e = getFirstOrLastIndex(&listSource{rs}, foundNoMatch, option)
+				i, found, e = getFirstOrLastIndex(s, foundNoMatch, option)
 				if !found {
-					i = len(rs)
+					i = s.data.Len()
 				}
 			}
 
+			//if isTake {
+			//	return newDataSource(rs[0:i]), nil, option.KeepOrder, e
+			//} else {
+			//	return newDataSource(rs[i:]), nil, option.KeepOrder, e
+			//}
 			if isTake {
-				return &listSource{rs[0:i]}, nil, option.KeepOrder, e
+				return newDataSource(s.data.Slice(0, i)), nil, option.KeepOrder, e
 			} else {
-				return &listSource{rs[i:]}, nil, option.KeepOrder, e
+				return newDataSource(s.data.Slice(i, i)), nil, option.KeepOrder, e
 			}
 		case *chanSource:
 			out := make(chan *Chunk)
@@ -1584,10 +1813,15 @@ func getSkipTake(foundNoMatch func(*Chunk, promise.Canceller) (int, bool), isTak
 
 				if c.noMatch {
 					//如果发现不满足条件的item，则必然是第一个不满足条件的块
+					//if isTake {
+					//	sendChunk(out, &Chunk{c.chunk.Data[0:c.whileIdx], c.chunk.Order, c.chunk.StartIndex})
+					//} else {
+					//	sendChunk(out, &Chunk{c.chunk.Data[c.whileIdx:], c.chunk.Order, c.chunk.StartIndex})
+					//}
 					if isTake {
-						sendChunk(out, &Chunk{c.chunk.Data[0:c.whileIdx], c.chunk.Order, c.chunk.StartIndex})
+						sendChunk(out, &Chunk{c.chunk.Data.Slice(0, c.whileIdx), c.chunk.Order, c.chunk.StartIndex})
 					} else {
-						sendChunk(out, &Chunk{c.chunk.Data[c.whileIdx:], c.chunk.Order, c.chunk.StartIndex})
+						sendChunk(out, &Chunk{c.chunk.Data.Slice(c.whileIdx, c.whileIdx), c.chunk.Order, c.chunk.StartIndex})
 					}
 					return true
 				} else if isTake {
@@ -1608,9 +1842,9 @@ func getSkipTake(foundNoMatch func(*Chunk, promise.Canceller) (int, bool), isTak
 			//如果一个块是第一个发现不匹配的块，将调用beNoMatchAct
 			beNoMatchAct := func(c *chunkWhileResult) {
 				if isTake {
-					sendChunk(out, &Chunk{c.chunk.Data[0:c.whileIdx], c.chunk.Order, c.chunk.StartIndex})
+					sendChunk(out, &Chunk{c.chunk.Data.Slice(0, c.whileIdx), c.chunk.Order, c.chunk.StartIndex})
 				} else {
-					sendChunk(out, &Chunk{c.chunk.Data[c.whileIdx:], c.chunk.Order, c.chunk.StartIndex})
+					sendChunk(out, &Chunk{c.chunk.Data.Slice(c.whileIdx, c.whileIdx), c.chunk.Order, c.chunk.StartIndex})
 				}
 			}
 
@@ -1673,19 +1907,20 @@ func getSkipTake(foundNoMatch func(*Chunk, promise.Canceller) (int, bool), isTak
 
 func getElementAt(src DataSource, i int, option *ParallelOption) (element interface{}, found bool, err error) {
 	foundNoMatch := func(c *Chunk) (int, bool) {
-		if c.StartIndex <= i && c.StartIndex+len(c.Data)-1 >= i {
+		size := c.Data.Len()
+		if c.StartIndex <= i && c.StartIndex+size-1 >= i {
 			return i - c.StartIndex, true
 		} else {
-			return len(c.Data), false
+			return size, false
 		}
 	}
 	useIndex := true
 
 	switch s := src.(type) {
 	case *listSource:
-		rs := s.ToSlice(false)
+		rs := s.data
 		if i, found := foundNoMatch(&Chunk{rs, 0, 0}); found {
-			return rs[i], true, nil
+			return rs.Index(i), true, nil
 		} else {
 			return nil, false, nil
 		}
@@ -1693,7 +1928,7 @@ func getElementAt(src DataSource, i int, option *ParallelOption) (element interf
 		beforeNoMatchAct := func(c *chunkWhileResult) (while bool) {
 			//判断是否满足条件
 			if idx, found := foundNoMatch(c.chunk); found {
-				element = c.chunk.Data[idx]
+				element = c.chunk.Data.Index(idx)
 				return true
 			}
 			return false
@@ -1774,7 +2009,9 @@ func getFirstOrLastIndex(src *listSource, predicate func(c *Chunk, canceller pro
 func getFirstBy(src DataSource, f func(interface{}) bool, option *ParallelOption) (element interface{}, found bool, err error) {
 	foundMatch := func(c *Chunk, canceller promise.Canceller) (r int, found bool) {
 		r = -1
-		for i, v := range c.Data {
+		size := c.Data.Len()
+		for i := 0; i < size; i++ {
+			v := c.Data.Index(i)
 			if canceller != nil && canceller.IsCancellationRequested() {
 				canceller.SetCancelled()
 				break
@@ -1792,13 +2029,13 @@ func getFirstBy(src DataSource, f func(interface{}) bool, option *ParallelOption
 
 	switch s := src.(type) {
 	case *listSource:
-		rs := s.ToSlice(false)
-		if i, found, err := getFirstOrLastIndex(&listSource{rs}, foundMatch, option); err != nil {
+		rs := s.data
+		if i, found, err := getFirstOrLastIndex(newListSource(rs), foundMatch, option); err != nil {
 			return nil, false, err
 		} else if !found {
 			return nil, false, nil
 		} else {
-			return rs[i], true, nil
+			return rs.Index(i), true, nil
 		}
 		//rs := s.ToSlice(false)
 		//getAction := func(c *Chunk) func(promise.Canceller) (interface{}, error) {
@@ -1831,13 +2068,13 @@ func getFirstBy(src DataSource, f func(interface{}) bool, option *ParallelOption
 		beforeNoMatchAct := func(c *chunkWhileResult) (while bool) {
 			//判断是否满足条件
 			if idx, found := foundMatch(c.chunk, nil); found {
-				element = c.chunk.Data[idx]
+				element = c.chunk.Data.Index(idx)
 				return true
 			}
 			return false
 		}
 		afterNoMatchAct, beNoMatchAct := func(c *chunkWhileResult) {}, func(c *chunkWhileResult) {
-			element = c.chunk.Data[c.whileIdx]
+			element = c.chunk.Data.Index(c.whileIdx)
 		}
 
 		srcChan := s.ChunkChan(option.ChunkSize)
@@ -1919,7 +2156,7 @@ func getAggregate(src DataSource, aggregateFuncs []*AggregateOpretion, option *P
 
 		for i := 0; i < len(rs); i++ {
 			if aggregateFuncs[i].ReduceAction != nil {
-				rs[i] = aggregateFuncs[i].ReduceAction(c.Data[i], rs[i])
+				rs[i] = aggregateFuncs[i].ReduceAction(c.Data.Index(i), rs[i])
 			}
 		}
 	}
@@ -1969,25 +2206,28 @@ func filterSet(src DataSource, source2 interface{}, isExcept bool, option *Paral
 
 func filterSetByChan(src DataSource, src2 DataSource, isExcept bool, option *ParallelOption) (DataSource, *promise.Future, error) {
 	mapChunk := func(c *Chunk) (r *Chunk) {
-		//mapSlice(c.Data, func(v interface{}) interface{} { return &hKeyValue{hash64(v), v, v} }, &(c.Data))
-		for i := 0; i < len(c.Data); i++ {
-			v := c.Data[i]
+		size := c.Data.Len()
+		rs := make([]interface{}, size)
+		for i := 0; i < size; i++ {
+			v := c.Data.Index(i)
 			//fmt.Println("map", v, "to", hKeyValue{hash64(v), v, v})
-			c.Data[i] = &KeyValue{hash64(v), v}
+			rs[i] = &KeyValue{hash64(v), v}
 		}
 		//r = &Chunk{getKeyValues(c, func(v interface{}) interface{} { return v }, nil), c.Order, c.StartIndex}
-		return c
+		return &Chunk{newSlicer(rs), c.Order, c.StartIndex}
 	}
 
 	//map the elements of source and source2 to the a KeyValue slice
 	//includes the hash value and the original element
 	_, reduceSrcChan1 := parallelMapToChan(src, nil, mapChunk, option)
-	_, reduceSrcChan2 := parallelMapToChan(newQueryable(src2).makeCopiedSrc(true), nil, func(c *Chunk) (r *Chunk) {
-		for i := 0; i < len(c.Data); i++ {
-			v := c.Data[i]
-			c.Data[i] = hash64(v)
+	_, reduceSrcChan2 := parallelMapToChan(src2, nil, func(c *Chunk) (r *Chunk) {
+		size := c.Data.Len()
+		rs := make([]interface{}, size)
+		for i := 0; i < size; i++ {
+			v := c.Data.Index(i)
+			rs[i] = hash64(v)
 		}
-		return c
+		return &Chunk{newSlicer(rs), c.Order, c.StartIndex}
 	}, option)
 
 	distinctKVs1 := make(map[uint64]bool, 100)
@@ -2014,7 +2254,10 @@ L1:
 				}
 			}
 
-			for _, v := range c1.Data {
+			size := c1.Data.Len()
+			for i := 0; i < size; i++ {
+				v := c1.Data.Index(i)
+				//for _, v := range c1.Data {
 				kv := v.(*KeyValue)
 				k := kv.Key.(uint64)
 				//fmt.Println("c1 get", *kv)
@@ -2049,7 +2292,10 @@ L1:
 					break
 				}
 			}
-			for _, v := range c2.Data {
+			size := c2.Data.Len()
+			for i := 0; i < size; i++ {
+				v := c2.Data.Index(i)
+				//for _, v := range c2.Data {
 				k := v.(uint64)
 				//delete(resultKVs, kv.keyHash)
 				//distinctKVs2[kv.keyHash] = true
@@ -2077,21 +2323,23 @@ L1:
 		results[i] = v
 		i++
 	}
-	return &listSource{results}, nil, nil
+	return newListSource(results), nil, nil
 
 }
 
 func filterSetByList(src DataSource, src2 DataSource, isExcept bool, option *ParallelOption) (DataSource, *promise.Future, error) {
-	ds2 := newQueryable(src2).makeCopiedSrc(true)
+	ds2 := src2
 	f2 := parallelMapListToList(ds2, func(c *Chunk) (r *Chunk) {
-		for i := 0; i < len(c.Data); i++ {
-			c.Data[i] = hash64(c.Data[i])
+		size := c.Data.Len()
+		rs := make([]interface{}, size)
+		for i := 0; i < size; i++ {
+			rs[i] = hash64(c.Data.Index(i))
 		}
-		return c
+		return &Chunk{newSlicer(rs), c.Order, c.StartIndex}
 	}, option)
 
 	mapChunk := func(c *Chunk) (r *Chunk) {
-		r = &Chunk{getKeyValues(c, func(v interface{}) interface{} { return v }, nil), c.Order, c.StartIndex}
+		r = &Chunk{newSlicer(getKeyValues(c, func(v interface{}) interface{} { return v }, nil)), c.Order, c.StartIndex}
 		return
 	}
 	f1, reduceSrcChan := parallelMapToChan(src, nil, mapChunk, option)
@@ -2107,7 +2355,10 @@ func filterSetByList(src DataSource, src2 DataSource, isExcept bool, option *Par
 				distKVs = make(map[uint64]bool, 100)
 				for _, c := range rs.([]interface{}) {
 					chunk := c.(*Chunk)
-					for _, v := range chunk.Data {
+					size := chunk.Data.Len()
+					for i := 0; i < size; i++ {
+						v := chunk.Data.Index(i)
+						//for _, v := range chunk.Data {
 						distKVs[v.(uint64)] = true
 					}
 				}
@@ -2116,8 +2367,11 @@ func filterSetByList(src DataSource, src2 DataSource, isExcept bool, option *Par
 
 		//filter src
 		i := 0
-		results := make([]interface{}, len(c.Data))
-		for _, v := range c.Data {
+		size := c.Data.Len()
+		results := make([]interface{}, size)
+		for i := 0; i < size; i++ {
+			v := c.Data.Index(i)
+			//for _, v := range c.Data {
 			kv := v.(*hKeyValue)
 			k := kv.keyHash
 			_, ok := distKVs[k]
@@ -2131,7 +2385,7 @@ func filterSetByList(src DataSource, src2 DataSource, isExcept bool, option *Par
 		}
 		//fmt.Println("return:", results[0:i])
 
-		return &Chunk{results[0:i], c.Order, c.StartIndex}
+		return &Chunk{newSlicer(results[0:i]), c.Order, c.StartIndex}
 	}
 
 	option.Degree = 1
@@ -2139,112 +2393,112 @@ func filterSetByList(src DataSource, src2 DataSource, isExcept bool, option *Par
 	return &chanSource{chunkChan: out}, f, nil
 }
 
-func filterSet6(src DataSource, source2 interface{}, isExcept bool, option *ParallelOption) (DataSource, *promise.Future, error) {
-	f1 := parallelMapListToList(src, func(c *Chunk) *Chunk {
-		mapSlice(c.Data, func(v interface{}) interface{} {
-			return &KeyValue{hash64(v), v}
-		}, &c.Data)
-		return c
-	}, option)
+//func filterSet6(src DataSource, source2 interface{}, isExcept bool, option *ParallelOption) (DataSource, *promise.Future, error) {
+//	f1 := parallelMapListToList(src, func(c *Chunk) *Chunk {
+//		mapSlice(c.Data, func(v interface{}) interface{} {
+//			return &KeyValue{hash64(v), v}
+//		}, &c.Data)
+//		return c
+//	}, option)
 
-	ds2 := From(source2).makeCopiedSrc(true)
-	f2, _ := parallelMapListToList(ds2, func(c *Chunk) (r *Chunk) {
-		for i := 0; i < len(c.Data); i++ {
-			v := c.Data[i]
-			c.Data[i] = hash64(v)
-		}
-		return c
-	}, option).Pipe(func(r1 interface{}) *promise.Future {
-		p := promise.NewPromise()
+//	ds2 := From(source2).makeCopiedSrc(true)
+//	f2, _ := parallelMapListToList(ds2, func(c *Chunk) (r *Chunk) {
+//		for i := 0; i < len(c.Data); i++ {
+//			v := c.Data[i]
+//			c.Data[i] = hash64(v)
+//		}
+//		return c
+//	}, option).Pipe(func(r1 interface{}) *promise.Future {
+//		p := promise.NewPromise()
 
-		var distKVs map[uint64]bool
-		kv2s := ds2.ToSlice(false)
-		distKVs = make(map[uint64]bool, len(kv2s))
-		for _, v := range kv2s {
-			distKVs[v.(uint64)] = true
-		}
+//		var distKVs map[uint64]bool
+//		kv2s := ds2.ToSlice(false)
+//		distKVs = make(map[uint64]bool, len(kv2s))
+//		for _, v := range kv2s {
+//			distKVs[v.(uint64)] = true
+//		}
 
-		if rs, err := f1.Get(); err != nil {
-			p.Reject(err)
-		} else {
-			i, results := 0, make([]interface{}, 100000)
-			resultKVs := make(map[uint64]bool, 100000)
+//		if rs, err := f1.Get(); err != nil {
+//			p.Reject(err)
+//		} else {
+//			i, results := 0, make([]interface{}, 100000)
+//			resultKVs := make(map[uint64]bool, 100000)
 
-			for _, c := range rs.([]interface{}) {
-				chunk := c.(*Chunk)
-				for _, v := range chunk.Data {
-					kv := v.(*KeyValue)
-					k := kv.Key.(uint64)
-					_, ok := distKVs[kv.Key.(uint64)]
-					if (isExcept && !ok) || (!isExcept && ok) {
-						if _, ok := resultKVs[k]; !ok {
-							resultKVs[k] = true
-							results[i] = kv.Value
-							i++
-						}
-					}
-				}
-			}
-			p.Reslove(&listSource{results[:i]})
-		}
+//			for _, c := range rs.([]interface{}) {
+//				chunk := c.(*Chunk)
+//				for _, v := range chunk.Data {
+//					kv := v.(*KeyValue)
+//					k := kv.Key.(uint64)
+//					_, ok := distKVs[kv.Key.(uint64)]
+//					if (isExcept && !ok) || (!isExcept && ok) {
+//						if _, ok := resultKVs[k]; !ok {
+//							resultKVs[k] = true
+//							results[i] = kv.Value
+//							i++
+//						}
+//					}
+//				}
+//			}
+//			p.Reslove(&listSource{results[:i]})
+//		}
 
-		return p.Future
-	})
+//		return p.Future
+//	})
 
-	r2, err := f2.Get()
-	return r2.(*listSource), nil, err
+//	r2, err := f2.Get()
+//	return r2.(*listSource), nil, err
 
-	//var distKVs map[uint64]bool
-	//once := new(sync.Once)
-	//mapChunk := func(c *Chunk) (r *Chunk) {
-	//	if distKVs == nil {
-	//		once.Do(func() {
-	//			if _, err := f2.Get(); err != nil {
-	//				panic(err)
-	//			}
-	//			kv2s := ds2.ToSlice(false)
-	//			//fmt.Println("len(kv2s)=", kv2s, len(kv2s))
-	//			distKVs = make(map[uint64]bool, len(kv2s))
-	//			for _, v := range kv2s {
-	//				distKVs[v.(uint64)] = true
-	//			}
-	//		})
-	//	}
+//	//var distKVs map[uint64]bool
+//	//once := new(sync.Once)
+//	//mapChunk := func(c *Chunk) (r *Chunk) {
+//	//	if distKVs == nil {
+//	//		once.Do(func() {
+//	//			if _, err := f2.Get(); err != nil {
+//	//				panic(err)
+//	//			}
+//	//			kv2s := ds2.ToSlice(false)
+//	//			//fmt.Println("len(kv2s)=", kv2s, len(kv2s))
+//	//			distKVs = make(map[uint64]bool, len(kv2s))
+//	//			for _, v := range kv2s {
+//	//				distKVs[v.(uint64)] = true
+//	//			}
+//	//		})
+//	//	}
 
-	//	//fmt.Println("len(distKVs)=", len(distKVs))
-	//	i, results := 0, make([]interface{}, len(c.Data))
-	//	for _, v := range c.Data {
-	//		kv := &KeyValue{hash64(v), v}
-	//		_, ok := distKVs[kv.Key.(uint64)]
-	//		if (isExcept && !ok) || (!isExcept && ok) {
-	//			results[i] = kv
-	//			i++
-	//		}
-	//	}
-	//	return &Chunk{results[:i], c.Order, c.StartIndex}
-	//}
+//	//	//fmt.Println("len(distKVs)=", len(distKVs))
+//	//	i, results := 0, make([]interface{}, len(c.Data))
+//	//	for _, v := range c.Data {
+//	//		kv := &KeyValue{hash64(v), v}
+//	//		_, ok := distKVs[kv.Key.(uint64)]
+//	//		if (isExcept && !ok) || (!isExcept && ok) {
+//	//			results[i] = kv
+//	//			i++
+//	//		}
+//	//	}
+//	//	return &Chunk{results[:i], c.Order, c.StartIndex}
+//	//}
 
-	//if rs, err := f1.Get(); err != nil {
-	//	return nil, nil, err
-	//} else {
-	//	i, results := 0, make([]interface{}, 10000)
-	//	resultKVs := make(map[uint64]bool, 10000)
+//	//if rs, err := f1.Get(); err != nil {
+//	//	return nil, nil, err
+//	//} else {
+//	//	i, results := 0, make([]interface{}, 10000)
+//	//	resultKVs := make(map[uint64]bool, 10000)
 
-	//	for _, c := range rs.([]interface{}) {
-	//		chunk := c.(*Chunk)
-	//		for _, v := range chunk.Data {
-	//			kv := v.(*KeyValue)
-	//			k := kv.Key.(uint64)
-	//			if _, ok := resultKVs[k]; !ok {
-	//				resultKVs[k] = true
-	//				results[i] = kv.Value
-	//				i++
-	//			}
-	//		}
-	//	}
-	//	return &listSource{results[:i]}, nil, nil
-	//}
-}
+//	//	for _, c := range rs.([]interface{}) {
+//	//		chunk := c.(*Chunk)
+//	//		for _, v := range chunk.Data {
+//	//			kv := v.(*KeyValue)
+//	//			k := kv.Key.(uint64)
+//	//			if _, ok := resultKVs[k]; !ok {
+//	//				resultKVs[k] = true
+//	//				results[i] = kv.Value
+//	//				i++
+//	//			}
+//	//		}
+//	//	}
+//	//	return &listSource{results[:i]}, nil, nil
+//	//}
+//}
 
 func distinctKVs(src interface{}, option *ParallelOption) (map[uint64]interface{}, error) {
 	distKVs := make(map[uint64]interface{})
@@ -2342,10 +2596,11 @@ func parallelMapListToChan(src DataSource, out chan *Chunk, task func(*Chunk) *C
 
 	var f *promise.Future
 	data := src.ToSlice(false)
-	if len(data) == 0 {
+	size := data.Len()
+	if size == 0 {
 		f = promise.Wrap([]interface{}{})
 	} else {
-		size, lenOfData := option.ChunkSize, len(data)
+		size, lenOfData := option.ChunkSize, size
 		if size < lenOfData/(numCPU*5) {
 			size = lenOfData / (numCPU * 5)
 		}
@@ -2356,7 +2611,7 @@ func parallelMapListToChan(src DataSource, out chan *Chunk, task func(*Chunk) *C
 				if end >= lenOfData {
 					end = lenOfData
 				}
-				c := &Chunk{data[i*size : end], i * size, i * size} //, end}
+				c := &Chunk{data.Slice(i*size, end), i * size, i * size} //, end}
 				//ch <- c
 				sendChunk(ch, c)
 			}
@@ -2384,10 +2639,11 @@ func parallelMapListToList(src DataSource, task func(*Chunk) *Chunk, option *Par
 
 func parallelMapList(src DataSource, getAction func(*Chunk) func() (interface{}, error), option *ParallelOption) (f *promise.Future) {
 	data := src.ToSlice(false)
-	if len(data) == 0 {
+	size := data.Len()
+	if size == 0 {
 		return promise.Wrap([]interface{}{})
 	}
-	lenOfData, size, j := len(data), ceilChunkSize(len(data), option.Degree), 0
+	lenOfData, size, j := size, ceilChunkSize(size, option.Degree), 0
 
 	if size < option.ChunkSize {
 		size = option.ChunkSize
@@ -2399,7 +2655,7 @@ func parallelMapList(src DataSource, getAction func(*Chunk) func() (interface{},
 		if end >= lenOfData {
 			end = lenOfData
 		}
-		c := &Chunk{data[i*size : end], i * size, i * size} //, end}
+		c := &Chunk{data.Slice(i*size, end), i * size, i * size} //, end}
 
 		f = promise.Start(getAction(c))
 		fs[i] = f
@@ -2412,10 +2668,11 @@ func parallelMapList(src DataSource, getAction func(*Chunk) func() (interface{},
 
 func parallelMatchListWithPriority(src DataSource, getAction func(*Chunk, promise.Canceller) (int, bool), option *ParallelOption, priorityOrder int) (f *promise.Future) {
 	data := src.ToSlice(false)
-	if len(data) == 0 {
+	size := data.Len()
+	if size == 0 {
 		return promise.Wrap(-1)
 	}
-	lenOfData, size := len(data), ceilChunkSize(len(data), option.Degree)
+	lenOfData, size := size, ceilChunkSize(size, option.Degree)
 
 	if size < option.ChunkSize {
 		size = option.ChunkSize
@@ -2445,7 +2702,7 @@ func parallelMatchListWithPriority(src DataSource, getAction func(*Chunk, promis
 		if end >= lenOfData {
 			end = lenOfData
 		}
-		c := &Chunk{data[i*size : end], i, i * size} //, end}
+		c := &Chunk{data.Slice(i*size, end), i, i * size} //, end}
 
 		startIndex := i * size
 		f = promise.StartCanCancel(func(canceller promise.Canceller) (interface{}, error) {
@@ -2520,7 +2777,7 @@ func parallelMatchListWithPriority(src DataSource, getAction func(*Chunk, promis
 func singleDegree(src DataSource, option *ParallelOption) bool {
 	if s, ok := src.(*listSource); ok {
 		list := s.ToSlice(false)
-		return len(list) <= option.ChunkSize
+		return list.Len() <= option.ChunkSize
 	} else {
 		//the channel source will always use paralleliam
 		return false
@@ -2536,7 +2793,7 @@ func trySequentialMap(src DataSource, option *ParallelOption, mapChunk func(c *C
 	if useSingle := singleDegree(src, option); useSingle {
 		c := &Chunk{src.ToSlice(false), 0, 0}
 		r := mapChunk(c)
-		return &listSource{r.Data}, nil, true
+		return newListSource(r.Data), nil, true
 	} else {
 		return nil, nil, false
 	}
@@ -2606,9 +2863,12 @@ func reduceDistinctVals(mapFuture *promise.Future, reduceSrcChan chan *Chunk, op
 
 //util functions-----------------------------------------------------------------
 func distinctChunkVals(c *Chunk, distKVs map[uint64]int) *Chunk {
-	result := make([]interface{}, len(c.Data))
+	size := c.Data.Len()
+	result := make([]interface{}, size)
 	i := 0
-	for _, v := range c.Data {
+	for i := 0; i < size; i++ {
+		v := c.Data.Index()
+		//for _, v := range c.Data {
 		kv := v.(*hKeyValue)
 		if _, ok := distKVs[kv.keyHash]; !ok {
 			distKVs[kv.keyHash] = 1
@@ -2616,7 +2876,7 @@ func distinctChunkVals(c *Chunk, distKVs map[uint64]int) *Chunk {
 			i++
 		}
 	}
-	c.Data = result[0:i]
+	c.Data = newSlicer(result[0:i])
 	return c
 }
 
@@ -2662,22 +2922,22 @@ func filterSlice(src []interface{}, f predicateFunc) []interface{} {
 	return dst
 }
 
-func mapSlice(src []interface{}, f oneArgsFunc, out *[]interface{}) []interface{} {
+func mapSlice(src slicer, f oneArgsFunc) []interface{} {
 	var dst []interface{}
-	if out == nil {
-		dst = make([]interface{}, len(src))
-	} else {
-		dst = *out
-	}
+	size := src.Len()
+	dst = make([]interface{}, size)
 
-	for i, v := range src {
-		dst[i] = f(v)
+	//for i, v := range src {
+	//	dst[i] = f(v)
+	//}
+	for i := 0; i < size; i++ {
+		dst[i] = src.Index(i)
 	}
 	return dst
 }
 
 //TODO: the code need be restructured
-func aggregateSlice(src []interface{}, fs []*AggregateOpretion, asSequential bool, asParallel bool) []interface{} {
+func aggregateSlice(src slicer, fs []*AggregateOpretion, asSequential bool, asParallel bool) slicer {
 	if len(src) == 0 {
 		panic(errors.New("Cannot aggregate empty slice"))
 	}
@@ -2692,11 +2952,11 @@ func aggregateSlice(src []interface{}, fs []*AggregateOpretion, asSequential boo
 	for i := 0; i < len(src); i++ {
 		for j := 0; j < len(fs); j++ {
 			if (asSequential && fs[j].ReduceAction == nil) || (asParallel && fs[j].ReduceAction != nil) {
-				rs[j] = fs[j].AggAction(src[i], rs[j])
+				rs[j] = fs[j].AggAction(src.Index(i), rs[j])
 			}
 		}
 	}
-	return rs
+	return newSlicer(rs)
 }
 
 func expandChunks(src []interface{}, keepOrder bool) []interface{} {
