@@ -238,11 +238,12 @@ func leftResultSelector(u interface{}, v interface{}) interface{} {
 //			c.So(err, c.ShouldBeNil)
 //		})
 
-//		c.Convey("Filter a map", func() {
-//			rs, err := From(tMap).Where(filterMap).Results()
-//			c.So(len(rs), c.ShouldEqual, count/2)
-//			c.So(err, c.ShouldBeNil)
-//		})
+//		//TODO: still have bugs
+//		//c.Convey("Filter a map", func() {
+//		//	rs, err := From(tMap).Where(filterMap).Results()
+//		//	c.So(len(rs), c.ShouldEqual, count/2)
+//		//	c.So(err, c.ShouldBeNil)
+//		//})
 
 //		c.Convey("Filter an interface{} channel", func() {
 //			rs, err := From(getChan(tUsers)).SetSizeOfChunk(size).Where(filterUser).Results()
@@ -1145,7 +1146,7 @@ func leftResultSelector(u interface{}, v interface{}) interface{} {
 
 //func getChunkByi(i int, ints []interface{}) *Chunk {
 //	size := count / l
-//	return &Chunk{ints[i*size : (i+1)*size], i, 0}
+//	return &Chunk{NewSlicer(ints[i*size : (i+1)*size]), i, 0}
 //}
 
 //func getCChunkSrc(indexs []int, ints []interface{}) chan *Chunk {
@@ -1625,13 +1626,13 @@ func leftResultSelector(u interface{}, v interface{}) interface{} {
 //func TestToChannel(t *testing.T) {
 //	c.Convey("Test ToChan of list source", t, func() {
 //		c.Convey("For emtpy list", func() {
-//			ds := &listSource{[]interface{}{}}
+//			ds := &listSource{NewSlicer([]interface{}{})}
 //			out := ds.ToChan()
 //			rs := chanToSlice(out)
 //			c.So(rs, shouldSlicesResemble, []interface{}{})
 //		})
 //		c.Convey("For emtpy list", func() {
-//			ds := &listSource{[]interface{}{1, 2, 3, 4}}
+//			ds := &listSource{NewSlicer([]interface{}{1, 2, 3, 4})}
 //			out := ds.ToChan()
 //			rs := chanToSlice(out)
 //			c.So(rs, shouldSlicesResemble, []interface{}{1, 2, 3, 4})
