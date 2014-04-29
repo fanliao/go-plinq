@@ -1673,22 +1673,39 @@ func getJoinImpl(inner interface{},
 
 func getUnion(source2 interface{}) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption, first bool) (DataSource, *promise.Future, bool, error) {
+		src2 := From(source2).data
 		reduceSrcChan := make(chan *Chunk)
-		mapChunk := func(c *Chunk) (r *Chunk) {
-			r = &Chunk{NewSlicer(getKeyValues(c, func(v interface{}) interface{} { return v }, nil)), c.Order, c.StartIndex}
-			return
+		if !testCanUseDefaultHash(src, src2){
+			mapChunk := func(c *Chunk) (r *Chunk) {
+				r = &Chunk{NewSlicer(getKeyValues(c, func(v interface{}) interface{} { return v }, nil)), c.Order, c.StartIndex}
+				return
+			}
+	
+			//map the elements of source and source2 to the a KeyValue slice
+			//includes the hash value and the original element
+			f1, reduceSrcChan := parallelMapToChan(src, reduceSrcChan, mapChunk, option)
+			f2, reduceSrcChan := parallelMapToChan(src2, reduceSrcChan, mapChunk, option)
+	
+			mapFuture := promise.WhenAll(f1, f2)
+			addCloseChanCallback(mapFuture, reduceSrcChan)
+	
+			f3, out := reduceDistinctVals(mapFuture, reduceSrcChan, option)
+			return &chanSource{chunkChan: out}, f3, option.KeepOrder, nil
+		} else{
+			go func(){
+				slice1 := src.ToSlice(option.KeepOrder).ToInterfaces()
+				slice2 := src2.ToSlice(false).ToInterfaces();
+				result := make([]interface{}, len(slice1)+len(slice2))
+				_ = copy(result[0:len(slice1)], slice1)
+				_ = copy(result[len(slice1):len(slice1)+len(slice2)], slice2)
+	if size == 0 {
+		f = promise.Wrap([]interface{}{})
+	} else {
+		size, lenOfData := option.ChunkSize, size
+		if size < lenOfData/(numCPU*5) {
+			size = lenOfData / (numCPU * 				
+			}			
 		}
-
-		//map the elements of source and source2 to the a KeyValue slice
-		//includes the hash value and the original element
-		f1, reduceSrcChan := parallelMapToChan(src, reduceSrcChan, mapChunk, option)
-		f2, reduceSrcChan := parallelMapToChan(From(source2).data, reduceSrcChan, mapChunk, option)
-
-		mapFuture := promise.WhenAll(f1, f2)
-		addCloseChanCallback(mapFuture, reduceSrcChan)
-
-		f3, out := reduceDistinctVals(mapFuture, reduceSrcChan, option)
-		return &chanSource{chunkChan: out}, f3, option.KeepOrder, nil
 	})
 }
 

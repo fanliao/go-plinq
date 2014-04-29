@@ -967,3 +967,35 @@ func divide(a interface{}, count float64) (r float64) {
 	}
 	return
 }
+
+//test a value can be used as key in map
+func testCanHash(v interface{}) (ok bool) {
+	defer func() {
+		if e := recover(); e != nil {
+			ok = false
+		}
+	}()
+	m := make(map[interface{}]bool, 1)
+	m[v] = true
+	ok = true
+	return
+}
+
+func testCanUseDefaultHash(src, src2 DataSource) bool {
+	if src.Typ() == SOURCE_CHUNK && src2.Typ() == SOURCE_CHUNK {
+		slicer1 := src.ToSlice(false)
+		if slicer1.Len() > 0 {
+			if testCanHash(slicer1.Index(0)) {
+				return true
+			}
+		}
+
+		slicer2 := src2.ToSlice(false)
+		if slicer2.Len() > 0 {
+			if testCanHash(slicer2.Index(0)) {
+				return true
+			}
+		}
+	}
+	return false
+}
