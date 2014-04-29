@@ -21,6 +21,10 @@ const (
 	kindNoPointers = 0x80
 )
 
+func self(v interface{}) interface{} {
+	return v
+}
+
 //hash an object-----------------------------------------------
 // interfaceHeader is the header for an interface{} value. it is copied from unsafe.emptyInterface
 type interfaceHeader struct {

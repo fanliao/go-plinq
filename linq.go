@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -391,7 +392,7 @@ func (this *Queryable) Select(selectFunc oneArgsFunc, chunkSizes ...int) *Querya
 // Example:
 // 	q := From(users).Distinct()
 func (this *Queryable) Distinct(chunkSizes ...int) *Queryable {
-	return this.DistinctBy(func(v interface{}) interface{} { return v })
+	return this.DistinctBy(self)
 }
 
 // DistinctBy returns a query includes the DistinctBy operation
@@ -1331,7 +1332,7 @@ func (this chanSource) ToChan() chan interface{} {
 
 // hKeyValue be used in Distinct, Join, Union/Intersect operations
 type hKeyValue struct {
-	keyHash uint64
+	keyHash interface{}
 	key     interface{}
 	value   interface{}
 }
@@ -1533,11 +1534,23 @@ func getOrder(compare func(interface{}, interface{}) int) stepAction {
 
 func getDistinct(distinctFunc oneArgsFunc) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption, first bool) (DataSource, *promise.Future, bool, error) {
-		mapChunk := func(c *Chunk) (r *Chunk) {
-			r = &Chunk{NewSlicer(getKeyValues(c, distinctFunc, nil)), c.Order, c.StartIndex}
-			//fmt.Println("distinct, mapchunk==", r.Data.ToInterfaces())
-			return
-		}
+		var useDefHash uint32 = 0
+		mapChunk := getKeyMapChunk(&useDefHash, distinctFunc)
+		//mapChunk := func(c *Chunk) (r *Chunk) {
+		//	if atomic.LoadUint32(&useDefHash) == 1 {
+		//		return &Chunk{NewSlicer(getKeyValues(c, false, distinctFunc, nil)), c.Order, c.StartIndex}
+		//	} else {
+		//		if c.Data.Len() > 0 && testCanHash(distinctFunc(c.Data.Index(0))) {
+		//			atomic.StoreUint32(&useDefHash, 1)
+		//			return &Chunk{NewSlicer(getKeyValues(c, false, distinctFunc, nil)), c.Order, c.StartIndex}
+		//		} else {
+		//			r = &Chunk{NewSlicer(getKeyValues(c, true, distinctFunc, nil)), c.Order, c.StartIndex}
+		//		}
+		//	}
+		//	//r = &Chunk{NewSlicer(getKeyValues(c, distinctFunc, nil)), c.Order, c.StartIndex}
+		//	//fmt.Println("distinct, mapchunk==", r.Data.ToInterfaces())
+		//	return
+		//}
 
 		//test the size = 100, trySequentialMap only speed up 10%
 		//if list, handled := trySequentialMap(src, &option, mapChunk); handled {
@@ -1558,8 +1571,20 @@ func getDistinct(distinctFunc oneArgsFunc) stepAction {
 //note the groupby cannot keep order because the map cannot keep order
 func getGroupBy(groupFunc oneArgsFunc, hashAsKey bool) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption, first bool) (DataSource, *promise.Future, bool, error) {
+
+		var useDefHash uint32 = 0
 		mapChunk := func(c *Chunk) (r *Chunk) {
-			r = &Chunk{NewSlicer(getKeyValues(c, groupFunc, nil)), c.Order, c.StartIndex}
+			if atomic.LoadUint32(&useDefHash) == 1 {
+				r = &Chunk{NewSlicer(getKeyValues(c, false, groupFunc, nil)), c.Order, c.StartIndex}
+			} else {
+				if c.Data.Len() > 0 && testCanHash(groupFunc(c.Data.Index(0))) {
+					atomic.StoreUint32(&useDefHash, 1)
+					r = &Chunk{NewSlicer(getKeyValues(c, false, groupFunc, nil)), c.Order, c.StartIndex}
+				} else {
+					r = &Chunk{NewSlicer(getKeyValues(c, hashAsKey, groupFunc, nil)), c.Order, c.StartIndex}
+				}
+			}
+			//r = &Chunk{NewSlicer(getKeyValues2(c, hashAsKey, groupFunc, nil)), c.Order, c.StartIndex}
 			//fmt.Println("group by, map==", *r)
 			return
 		}
@@ -1570,7 +1595,9 @@ func getGroupBy(groupFunc oneArgsFunc, hashAsKey bool) stepAction {
 		groupKVs := make(map[interface{}]interface{})
 		groupKV := func(v interface{}) {
 			kv := v.(*hKeyValue)
-			k := iif(hashAsKey, kv.keyHash, kv.key)
+			//k := iif(hashAsKey, kv.keyHash, kv.key)
+			//kv := v.(*KeyValue)
+			k := kv.keyHash
 			if v, ok := groupKVs[k]; !ok {
 				groupKVs[k] = []interface{}{kv.value}
 			} else {
@@ -1641,8 +1668,20 @@ func getJoinImpl(inner interface{},
 			}
 		})
 
+		var useDefHash uint32 = 0
 		mapChunk := func(c *Chunk) (r *Chunk) {
-			outerKVs := getKeyValues(c, outerKeySelector, nil)
+			var outerKVs []interface{}
+			if atomic.LoadUint32(&useDefHash) == 1 {
+				outerKVs = getKeyValues(c, false, outerKeySelector, nil)
+			} else {
+				if c.Data.Len() > 0 && testCanHash(outerKeySelector(c.Data.Index(0))) {
+					atomic.StoreUint32(&useDefHash, 1)
+					outerKVs = getKeyValues(c, false, outerKeySelector, nil)
+				} else {
+					outerKVs = getKeyValues(c, true, outerKeySelector, nil)
+				}
+			}
+			//outerKVs := getKeyValues(c, outerKeySelector, nil)
 			results := make([]interface{}, 0, 10)
 
 			if r, err := innerKVtask.Get(); err != nil {
@@ -1675,37 +1714,63 @@ func getUnion(source2 interface{}) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption, first bool) (DataSource, *promise.Future, bool, error) {
 		src2 := From(source2).data
 		reduceSrcChan := make(chan *Chunk)
-		if !testCanUseDefaultHash(src, src2){
-			mapChunk := func(c *Chunk) (r *Chunk) {
-				r = &Chunk{NewSlicer(getKeyValues(c, func(v interface{}) interface{} { return v }, nil)), c.Order, c.StartIndex}
-				return
+		//if !testCanUseDefaultHash(src, src2){
+		var useDefHash uint32 = 0
+		mapChunk := func(c *Chunk) (r *Chunk) {
+			if atomic.LoadUint32(&useDefHash) == 1 {
+				return c
+			} else {
+				if c.Data.Len() > 0 && testCanHash(c.Data.Index(0)) {
+					atomic.StoreUint32(&useDefHash, 1)
+					return c
+				} else {
+					r = &Chunk{NewSlicer(getKeyValues(c, true, self, nil)), c.Order, c.StartIndex}
+				}
 			}
-	
-			//map the elements of source and source2 to the a KeyValue slice
-			//includes the hash value and the original element
-			f1, reduceSrcChan := parallelMapToChan(src, reduceSrcChan, mapChunk, option)
-			f2, reduceSrcChan := parallelMapToChan(src2, reduceSrcChan, mapChunk, option)
-	
-			mapFuture := promise.WhenAll(f1, f2)
-			addCloseChanCallback(mapFuture, reduceSrcChan)
-	
-			f3, out := reduceDistinctVals(mapFuture, reduceSrcChan, option)
-			return &chanSource{chunkChan: out}, f3, option.KeepOrder, nil
-		} else{
-			go func(){
-				slice1 := src.ToSlice(option.KeepOrder).ToInterfaces()
-				slice2 := src2.ToSlice(false).ToInterfaces();
-				result := make([]interface{}, len(slice1)+len(slice2))
-				_ = copy(result[0:len(slice1)], slice1)
-				_ = copy(result[len(slice1):len(slice1)+len(slice2)], slice2)
-	if size == 0 {
-		f = promise.Wrap([]interface{}{})
-	} else {
-		size, lenOfData := option.ChunkSize, size
-		if size < lenOfData/(numCPU*5) {
-			size = lenOfData / (numCPU * 				
-			}			
+			return
 		}
+
+		//map the elements of source and source2 to the a KeyValue slice
+		//includes the hash value and the original element
+		f1, reduceSrcChan := parallelMapToChan(src, reduceSrcChan, mapChunk, option)
+		f2, reduceSrcChan := parallelMapToChan(src2, reduceSrcChan, mapChunk, option)
+
+		mapFuture := promise.WhenAll(f1, f2)
+		addCloseChanCallback(mapFuture, reduceSrcChan)
+
+		f3, out := reduceDistinctVals(mapFuture, reduceSrcChan, option)
+		return &chanSource{chunkChan: out}, f3, option.KeepOrder, nil
+		//		} else{
+		//go func(){
+		//	slice1 := src.ToSlice(false)
+		//	slice2 := src2.ToSlice(false)
+		//	count1, count2, count := slice1.Len(),slice2.Len(),slice1.Len()+slice2.Len()
+
+		//	if count == 0 {
+		//		f = promise.Wrap([]interface{}{})
+		//	} else {
+		//		size, i, end := option.ChunkSize, 0, 0
+		//		if size < count/(numCPU*5) {
+		//			size = count / (numCPU * 5)
+		//		}
+
+		//		for (
+		//			if i * size < count1{
+		//				end := (i+ 1)*size
+		//				if end > count1 {
+		//					end = count1
+		//				}
+		//				reduceSrcChan <- &Chunk{slice1.Slice(i * size, count1)
+
+		//			} else {
+		//			}
+
+		//			if end >= count{
+		//				break
+		//			}
+		//		)
+		//	}
+		//}()
 	})
 }
 
@@ -2244,27 +2309,45 @@ func filterSet(src DataSource, source2 interface{}, isExcept bool, option *Paral
 }
 
 func filterSetByChan(src DataSource, src2 DataSource, isExcept bool, option *ParallelOption) (DataSource, *promise.Future, error) {
+	var useDefHash uint32 = 0
 	mapChunk := func(c *Chunk) (r *Chunk) {
-		rs := mapSlice(c.Data, func(v interface{}) interface{} {
-			return &KeyValue{hash64(v), v}
-		})
-		//r = &Chunk{getKeyValues(c, func(v interface{}) interface{} { return v }, nil), c.Order, c.StartIndex}
-		return &Chunk{NewSlicer(rs), c.Order, c.StartIndex}
+		if atomic.LoadUint32(&useDefHash) == 1 {
+			return c
+		} else {
+			if c.Data.Len() > 0 && testCanHash(c.Data.Index(0)) {
+				atomic.StoreUint32(&useDefHash, 1)
+				return c
+			} else {
+				r = &Chunk{NewSlicer(getKeyValues(c, true, self, nil)), c.Order, c.StartIndex}
+			}
+		}
+		//r = &Chunk{NewSlicer(getKeyValues(c, self, nil)), c.Order, c.StartIndex}
+		return
 	}
 
 	//map the elements of source and source2 to the a KeyValue slice
 	//includes the hash value and the original element
 	_, reduceSrcChan1 := parallelMapToChan(src, nil, mapChunk, option)
 	_, reduceSrcChan2 := parallelMapToChan(src2, nil, func(c *Chunk) (r *Chunk) {
-		rs := mapSlice(c.Data, func(v interface{}) interface{} {
-			return hash64(v)
-		})
-		return &Chunk{NewSlicer(rs), c.Order, c.StartIndex}
+		if atomic.LoadUint32(&useDefHash) == 1 {
+			return c
+		} else {
+			if c.Data.Len() > 0 && testCanHash(c.Data.Index(0)) {
+				atomic.StoreUint32(&useDefHash, 1)
+				return c
+			} else {
+				//r = &Chunk{NewSlicer(getKeyValues(c, self, nil)), c.Order, c.StartIndex}
+				rs := mapSlice(c.Data, func(v interface{}) interface{} {
+					return hash64(v)
+				})
+				return &Chunk{NewSlicer(rs), c.Order, c.StartIndex}
+			}
+		}
 	}, option)
 
-	distinctKVs1 := make(map[uint64]bool, 100)
-	distinctKVs2 := make(map[uint64]bool, 100)
-	resultKVs := make(map[uint64]interface{}, 100)
+	distinctKVs1 := make(map[interface{}]bool, 100)
+	distinctKVs2 := make(map[interface{}]bool, 100)
+	resultKVs := make(map[interface{}]interface{}, 100)
 
 	close1, close2 := false, false
 L1:
@@ -2287,15 +2370,23 @@ L1:
 			}
 
 			forEachSlicer(c1.Data, func(i int, v interface{}) {
-				kv := v.(*KeyValue)
-				k := kv.Key.(uint64)
+				var (
+					k, val interface{}
+				)
+				if kv, ok := v.(*hKeyValue); ok {
+					k, val = kv.keyHash, kv.value
+				} else {
+					k, val = v, v
+				}
+				//kv := v.(*KeyValue)
+				//k := kv.Key.(uint64)
 				//fmt.Println("c1 get", *kv)
 				_, ok := distinctKVs2[k]
 
 				if (isExcept && !ok) || (!isExcept && ok) {
 					//resultKVs[kv.keyHash] = kv.value
 					if _, ok1 := resultKVs[k]; !ok1 {
-						resultKVs[k] = kv.Value
+						resultKVs[k] = val
 					}
 				}
 				if !isExcept {
@@ -2322,7 +2413,7 @@ L1:
 			}
 
 			forEachSlicer(c2.Data, func(i int, v interface{}) {
-				k := v.(uint64)
+				k := v
 				//delete(resultKVs, kv.keyHash)
 				//distinctKVs2[kv.keyHash] = true
 				if isExcept {
@@ -2354,32 +2445,53 @@ L1:
 
 func filterSetByList(src DataSource, src2 DataSource, isExcept bool, option *ParallelOption) (DataSource, *promise.Future, error) {
 	ds2 := src2
+	var useDefHash uint32 = 0
 	f2 := parallelMapListToList(ds2, func(c *Chunk) (r *Chunk) {
-		rs := mapSlice(c.Data, func(v interface{}) interface{} {
-			return hash64(v)
-		})
-		return &Chunk{NewSlicer(rs), c.Order, c.StartIndex}
+		if atomic.LoadUint32(&useDefHash) == 1 {
+			return c
+		} else {
+			if c.Data.Len() > 0 && testCanHash(c.Data.Index(0)) {
+				atomic.StoreUint32(&useDefHash, 1)
+				return c
+			} else {
+				//r = &Chunk{NewSlicer(getKeyValues(c, self, nil)), c.Order, c.StartIndex}
+				rs := mapSlice(c.Data, func(v interface{}) interface{} {
+					return hash64(v)
+				})
+				return &Chunk{NewSlicer(rs), c.Order, c.StartIndex}
+			}
+		}
 	}, option)
 
 	mapChunk := func(c *Chunk) (r *Chunk) {
-		r = &Chunk{NewSlicer(getKeyValues(c, func(v interface{}) interface{} { return v }, nil)), c.Order, c.StartIndex}
+		if atomic.LoadUint32(&useDefHash) == 1 {
+			return c
+		} else {
+			if c.Data.Len() > 0 && testCanHash(c.Data.Index(0)) {
+				atomic.StoreUint32(&useDefHash, 1)
+				return c
+			} else {
+				r = &Chunk{NewSlicer(getKeyValues(c, true, self, nil)), c.Order, c.StartIndex}
+			}
+		}
+		//r = &Chunk{NewSlicer(getKeyValues(c, self, nil)), c.Order, c.StartIndex}
 		return
 	}
 	f1, reduceSrcChan := parallelMapToChan(src, nil, mapChunk, option)
-	var distKVs map[uint64]bool
 
-	resultKVs := make(map[uint64]bool, 100)
+	var distKVs map[interface{}]bool
+	resultKVs := make(map[interface{}]bool, 100)
 	mapDistinct := func(c *Chunk) *Chunk {
 		if distKVs == nil {
 			if rs, err := f2.Get(); err != nil {
 				panic(err)
 			} else {
 				//kv2s := ds2.ToSlice(false)
-				distKVs = make(map[uint64]bool, 100)
+				distKVs = make(map[interface{}]bool, 100)
 				for _, c := range rs.([]interface{}) {
 					chunk := c.(*Chunk)
 					forEachSlicer(chunk.Data, func(i int, v interface{}) {
-						distKVs[v.(uint64)] = true
+						distKVs[v] = true
 					})
 				}
 			}
@@ -2390,13 +2502,20 @@ func filterSetByList(src DataSource, src2 DataSource, isExcept bool, option *Par
 		size := c.Data.Len()
 		results := make([]interface{}, size)
 		forEachSlicer(c.Data, func(i int, v interface{}) {
-			kv := v.(*hKeyValue)
-			k := kv.keyHash
+			var (
+				k, val interface{}
+			)
+			if kv, ok := v.(*hKeyValue); ok {
+				k, val = kv.keyHash, kv.value
+			} else {
+				k, val = v, v
+			}
+
 			_, ok := distKVs[k]
 			if (isExcept && !ok) || (!isExcept && ok) {
 				if _, ok := resultKVs[k]; !ok {
 					resultKVs[k] = true
-					results[count] = kv.value
+					results[count] = val
 					count++
 				}
 			}
@@ -2506,12 +2625,12 @@ func parallelMapListToChan(src DataSource, out chan *Chunk, task func(*Chunk) *C
 
 	var f *promise.Future
 	data := src.ToSlice(false)
-	size := data.Len()
+	lenOfData := data.Len()
 	//fmt.Println("parallelMapListToChan, data=", reflect.ValueOf(data).Type(), data.ToInterfaces())
-	if size == 0 {
+	if lenOfData == 0 {
 		f = promise.Wrap([]interface{}{})
 	} else {
-		size, lenOfData := option.ChunkSize, size
+		size := option.ChunkSize
 		if size < lenOfData/(numCPU*5) {
 			size = lenOfData / (numCPU * 5)
 		}
@@ -2768,7 +2887,7 @@ func reduceChan(f *promise.Future, src chan *Chunk, reduce func(*Chunk)) interfa
 //the functions reduces the paralleliam map result----------------------------------------------------------
 func reduceDistinctVals(mapFuture *promise.Future, reduceSrcChan chan *Chunk, option *ParallelOption) (f *promise.Future, out chan *Chunk) {
 	//get distinct values
-	distKVs := make(map[uint64]int)
+	distKVs := make(map[interface{}]int)
 	option.Degree = 1
 	return parallelMapChanToChan(&chanSource{chunkChan: reduceSrcChan, future: mapFuture}, nil, func(c *Chunk) *Chunk {
 		r := distinctChunkVals(c, distKVs)
@@ -2778,17 +2897,24 @@ func reduceDistinctVals(mapFuture *promise.Future, reduceSrcChan chan *Chunk, op
 }
 
 //util functions-----------------------------------------------------------------
-func distinctChunkVals(c *Chunk, distKVs map[uint64]int) *Chunk {
+func distinctChunkVals(c *Chunk, distKVs map[interface{}]int) *Chunk {
 	size := c.Data.Len()
 	result := make([]interface{}, size)
 	count := 0
 	forEachSlicer(c.Data, func(i int, v interface{}) {
-		kv := v.(*hKeyValue)
-		//fmt.Println("distinctChunkVals get==", i, v, kv)
-		if _, ok := distKVs[kv.keyHash]; !ok {
-			distKVs[kv.keyHash] = 1
-			result[count] = kv.value
-			count++
+		if kv, ok := v.(*hKeyValue); ok {
+			//fmt.Println("distinctChunkVals get==", i, v, kv)
+			if _, ok := distKVs[kv.keyHash]; !ok {
+				distKVs[kv.keyHash] = 1
+				result[count] = kv.value
+				count++
+			}
+		} else {
+			if _, ok := distKVs[v]; !ok {
+				distKVs[v] = 1
+				result[count] = v
+				count++
+			}
 		}
 	})
 	c.Data = NewSlicer(result[0:count])
@@ -2870,6 +2996,40 @@ func mapSlice2(src Slicer, f oneArgsFunc) []interface{} {
 		return s.data
 	} else {
 		panic(errors.New("mapSlice2, Unsupport type"))
+	}
+}
+
+func getKeyMapChunk(useDefHash *uint32, converter oneArgsFunc) func(c *Chunk) (r *Chunk) {
+	return func(c *Chunk) (r *Chunk) {
+
+		useValAsKey := false
+		canUseDefHash := atomic.LoadUint32(useDefHash)
+		if canUseDefHash == 1 {
+			useValAsKey = true
+		} else if canUseDefHash == 0 {
+			if c.Data.Len() > 0 && testCanHash(converter(c.Data.Index(0))) {
+				atomic.StoreUint32(useDefHash, 1)
+				useValAsKey = true
+			} else {
+				atomic.StoreUint32(useDefHash, 1000)
+				useValAsKey = false
+			}
+		} else {
+			useValAsKey = false
+		}
+
+		if useValAsKey {
+			if converter == nil {
+				r = c
+			} else {
+				r = &Chunk{NewSlicer(getKeyValues(c, false, converter, nil)), c.Order, c.StartIndex}
+			}
+		} else {
+			r = &Chunk{NewSlicer(getKeyValues(c, true, converter, nil)), c.Order, c.StartIndex}
+		}
+		//r = &Chunk{NewSlicer(getKeyValues(c, distinctFunc, nil)), c.Order, c.StartIndex}
+		//fmt.Println("distinct, mapchunk==", r.Data.ToInterfaces())
+		return
 	}
 }
 
@@ -2963,10 +3123,25 @@ func ceilChunkSize(a int, b int) int {
 	}
 }
 
-func getKeyValues(c *Chunk, keyFunc func(v interface{}) interface{}, KeyValues *[]interface{}) []interface{} {
+func getKeyValues(c *Chunk, hashAsKey bool, keyFunc func(v interface{}) interface{}, KeyValues *[]interface{}) []interface{} {
 	return mapSlice(c.Data, func(v interface{}) interface{} {
 		k := keyFunc(v)
-		return &hKeyValue{hash64(k), k, v}
+		if hashAsKey {
+			return &hKeyValue{hash64(k), k, v}
+		} else {
+			return &hKeyValue{k, k, v}
+		}
+
+	})
+}
+
+func getKeyValues2(c *Chunk, hashAsKey bool, keyFunc func(v interface{}) interface{}, KeyValues *[]interface{}) []interface{} {
+	return mapSlice(c.Data, func(v interface{}) interface{} {
+		k := keyFunc(v)
+		if hashAsKey {
+			k = hash64(k)
+		}
+		return &KeyValue{k, v}
 	})
 }
 
