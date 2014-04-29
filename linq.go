@@ -2231,9 +2231,9 @@ func parallelMatchListByDirection(src DataSource, getAction func(*Chunk, promise
 			}()
 			c := &Chunk{data, 0, 0}
 			if r, found := getAction(c, nil); found {
-				f.Reslove(r)
+				f.Resolve(r)
 			} else {
-				f.Reslove(-1)
+				f.Resolve(-1)
 			}
 		}()
 		return f.Future
