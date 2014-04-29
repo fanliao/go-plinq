@@ -164,7 +164,7 @@ func hashValue(dataPtr unsafe.Pointer, size uintptr, hashObj *sHash) {
 	}
 }
 
-func hash64(data interface{}) uint64 {
+func hash64(data interface{}) interface{} {
 	dataPtr, size := dataPtr(data)
 	sh := NewSHash()
 	hashByPtr(dataPtr, size, sh)
