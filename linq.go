@@ -385,6 +385,13 @@ func (this *Queryable) Select(selectFunc oneArgsFunc, chunkSizes ...int) *Querya
 	return this
 }
 
+func (this *Queryable) SelectMany(selectManyFunc func(interface{}) []interface{}, chunkSizes ...int) *Queryable {
+	mustNotNil(selectManyFunc, ErrNilAction)
+
+	this.steps = append(this.steps, commonStep{ACT_SELECTMANY, selectManyFunc, getChunkSizeArg(chunkSizes...)})
+	return this
+}
+
 // Distinct returns a query includes the Distinct operation
 // Distinct operation distinct elements from the data source.
 //
@@ -1028,6 +1035,7 @@ type hKeyValue struct {
 //the struct and functions of each operation-------------------------------------------------------------------------
 const (
 	ACT_SELECT int = iota
+	ACT_SELECTMANY
 	ACT_WHERE
 	ACT_GROUPBY
 	ACT_HGROUPBY
@@ -1103,6 +1111,8 @@ func (this commonStep) Action() (act stepAction) {
 		act = getSelect(this.act.(oneArgsFunc))
 	case ACT_WHERE:
 		act = getWhere(this.act.(predicateFunc))
+	case ACT_SELECTMANY:
+		act = getSelectMany(this.act.(func(interface{}) []interface{}))
 	case ACT_DISTINCT:
 		act = getDistinct(this.act.(oneArgsFunc))
 	case ACT_ORDERBY:
@@ -1159,6 +1169,28 @@ func getSelect(selectFunc oneArgsFunc) stepAction {
 				results := mapSlice2(c.Data, selectFunc)
 				return &Chunk{NewSlicer(results), c.Order, c.StartIndex}
 			}
+		}
+
+		//try to use sequentail if the size of the data is less than size of chunk
+		if list, err, handled := trySequentialMap(src, option, mapChunk); handled {
+			return list, nil, option.KeepOrder, err
+		}
+
+		f, out := parallelMapToChan(src, nil, mapChunk, option)
+		sf, dst, e = f, &chanSource{chunkChan: out}, nil
+
+		return
+	})
+
+}
+
+// Get the action function for select operation
+func getSelectMany(selectManyFunc func(interface{}) []interface{}) stepAction {
+	return stepAction(func(src DataSource, option *ParallelOption, first bool) (dst DataSource, sf *promise.Future, keep bool, e error) {
+		keep = option.KeepOrder
+		mapChunk := func(c *Chunk) *Chunk {
+			results := mapSliceToMany(c.Data, selectManyFunc)
+			return &Chunk{NewSlicer(results), c.Order, c.StartIndex}
 		}
 
 		//try to use sequentail if the size of the data is less than size of chunk
@@ -1247,7 +1279,7 @@ func getDistinct(distinctFunc oneArgsFunc) stepAction {
 		//	c = distinctChunkVals(c, distKVs)
 		//	return &listSource{c.Data}, nil, option.KeepOrder, nil
 		//}
-		option.ChunkSize = DEFAULTMINCUNKSIZE
+		//option.ChunkSize = DEFAULTMINCUNKSIZE
 		//map the element to a keyValue that key is hash value and value is element
 		f, reduceSrcChan := parallelMapToChan(src, nil, mapChunk, option)
 
@@ -1338,7 +1370,7 @@ func getJoinImpl(inner interface{},
 	unmatchSelector func(*hKeyValue, *[]interface{}), isLeftJoin bool) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption, first bool) (dst DataSource, sf *promise.Future, keep bool, e error) {
 		keep = option.KeepOrder
-		option.ChunkSize = DEFAULTMINCUNKSIZE
+		//option.ChunkSize = DEFAULTMINCUNKSIZE
 		innerKVtask := promise.Start(func() (interface{}, error) {
 			if innerKVsDs, err := From(inner).hGroupBy(innerKeySelector).execute(); err == nil {
 				return innerKVsDs.(*listSource).data.(*mapSlicer).data, nil
@@ -2486,10 +2518,20 @@ func forEachSlicer(src Slicer, f func(int, interface{})) {
 	}
 }
 
-func mapSlice(src Slicer, f oneArgsFunc) []interface{} {
-	var dst []interface{}
+func mapSliceToMany(src Slicer, f func(interface{}) []interface{}) []interface{} {
 	size := src.Len()
-	dst = make([]interface{}, size)
+	dst := make([]interface{}, 0, size)
+
+	for i := 0; i < size; i++ {
+		rs := f(src.Index(i))
+		dst = appendSlice(dst, rs...)
+	}
+	return dst
+}
+
+func mapSlice(src Slicer, f oneArgsFunc) []interface{} {
+	size := src.Len()
+	dst := make([]interface{}, size)
 
 	for i := 0; i < size; i++ {
 		dst[i] = f(src.Index(i))
@@ -2626,15 +2668,29 @@ func expandChunks(src []interface{}, keepOrder bool) []interface{} {
 	return result
 }
 
-func appendSlice(src []interface{}, v interface{}) []interface{} {
-	c, l := cap(src), len(src)
-	if c >= l+1 {
-		return append(src, v)
+func max(i, j int) int {
+	if i > j {
+		return i
 	} else {
-		//reslice
-		newSlice := make([]interface{}, l, 2*c)
+		return j
+	}
+}
+
+func appendSlice(src []interface{}, vs ...interface{}) []interface{} {
+	c, l := cap(src), len(src)
+	if c <= l+len(vs) {
+		newSlice := make([]interface{}, l, max(2*c, l+len(vs)))
 		_ = copy(newSlice[0:l], src)
-		return append(newSlice, v)
+		for _, v := range vs {
+			//reslice
+			newSlice = append(newSlice, v)
+		}
+		return newSlice
+	} else {
+		for _, v := range vs {
+			src = append(src, v)
+		}
+		return src
 	}
 }
 
