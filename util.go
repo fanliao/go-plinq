@@ -596,27 +596,33 @@ func (e *stepErr) Error() string {
 func stepTypToString(typ int) string {
 	switch typ {
 	case ACT_SELECT:
-		return "SELECT opretion"
+		return "Select opretion"
 	case ACT_WHERE:
-		return "WHERE opretion"
+		return "Where opretion"
 	case ACT_GROUPBY:
-		return "GROUPBY opretion"
+		return "GroupBy opretion"
 	case ACT_HGROUPBY:
-		return "HGROUPBY opretion"
+		return "HGroupBy opretion"
 	case ACT_ORDERBY:
-		return "ORDERBY opretion"
+		return "OrderBy opretion"
 	case ACT_DISTINCT:
-		return "DISTINCT opretion"
+		return "Distinct opretion"
 	case ACT_JOIN:
-		return "JOIN opretion"
+		return "Join opretion"
 	case ACT_GROUPJOIN:
-		return "GROUPJOIN opretion"
+		return "GroupJoin opretion"
 	case ACT_UNION:
-		return "UNION opretion"
+		return "Union opretion"
 	case ACT_CONCAT:
-		return "CONCAT opretion"
+		return "Concat opretion"
 	case ACT_INTERSECT:
-		return "INTERSECT opretion"
+		return "Intersect opretion"
+	case ACT_REVERSE:
+		return "Reverse opretion"
+	case ACT_EXCEPT:
+		return "Except opretion"
+	case ACT_AGGREGATE:
+		return "Aggregate opretion"
 	case ACT_SKIP:
 		return "Skip opretion"
 	case ACT_SKIPWHILE:
@@ -625,6 +631,8 @@ func stepTypToString(typ int) string {
 		return "Take opretion"
 	case ACT_TAKEWHILE:
 		return "TakeWhile opretion"
+	case ACT_ELEMENTAT:
+		return "ElementAt opretion"
 	default:
 		return "unknown opretion" + strconv.Itoa(typ)
 	}
