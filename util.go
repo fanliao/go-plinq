@@ -986,7 +986,7 @@ func testCanHash(v interface{}) (ok bool) {
 }
 
 func testCanUseDefaultHash(src, src2 DataSource) bool {
-	if src.Typ() == SOURCE_CHUNK && src2.Typ() == SOURCE_CHUNK {
+	if src.Typ() == SOURCE_CHANNEL && src2.Typ() == SOURCE_CHANNEL {
 		slicer1 := src.ToSlice(false)
 		if slicer1.Len() > 0 {
 			if testCanHash(slicer1.Index(0)) {

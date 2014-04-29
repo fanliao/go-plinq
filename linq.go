@@ -9,14 +9,13 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
-	"time"
 )
 
 const (
 	DEFAULTCHUNKSIZE       = 100
 	DEFAULTMINCUNKSIZE     = 20
 	SOURCE_LIST        int = iota //presents the list source
-	SOURCE_CHUNK                  //presents the channel source
+	SOURCE_CHANNEL                //presents the channel source
 )
 
 var (
@@ -807,285 +806,6 @@ func newQueryable(ds DataSource) (q *Queryable) {
 	return
 }
 
-//The Slicer interface and structs----------------------------------
-type Slicer interface {
-	Len() int
-	Slice(i, j int) Slicer
-	Index(i int) interface{}
-	ToInterfaces() []interface{}
-	Elem() Slicer
-}
-
-//interfaceSlicer
-type interfaceSlicer struct {
-	data []interface{}
-}
-
-func (this *interfaceSlicer) Len() int {
-	return len(this.data)
-}
-
-func (this *interfaceSlicer) Slice(i, j int) Slicer {
-	return &interfaceSlicer{this.data[i:j]}
-}
-
-func (this *interfaceSlicer) Index(i int) interface{} {
-	return this.data[i]
-}
-
-func (this *interfaceSlicer) ToInterfaces() []interface{} {
-	return this.data
-}
-
-func (this *interfaceSlicer) Elem() Slicer {
-	return this
-}
-
-//valueSlicer
-type valueSlicer struct {
-	data reflect.Value
-}
-
-func (this *valueSlicer) Len() int {
-	return this.data.Len()
-}
-
-func (this *valueSlicer) Slice(i, j int) Slicer {
-	return &valueSlicer{this.data.Slice(i, j)}
-}
-
-func (this *valueSlicer) Index(i int) interface{} {
-	return this.data.Index(i).Interface()
-}
-
-func (this *valueSlicer) Elem() Slicer {
-	return this
-}
-
-func (this *valueSlicer) ToInterfaces() []interface{} {
-	size := this.data.Len()
-	rs := make([]interface{}, size)
-	for i := 0; i < size; i++ {
-		rs[i] = this.data.Index(i).Interface()
-	}
-	fmt.Println("WARNING: convert valueSlicer to interfaces")
-	fmt.Println(newErrorWithStacks("aa").Error())
-	return rs
-}
-
-//ptrSlicer
-type ptrSlicer struct {
-	data reflect.Value
-}
-
-func (this *ptrSlicer) Len() int {
-	return this.data.Elem().Len()
-}
-
-func (this *ptrSlicer) Slice(i, j int) Slicer {
-	return &valueSlicer{this.data.Elem().Slice(i, i)}
-}
-
-func (this *ptrSlicer) Index(i int) interface{} {
-	return this.data.Elem().Index(i).Interface()
-}
-
-func (this *ptrSlicer) Elem() Slicer {
-	return &valueSlicer{this.data.Elem()}
-}
-
-func (this *ptrSlicer) ToInterfaces() []interface{} {
-	elem := this.data.Elem()
-	return (&valueSlicer{elem}).ToInterfaces()
-}
-
-//stringSlicer
-type stringSlicer struct {
-	data []string
-}
-
-func (this *stringSlicer) Len() int {
-	return len(this.data)
-}
-
-func (this *stringSlicer) Slice(i, j int) Slicer {
-	return &stringSlicer{this.data[i:j]}
-}
-
-func (this *stringSlicer) Index(i int) interface{} {
-	return this.data[i]
-}
-
-func (this *stringSlicer) Elem() Slicer {
-	return this
-}
-
-func (this *stringSlicer) ToInterfaces() []interface{} {
-	size := len(this.data)
-	rs := make([]interface{}, size)
-	for i := 0; i < size; i++ {
-		rs[i] = this.data[i]
-	}
-	return rs
-}
-
-//intSlicer
-type intSlicer struct {
-	data []int
-}
-
-func (this *intSlicer) Len() int {
-	return len(this.data)
-}
-
-func (this *intSlicer) Slice(i, j int) Slicer {
-	return &intSlicer{this.data[i:j]}
-}
-
-func (this *intSlicer) Index(i int) interface{} {
-	return this.data[i]
-}
-
-func (this *intSlicer) ToInterfaces() []interface{} {
-	size := len(this.data)
-	rs := make([]interface{}, size)
-	for i := 0; i < size; i++ {
-		rs[i] = this.data[i]
-	}
-	return rs
-}
-
-func (this *intSlicer) Elem() Slicer {
-	return this
-}
-
-//timeSlicer
-type timeSlicer struct {
-	data []time.Time
-}
-
-func (this *timeSlicer) Len() int {
-	return len(this.data)
-}
-
-func (this *timeSlicer) Slice(i, j int) Slicer {
-	return &timeSlicer{this.data[i:j]}
-}
-
-func (this *timeSlicer) Index(i int) interface{} {
-	return this.data[i]
-}
-
-func (this *timeSlicer) ToInterfaces() []interface{} {
-	size := len(this.data)
-	rs := make([]interface{}, size)
-	for i := 0; i < size; i++ {
-		rs[i] = this.data[i]
-	}
-	return rs
-}
-
-func (this *timeSlicer) Elem() Slicer {
-	return this
-}
-
-//mapSlicer
-type mapSlicer struct {
-	data map[interface{}]interface{}
-}
-
-func (this *mapSlicer) Len() int {
-	return len(this.data)
-}
-
-func (this *mapSlicer) Slice(i, j int) Slicer {
-	panic(errors.New("Map doesn't support slice(i,j)"))
-}
-
-func (this *mapSlicer) Index(i int) interface{} {
-	panic(errors.New("Map doesn't support Index(i)"))
-}
-
-func (this *mapSlicer) ToInterfaces() []interface{} {
-	rs := make([]interface{}, len(this.data))
-	i := 0
-	for k, v := range this.data {
-		rs[i] = &KeyValue{k, v}
-		i++
-	}
-	return rs
-}
-
-func (this *mapSlicer) Elem() Slicer {
-	return this
-}
-
-//mapValueSlicer
-type mapValueSlicer struct {
-	data reflect.Value
-}
-
-func (this *mapValueSlicer) Len() int {
-	return this.data.Len()
-}
-
-func (this *mapValueSlicer) Slice(i, j int) Slicer {
-	panic(errors.New("Map doesn't support slice(i,j)"))
-}
-
-func (this *mapValueSlicer) Index(i int) interface{} {
-	panic(errors.New("Map doesn't support Index(i)"))
-}
-
-func (this *mapValueSlicer) ToInterfaces() []interface{} {
-	size := this.data.Len()
-	results := make([]interface{}, size)
-	for i, k := range this.data.MapKeys() {
-		results[i] = &KeyValue{k.Interface(), this.data.MapIndex(k).Interface()}
-	}
-	return results
-}
-
-func (this *mapValueSlicer) Elem() Slicer {
-	return this
-}
-
-func NewSlicer(data interface{}) Slicer {
-	//fmt.Println("NewSlicer, data===", data)
-	if s, ok := data.(Slicer); ok {
-		return s
-	}
-	switch v := data.(type) {
-	case []interface{}:
-		//fmt.Println("NewSlicer, interfaceSlicer===", data)
-		return &interfaceSlicer{v}
-	case []int:
-		return &intSlicer{v}
-	case []string:
-		return &stringSlicer{v}
-	case []time.Time:
-		return &timeSlicer{v}
-	case map[interface{}]interface{}:
-		return &mapSlicer{v}
-	default:
-		val := reflect.ValueOf(data)
-		switch val.Kind() {
-		case reflect.Ptr:
-			//fmt.Println("NewSlicer, ptrSlicer===", data)
-			return &ptrSlicer{val}
-		case reflect.Slice:
-			//fmt.Println("NewSlicer, valueSlicer===", data)
-			return &valueSlicer{val}
-		case reflect.Map:
-			//fmt.Println("NewSlicer, valueSlicer===", data)
-			return &mapValueSlicer{val}
-		default:
-			panic(ErrUnsupportSource)
-		}
-		//return &valueSlicer{reflect.ValueOf(data)}
-	}
-}
-
 //The listsource and chanSource structs----------------------------------
 // listSource presents the slice or map source
 type listSource struct {
@@ -1105,13 +825,6 @@ func (this listSource) ToSlice(keepOrder bool) Slicer {
 func (this listSource) ToChan() chan interface{} {
 	out := make(chan interface{})
 	go func() {
-		//for _, v := range this.ToSlice(false) {
-		//	out <- v
-		//}
-		//size := this.data.Len()
-		//for i := 0; i < size; i++ {
-		//	out <- this.data.Index(i)
-		//}
 		forEachSlicer(this.data, func(i int, v interface{}) {
 			out <- v
 		})
@@ -1119,29 +832,6 @@ func (this listSource) ToChan() chan interface{} {
 	}()
 	return out
 }
-
-//func getSlice(v reflect.Value) []interface{} {
-//	switch v.Kind() {
-//	case reflect.Slice:
-//		size := v.Len()
-//		results := make([]interface{}, size)
-//		for i := 0; i < size; i++ {
-//			results[i] = v.Index(i).Interface()
-//		}
-//		return results
-//	case reflect.Map:
-//		size := v.Len()
-//		results := make([]interface{}, size)
-//		for i, k := range v.MapKeys() {
-//			results[i] = &KeyValue{k.Interface(), v.MapIndex(k).Interface()}
-//		}
-//		return results
-//	case reflect.Ptr:
-//		ov := v.Elem()
-//		return getSlice(ov)
-//	}
-//	return nil
-//}
 
 func newListSource(data interface{}) *listSource {
 	return &listSource{NewSlicer(data)}
@@ -1156,11 +846,10 @@ type chanSource struct {
 	data      interface{}
 	chunkChan chan *Chunk
 	future    *promise.Future
-	//chunkSize int
 }
 
 func (this chanSource) Typ() int {
-	return SOURCE_CHUNK
+	return SOURCE_CHANNEL
 }
 
 func sendChunk(out chan *Chunk, c *Chunk) (closed bool) {
@@ -1536,21 +1225,6 @@ func getDistinct(distinctFunc oneArgsFunc) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption, first bool) (DataSource, *promise.Future, bool, error) {
 		var useDefHash uint32 = 0
 		mapChunk := getMapChunkToKVChunk(&useDefHash, distinctFunc)
-		//mapChunk := func(c *Chunk) (r *Chunk) {
-		//	if atomic.LoadUint32(&useDefHash) == 1 {
-		//		return &Chunk{NewSlicer(getKeyValues(c, false, distinctFunc, nil)), c.Order, c.StartIndex}
-		//	} else {
-		//		if c.Data.Len() > 0 && testCanHash(distinctFunc(c.Data.Index(0))) {
-		//			atomic.StoreUint32(&useDefHash, 1)
-		//			return &Chunk{NewSlicer(getKeyValues(c, false, distinctFunc, nil)), c.Order, c.StartIndex}
-		//		} else {
-		//			r = &Chunk{NewSlicer(getKeyValues(c, true, distinctFunc, nil)), c.Order, c.StartIndex}
-		//		}
-		//	}
-		//	//r = &Chunk{NewSlicer(getKeyValues(c, distinctFunc, nil)), c.Order, c.StartIndex}
-		//	//fmt.Println("distinct, mapchunk==", r.Data.ToInterfaces())
-		//	return
-		//}
 
 		//test the size = 100, trySequentialMap only speed up 10%
 		//if list, handled := trySequentialMap(src, &option, mapChunk); handled {
@@ -1574,21 +1248,6 @@ func getGroupBy(groupFunc oneArgsFunc, hashAsKey bool) stepAction {
 
 		var useDefHash uint32 = 0
 		mapChunk := getMapChunkToKVChunk(&useDefHash, groupFunc)
-		//mapChunk := func(c *Chunk) (r *Chunk) {
-		//	if atomic.LoadUint32(&useDefHash) == 1 {
-		//		r = &Chunk{NewSlicer(getKeyValues(c, false, groupFunc, nil)), c.Order, c.StartIndex}
-		//	} else {
-		//		if c.Data.Len() > 0 && testCanHash(groupFunc(c.Data.Index(0))) {
-		//			atomic.StoreUint32(&useDefHash, 1)
-		//			r = &Chunk{NewSlicer(getKeyValues(c, false, groupFunc, nil)), c.Order, c.StartIndex}
-		//		} else {
-		//			r = &Chunk{NewSlicer(getKeyValues(c, hashAsKey, groupFunc, nil)), c.Order, c.StartIndex}
-		//		}
-		//	}
-		//	//r = &Chunk{NewSlicer(getKeyValues2(c, hashAsKey, groupFunc, nil)), c.Order, c.StartIndex}
-		//	//fmt.Println("group by, map==", *r)
-		//	return
-		//}
 
 		//map the element to a keyValue that key is group key and value is element
 		f, reduceSrc := parallelMapToChan(src, nil, mapChunk, option)
@@ -1673,18 +1332,6 @@ func getJoinImpl(inner interface{},
 		//mapChunk := getMapChunkToKVChunk(&useDefHash, outerKeySelector)
 		mapChunk := func(c *Chunk) (r *Chunk) {
 			outerKVs := getMapChunkToKVs(&useDefHash, outerKeySelector)(c).ToInterfaces()
-			//var outerKVs []interface{}
-			//if atomic.LoadUint32(&useDefHash) == 1 {
-			//	outerKVs = getKeyValues(c, false, outerKeySelector, nil)
-			//} else {
-			//	if c.Data.Len() > 0 && testCanHash(outerKeySelector(c.Data.Index(0))) {
-			//		atomic.StoreUint32(&useDefHash, 1)
-			//		outerKVs = getKeyValues(c, false, outerKeySelector, nil)
-			//	} else {
-			//		outerKVs = getKeyValues(c, true, outerKeySelector, nil)
-			//	}
-			//}
-			//outerKVs := getKeyValues(c, outerKeySelector, nil)
 			results := make([]interface{}, 0, 10)
 
 			if r, err := innerKVtask.Get(); err != nil {
@@ -1720,19 +1367,6 @@ func getUnion(source2 interface{}) stepAction {
 		//if !testCanUseDefaultHash(src, src2){
 		var useDefHash uint32 = 0
 		mapChunk := getMapChunkToKVChunk(&useDefHash, nil)
-		//mapChunk := func(c *Chunk) (r *Chunk) {
-		//	if atomic.LoadUint32(&useDefHash) == 1 {
-		//		return c
-		//	} else {
-		//		if c.Data.Len() > 0 && testCanHash(c.Data.Index(0)) {
-		//			atomic.StoreUint32(&useDefHash, 1)
-		//			return c
-		//		} else {
-		//			r = &Chunk{NewSlicer(getKeyValues(c, true, self, nil)), c.Order, c.StartIndex}
-		//		}
-		//	}
-		//	return
-		//}
 
 		//map the elements of source and source2 to the a KeyValue slice
 		//includes the hash value and the original element
@@ -1744,37 +1378,6 @@ func getUnion(source2 interface{}) stepAction {
 
 		f3, out := reduceDistinctVals(mapFuture, reduceSrcChan, option)
 		return &chanSource{chunkChan: out}, f3, option.KeepOrder, nil
-		//		} else{
-		//go func(){
-		//	slice1 := src.ToSlice(false)
-		//	slice2 := src2.ToSlice(false)
-		//	count1, count2, count := slice1.Len(),slice2.Len(),slice1.Len()+slice2.Len()
-
-		//	if count == 0 {
-		//		f = promise.Wrap([]interface{}{})
-		//	} else {
-		//		size, i, end := option.ChunkSize, 0, 0
-		//		if size < count/(numCPU*5) {
-		//			size = count / (numCPU * 5)
-		//		}
-
-		//		for (
-		//			if i * size < count1{
-		//				end := (i+ 1)*size
-		//				if end > count1 {
-		//					end = count1
-		//				}
-		//				reduceSrcChan <- &Chunk{slice1.Slice(i * size, count1)
-
-		//			} else {
-		//			}
-
-		//			if end >= count{
-		//				break
-		//			}
-		//		)
-		//	}
-		//}()
 	})
 }
 
@@ -2015,50 +1618,6 @@ func getSkipTake(foundMatch func(*Chunk, promise.Canceller) (int, bool), isTake 
 					}
 					return false
 				})
-				//foundFirstMatch := false
-
-				////Noted the order of sent from source chan maybe confused
-				//for c := range srcChan {
-				//	if isNil(c) {
-				//		if cap(srcChan) > 0 {
-				//			s.Close()
-				//			break
-				//		} else {
-				//			continue
-				//		}
-				//	}
-
-				//	if !foundFirstMatch {
-				//		//检查块是否存在不匹配的数据，按Index计算的总是返回flase，因为必须要等前面所有的块已经排好序后才能得到正确的索引
-				//		chunkResult := &chunkWhileResult{chunk: c}
-				//		if !useIndex {
-				//			chunkResult.whileIdx, chunkResult.match = foundMatch(c, nil)
-				//			//fmt.Println("\nfound no match---", c, chunkResult.match)
-				//		}
-
-				//		//判断是否找到了第一个匹配的块
-				//		if foundFirstMatch = avl.handleChunk(chunkResult); foundFirstMatch {
-				//			if isTake {
-				//				s.Close()
-				//				break
-				//			}
-				//		}
-				//	} else {
-				//		//如果已经找到了第一个匹配的块，则此后的块直接处理即可
-				//		if !isTake {
-				//			sendChunk(out, c)
-				//		} else {
-				//			break
-				//		}
-				//	}
-				//}
-
-				//if s.future != nil {
-				//	if _, err := s.future.Get(); err != nil {
-				//		return nil, err
-				//	}
-				//}
-				//return nil, nil
 			})
 			addCloseChanCallback(f, out)
 
@@ -2189,40 +1748,6 @@ func getFirstElement(src DataSource, foundMatch func(c *Chunk, canceller promise
 				}
 				return false
 			})
-			//for c := range srcChan {
-			//	if isNil(c) {
-			//		if cap(srcChan) > 0 {
-			//			s.Close()
-			//			break
-			//		} else {
-			//			continue
-			//		}
-			//	}
-
-			//	if !found {
-			//		chunkResult := &chunkWhileResult{chunk: c}
-			//		if !useIndex {
-			//			chunkResult.whileIdx, chunkResult.match = foundMatch(c, nil)
-			//		}
-			//		//fmt.Println("check", c, chunkResult, found)
-			//		found = avl.handleChunk(chunkResult)
-			//		//fmt.Println("after check", c, chunkResult, found)
-			//		if found {
-			//			//element = c.chunk.Data[idx]
-			//			s.Close()
-			//			break
-			//		}
-			//	} else {
-			//		//如果已经找到了正确的块，则此后的块直接跳过
-			//		break
-			//	}
-			//}
-			//if s.future != nil {
-			//	if _, err := s.future.Get(); err != nil {
-			//		return nil, err
-			//	}
-			//}
-			//return nil, nil
 		})
 
 		if _, err := f.Get(); err != nil {
@@ -2322,41 +1847,11 @@ func filterSetByChan(src DataSource, src2 DataSource, isExcept bool, option *Par
 		slicer := getMapChunkToKeyList(&useDefHash, nil, getResult)(c)
 		return &Chunk{slicer, c.Order, c.StartIndex}
 	}
-	//mapChunk := func(c *Chunk) (r *Chunk) {
-	//	if atomic.LoadUint32(&useDefHash) == 1 {
-	//		return c
-	//	} else {
-	//		if c.Data.Len() > 0 && testCanHash(c.Data.Index(0)) {
-	//			atomic.StoreUint32(&useDefHash, 1)
-	//			return c
-	//		} else {
-	//			r = &Chunk{NewSlicer(getKeyValues(c, true, self, nil)), c.Order, c.StartIndex}
-	//		}
-	//	}
-	//	//r = &Chunk{NewSlicer(getKeyValues(c, self, nil)), c.Order, c.StartIndex}
-	//	return
-	//}
 
 	//map the elements of source and source2 to the a KeyValue slice
 	//includes the hash value and the original element
 	_, reduceSrcChan1 := parallelMapToChan(src, nil, mapChunk, option)
 	_, reduceSrcChan2 := parallelMapToChan(src2, nil, mapChunk2, option)
-	//_, reduceSrcChan2 := parallelMapToChan(src2, nil, func(c *Chunk) (r *Chunk) {
-	//	if atomic.LoadUint32(&useDefHash) == 1 {
-	//		return c
-	//	} else {
-	//		if c.Data.Len() > 0 && testCanHash(c.Data.Index(0)) {
-	//			atomic.StoreUint32(&useDefHash, 1)
-	//			return c
-	//		} else {
-	//			//r = &Chunk{NewSlicer(getKeyValues(c, self, nil)), c.Order, c.StartIndex}
-	//			rs := mapSlice(c.Data, func(v interface{}) interface{} {
-	//				return hash64(v)
-	//			})
-	//			return &Chunk{NewSlicer(rs), c.Order, c.StartIndex}
-	//		}
-	//	}
-	//}, option)
 
 	distinctKVs1 := make(map[interface{}]bool, 100)
 	distinctKVs2 := make(map[interface{}]bool, 100)
@@ -2467,22 +1962,6 @@ func filterSetByList(src DataSource, src2 DataSource, isExcept bool, option *Par
 		return &Chunk{slicer, c.Order, c.StartIndex}
 	}
 	f2 := parallelMapListToList(ds2, mapChunk2, option)
-	//f2 := parallelMapListToList(ds2, func(c *Chunk) (r *Chunk) {
-	//	if atomic.LoadUint32(&useDefHash) == 1 {
-	//		return c
-	//	} else {
-	//		if c.Data.Len() > 0 && testCanHash(c.Data.Index(0)) {
-	//			atomic.StoreUint32(&useDefHash, 1)
-	//			return c
-	//		} else {
-	//			//r = &Chunk{NewSlicer(getKeyValues(c, self, nil)), c.Order, c.StartIndex}
-	//			rs := mapSlice(c.Data, func(v interface{}) interface{} {
-	//				return hash64(v)
-	//			})
-	//			return &Chunk{NewSlicer(rs), c.Order, c.StartIndex}
-	//		}
-	//	}
-	//}, option)
 
 	mapChunk := func(c *Chunk) (r *Chunk) {
 		if atomic.LoadUint32(&useDefHash) == 1 {
@@ -3049,15 +2528,6 @@ func getMapChunkToKeyList(useDefHash *uint32, converter oneArgsFunc, getResult f
 		} else {
 			rs = NewSlicer(getResult(c, useValAsKey))
 		}
-		//if useValAsKey {
-		//	if useSelf {
-		//		r = c
-		//	} else {
-		//		r = &Chunk{NewSlicer(getKeyValues(c, false, converter, nil)), c.Order, c.StartIndex}
-		//	}
-		//} else {
-		//	r = &Chunk{NewSlicer(getKeyValues(c, true, converter, nil)), c.Order, c.StartIndex}
-		//}
 		return
 	}
 }
@@ -3066,45 +2536,6 @@ func getMapChunkToKVs(useDefHash *uint32, converter oneArgsFunc) func(c *Chunk) 
 	return getMapChunkToKeyList(useDefHash, converter, func(c *Chunk, useValAsKey bool) []interface{} {
 		return getKeyValues(c, !useValAsKey, converter, nil)
 	})
-	//return func(c *Chunk) (rs Slicer) {
-	//	useValAsKey := false
-	//	canUseDefHash := atomic.LoadUint32(useDefHash)
-	//	useSelf := converter == nil
-
-	//	if converter == nil {
-	//		converter = self
-	//	}
-
-	//	if canUseDefHash == 1 {
-	//		useValAsKey = true
-	//	} else if canUseDefHash == 0 {
-	//		if c.Data.Len() > 0 && testCanHash(converter(c.Data.Index(0))) {
-	//			atomic.StoreUint32(useDefHash, 1)
-	//			useValAsKey = true
-	//		} else {
-	//			atomic.StoreUint32(useDefHash, 1000)
-	//			useValAsKey = false
-	//		}
-	//	} else {
-	//		useValAsKey = false
-	//	}
-
-	//	if useValAsKey && useSelf {
-	//		rs = c.Data
-	//	} else {
-	//		rs = NewSlicer(getKeyValues(c, !useValAsKey, converter, nil))
-	//	}
-	//	//if useValAsKey {
-	//	//	if useSelf {
-	//	//		r = c
-	//	//	} else {
-	//	//		r = &Chunk{NewSlicer(getKeyValues(c, false, converter, nil)), c.Order, c.StartIndex}
-	//	//	}
-	//	//} else {
-	//	//	r = &Chunk{NewSlicer(getKeyValues(c, true, converter, nil)), c.Order, c.StartIndex}
-	//	//}
-	//	return
-	//}
 }
 
 func getMapChunkToKVChunk(useDefHash *uint32, converter oneArgsFunc) func(c *Chunk) (r *Chunk) {
@@ -3112,45 +2543,6 @@ func getMapChunkToKVChunk(useDefHash *uint32, converter oneArgsFunc) func(c *Chu
 		slicer := getMapChunkToKVs(useDefHash, converter)(c)
 		return &Chunk{slicer, c.Order, c.StartIndex}
 	}
-	//return func(c *Chunk) (r *Chunk) {
-	//	useValAsKey := false
-	//	canUseDefHash := atomic.LoadUint32(useDefHash)
-	//	useSelf := converter == nil
-
-	//	if converter == nil {
-	//		converter = self
-	//	}
-
-	//	if canUseDefHash == 1 {
-	//		useValAsKey = true
-	//	} else if canUseDefHash == 0 {
-	//		if c.Data.Len() > 0 && testCanHash(converter(c.Data.Index(0))) {
-	//			atomic.StoreUint32(useDefHash, 1)
-	//			useValAsKey = true
-	//		} else {
-	//			atomic.StoreUint32(useDefHash, 1000)
-	//			useValAsKey = false
-	//		}
-	//	} else {
-	//		useValAsKey = false
-	//	}
-
-	//	if useValAsKey && useSelf {
-	//		r = c
-	//	} else {
-	//		r = &Chunk{NewSlicer(getKeyValues(c, !useValAsKey, converter, nil)), c.Order, c.StartIndex}
-	//	}
-	//	//if useValAsKey {
-	//	//	if useSelf {
-	//	//		r = c
-	//	//	} else {
-	//	//		r = &Chunk{NewSlicer(getKeyValues(c, false, converter, nil)), c.Order, c.StartIndex}
-	//	//	}
-	//	//} else {
-	//	//	r = &Chunk{NewSlicer(getKeyValues(c, true, converter, nil)), c.Order, c.StartIndex}
-	//	//}
-	//	return
-	//}
 }
 
 //TODO: the code need be restructured
