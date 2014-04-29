@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	countForB    int  = 1000
-	rptCountForB int  = 1100
+	countForB    int  = 10000
+	rptCountForB int  = 11000
 	testGoLinq   bool = true
 )
 
@@ -147,6 +147,7 @@ func BenchmarkGoLinq_Where(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		dst, _ := linq.From(bUsers).Where(func(i linq.T) (bool, error) {
 			v := i.(user)
+			computerTask()
 			return strconv.Itoa(v.id%2) == "0", nil
 		}).Results()
 		if len(dst) != countForB/2 {
@@ -176,9 +177,43 @@ func BenchmarkGoLinq_Select(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		dst, _ := linq.From(bUsers).Select(func(v linq.T) (linq.T, error) {
 			u := v.(user)
+			computerTask()
 			return strconv.Itoa(u.id) + "/" + u.name, nil
 		}).Results()
 		if len(dst) != countForB {
+			b.Fail()
+			b.Error("size is ", len(dst))
+		}
+	}
+}
+
+func BenchmarkGoPLinq_SelectWhere(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		dst, _ := From(bUsers).Where(filterUser).Select(selectUser).Results()
+		if len(dst) != countForB/2 {
+			b.Fail()
+			b.Error("size is ", len(dst))
+			b.Log("dst=", dst)
+		}
+	}
+}
+
+func BenchmarkGoLinq_SelectWhere(b *testing.B) {
+	if !testGoLinq {
+		b.SkipNow()
+		return
+	}
+	for i := 0; i < b.N; i++ {
+		dst, _ := linq.From(bUsers).Where(func(i linq.T) (bool, error) {
+			v := i.(user)
+			computerTask()
+			return strconv.Itoa(v.id%2) == "0", nil
+		}).Select(func(v linq.T) (linq.T, error) {
+			u := v.(user)
+			computerTask()
+			return strconv.Itoa(u.id) + "/" + u.name, nil
+		}).Results()
+		if len(dst) != countForB/2 {
 			b.Fail()
 			b.Error("size is ", len(dst))
 		}
@@ -449,7 +484,7 @@ func sum(v interface{}, summary interface{}) interface{} {
 }
 
 ////test reverse--------------------------------------------------------------------
-func BenchmarkGoPLinq_Aggregate(b *testing.B) {
+func BenchmarkGoPLinq_Sum(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		if _, err := From(bInts).Aggregate(Sum); err != nil {
 			b.Fail()
@@ -458,7 +493,7 @@ func BenchmarkGoPLinq_Aggregate(b *testing.B) {
 	}
 }
 
-func BenchmarkGoLinq_Aggregate(b *testing.B) {
+func BenchmarkGoLinq_Sum(b *testing.B) {
 	if !testGoLinq {
 		b.SkipNow()
 		return
@@ -475,6 +510,7 @@ func BenchmarkGoLinq_Aggregate(b *testing.B) {
 func testPlinqSkipWhile(b *testing.B, i int) {
 	//fmt.Println("find", i)
 	if r, err := From(bInts).SkipWhile(func(v interface{}) bool {
+		computerTask()
 		return v.(int) < i
 	}).Results(); err != nil {
 		b.Fail()
@@ -495,6 +531,7 @@ func BenchmarkGoPLinq_SkipWhile(b *testing.B) {
 
 func testLinqSkipWhile(b *testing.B, i int) {
 	if r, err := linq.From(bInts).SkipWhile(func(v linq.T) (bool, error) {
+		computerTask()
 		return v.(int) < i, nil
 	}).Results(); err != nil {
 		b.Fail()
@@ -516,6 +553,7 @@ func BenchmarkGoLinq_SkipWhile(b *testing.B) {
 func testPlinqFirst(b *testing.B, i int) {
 	//fmt.Println("find", i)
 	if r, found, err := From(bInts).FirstBy(func(v interface{}) bool {
+		computerTask()
 		return v.(int) == i
 	}); err != nil {
 		b.Fail()
@@ -536,6 +574,7 @@ func BenchmarkGoPLinq_FirstBy(b *testing.B) {
 
 func testLinqFirst(b *testing.B, i int) {
 	if j, found, err := linq.From(bInts).FirstBy(func(v linq.T) (bool, error) {
+		computerTask()
 		return v.(int) == i, nil
 	}); err != nil {
 		b.Fail()

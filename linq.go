@@ -868,6 +868,7 @@ func (this *valueSlicer) ToInterfaces() []interface{} {
 		rs[i] = this.data.Index(i).Interface()
 	}
 	fmt.Println("WARNING: convert valueSlicer to interfaces")
+	fmt.Println(newErrorWithStacks("aa").Error())
 	return rs
 }
 
@@ -1804,7 +1805,7 @@ type chunkWhileResult struct {
 	whileIdx int
 }
 
-func a(s *chanSource, srcChan chan *Chunk, avl *chunkWhileTree, action func() (bool, bool)) (interface{}, error) {
+func forEachChanByOrder(s *chanSource, srcChan chan *Chunk, avl *chunkWhileTree, action func(*Chunk, *bool) bool) (interface{}, error) {
 	foundFirstMatch := false
 	shouldBreak := false
 	//Noted the order of sent from source chan maybe confused
@@ -1818,7 +1819,7 @@ func a(s *chanSource, srcChan chan *Chunk, avl *chunkWhileTree, action func() (b
 			}
 		}
 
-		if foundFirstMatch, shouldBreak = action(); shouldBreak {
+		if shouldBreak = action(c, &foundFirstMatch); shouldBreak {
 			break
 		}
 	}
@@ -1901,21 +1902,9 @@ func getSkipTake(foundMatch func(*Chunk, promise.Canceller) (int, bool), isTake 
 			//开始处理channel中的块
 			srcChan := s.ChunkChan(option.ChunkSize)
 			f := promise.Start(func() (interface{}, error) {
-				foundFirstMatch := false
 				avl := newChunkWhileResultTree(beforeMatchAct, afterMatchAct, beMatchAct, useIndex)
-
-				//Noted the order of sent from source chan maybe confused
-				for c := range srcChan {
-					if isNil(c) {
-						if cap(srcChan) > 0 {
-							s.Close()
-							break
-						} else {
-							continue
-						}
-					}
-
-					if !foundFirstMatch {
+				return forEachChanByOrder(s, srcChan, avl, func(c *Chunk, foundFirstMatch *bool) bool {
+					if !*foundFirstMatch {
 						//检查块是否存在不匹配的数据，按Index计算的总是返回flase，因为必须要等前面所有的块已经排好序后才能得到正确的索引
 						chunkResult := &chunkWhileResult{chunk: c}
 						if !useIndex {
@@ -1924,10 +1913,10 @@ func getSkipTake(foundMatch func(*Chunk, promise.Canceller) (int, bool), isTake 
 						}
 
 						//判断是否找到了第一个匹配的块
-						if foundFirstMatch = avl.handleChunk(chunkResult); foundFirstMatch {
+						if *foundFirstMatch = avl.handleChunk(chunkResult); *foundFirstMatch {
 							if isTake {
 								s.Close()
-								break
+								return true
 							}
 						}
 					} else {
@@ -1935,17 +1924,55 @@ func getSkipTake(foundMatch func(*Chunk, promise.Canceller) (int, bool), isTake 
 						if !isTake {
 							sendChunk(out, c)
 						} else {
-							break
+							return true
 						}
 					}
-				}
+					return false
+				})
+				//foundFirstMatch := false
 
-				if s.future != nil {
-					if _, err := s.future.Get(); err != nil {
-						return nil, err
-					}
-				}
-				return nil, nil
+				////Noted the order of sent from source chan maybe confused
+				//for c := range srcChan {
+				//	if isNil(c) {
+				//		if cap(srcChan) > 0 {
+				//			s.Close()
+				//			break
+				//		} else {
+				//			continue
+				//		}
+				//	}
+
+				//	if !foundFirstMatch {
+				//		//检查块是否存在不匹配的数据，按Index计算的总是返回flase，因为必须要等前面所有的块已经排好序后才能得到正确的索引
+				//		chunkResult := &chunkWhileResult{chunk: c}
+				//		if !useIndex {
+				//			chunkResult.whileIdx, chunkResult.match = foundMatch(c, nil)
+				//			//fmt.Println("\nfound no match---", c, chunkResult.match)
+				//		}
+
+				//		//判断是否找到了第一个匹配的块
+				//		if foundFirstMatch = avl.handleChunk(chunkResult); foundFirstMatch {
+				//			if isTake {
+				//				s.Close()
+				//				break
+				//			}
+				//		}
+				//	} else {
+				//		//如果已经找到了第一个匹配的块，则此后的块直接处理即可
+				//		if !isTake {
+				//			sendChunk(out, c)
+				//		} else {
+				//			break
+				//		}
+				//	}
+				//}
+
+				//if s.future != nil {
+				//	if _, err := s.future.Get(); err != nil {
+				//		return nil, err
+				//	}
+				//}
+				//return nil, nil
 			})
 			addCloseChanCallback(f, out)
 
@@ -2039,7 +2066,8 @@ func getFirstElement(src DataSource, foundMatch func(c *Chunk, canceller promise
 					element = c.chunk.Data.Index(idx)
 					return true
 				}
-			} else if c.match {
+			}
+			if c.match {
 				element = c.chunk.Data.Index(c.whileIdx)
 				return true
 			}
@@ -2053,43 +2081,64 @@ func getFirstElement(src DataSource, foundMatch func(c *Chunk, canceller promise
 		srcChan := s.ChunkChan(option.ChunkSize)
 		f := promise.Start(func() (interface{}, error) {
 			avl := newChunkWhileResultTree(beforeMatchAct, afterMatchAct, beMatchAct, useIndex)
-
-			for c := range srcChan {
-				if isNil(c) {
-					if cap(srcChan) > 0 {
-						s.Close()
-						break
-					} else {
-						continue
-					}
-				}
-
-				if !found {
+			return forEachChanByOrder(s, srcChan, avl, func(c *Chunk, foundFirstMatch *bool) bool {
+				if !*foundFirstMatch {
 					chunkResult := &chunkWhileResult{chunk: c}
 					if !useIndex {
 						chunkResult.whileIdx, chunkResult.match = foundMatch(c, nil)
 					}
-					//fmt.Println("check", c, chunkResult, found)
-					found = avl.handleChunk(chunkResult)
-					//fmt.Println("after check", c, chunkResult, found)
-					if found {
+					//fmt.Println("check", c.Data, c.Order, chunkResult, *foundFirstMatch)
+					*foundFirstMatch = avl.handleChunk(chunkResult)
+					//fmt.Println("after check", c.Data, chunkResult, *foundFirstMatch)
+					if *foundFirstMatch {
 						//element = c.chunk.Data[idx]
+						found = true
 						s.Close()
-						break
+						return true
 					}
 				} else {
 					//如果已经找到了正确的块，则此后的块直接跳过
-					break
+					found = true
+					return true
 				}
-			}
-			return nil, nil
+				return false
+			})
+			//for c := range srcChan {
+			//	if isNil(c) {
+			//		if cap(srcChan) > 0 {
+			//			s.Close()
+			//			break
+			//		} else {
+			//			continue
+			//		}
+			//	}
+
+			//	if !found {
+			//		chunkResult := &chunkWhileResult{chunk: c}
+			//		if !useIndex {
+			//			chunkResult.whileIdx, chunkResult.match = foundMatch(c, nil)
+			//		}
+			//		//fmt.Println("check", c, chunkResult, found)
+			//		found = avl.handleChunk(chunkResult)
+			//		//fmt.Println("after check", c, chunkResult, found)
+			//		if found {
+			//			//element = c.chunk.Data[idx]
+			//			s.Close()
+			//			break
+			//		}
+			//	} else {
+			//		//如果已经找到了正确的块，则此后的块直接跳过
+			//		break
+			//	}
+			//}
+			//if s.future != nil {
+			//	if _, err := s.future.Get(); err != nil {
+			//		return nil, err
+			//	}
+			//}
+			//return nil, nil
 		})
 
-		if s.future != nil {
-			if _, err := s.future.Get(); err != nil {
-				return nil, false, err
-			}
-		}
 		if _, err := f.Get(); err != nil {
 			return nil, false, err
 		}
