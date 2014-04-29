@@ -597,6 +597,8 @@ func stepTypToString(typ int) string {
 	switch typ {
 	case ACT_SELECT:
 		return "Select opretion"
+	case ACT_SELECTMANY:
+		return "SelectMany opretion"
 	case ACT_WHERE:
 		return "Where opretion"
 	case ACT_GROUPBY:
