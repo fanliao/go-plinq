@@ -173,19 +173,19 @@ func hash64(data interface{}) interface{} {
 }
 
 const (
-	BKDR32seed   = 131
-	DJB32prime32 = 5381
+	bKDR32seed   = 131
+	dJB32prime32 = 5381
 )
 
 // NewBKDR32 returns a new 32-bit BKDR hash
 func NewBKDR32() shash32 {
-	var s BKDR32 = 0
+	var s bkdr32 = 0
 	return &s
 }
 
 // NewBKDR32 returns a new 32-bit BKDR hash
 func NewDJB32() shash32 {
-	var s DJB32 = DJB32prime32
+	var s djb32 = dJB32prime32
 	return &s
 }
 
@@ -197,50 +197,50 @@ type shash32 interface {
 }
 
 type (
-	BKDR32 uint32
-	DJB32  uint32
+	bkdr32 uint32
+	djb32  uint32
 )
 
-func (s *BKDR32) Sum32() uint32 { return uint32(*s) }
-func (s *DJB32) Sum32() uint32  { return uint32(*s) }
+func (s *bkdr32) Sum32() uint32 { return uint32(*s) }
+func (s *djb32) Sum32() uint32  { return uint32(*s) }
 
-func (s *BKDR32) Write(data []byte) {
+func (s *bkdr32) Write(data []byte) {
 	hash := *s
 	for _, c := range data {
-		hash = hash*BKDR32seed + BKDR32(c)
+		hash = hash*bKDR32seed + bkdr32(c)
 	}
 	*s = hash
 }
 
-func (s *DJB32) Write(data []byte) {
+func (s *djb32) Write(data []byte) {
 	hash := *s
 	for _, c := range data {
-		hash = ((hash << 5) + hash) + DJB32(c)
+		hash = ((hash << 5) + hash) + djb32(c)
 	}
 	*s = hash
 }
 
-func (s *BKDR32) WriteBype(data byte) {
+func (s *bkdr32) WriteBype(data byte) {
 	hash := *s
-	hash = hash*BKDR32seed + BKDR32(data)
+	hash = hash*bKDR32seed + bkdr32(data)
 	*s = hash
 }
 
-func (s *DJB32) WriteBype(data byte) {
+func (s *djb32) WriteBype(data byte) {
 	hash := *s
-	hash = ((hash << 5) + hash) + DJB32(data)
+	hash = ((hash << 5) + hash) + djb32(data)
 	*s = hash
 }
 
-func (s *BKDR32) WriteUInt32(data uint32) {
+func (s *bkdr32) WriteUInt32(data uint32) {
 	hash := *s
-	hash = hash*BKDR32seed + BKDR32(data)
+	hash = hash*bKDR32seed + bkdr32(data)
 	*s = hash
 }
 
-func (s *DJB32) WriteUInt32(data uint32) {
+func (s *djb32) WriteUInt32(data uint32) {
 	hash := *s
-	hash = ((hash << 5) + hash) + DJB32(data)
+	hash = ((hash << 5) + hash) + djb32(data)
 	*s = hash
 }
 
@@ -316,33 +316,33 @@ func lRotate(node **avlNode) {
 }
 
 const (
-	LH int = 1
-	EH     = 0
-	RH     = -1
+	avl_LH int = 1
+	avl_EH     = 0
+	avl_RH     = -1
 )
 
 func lBalance(root **avlNode) {
 	var lr *avlNode
 	l := (*root).lchild
 	switch l.bf {
-	case LH:
-		(*root).bf = EH
-		l.bf = EH
+	case avl_LH:
+		(*root).bf = avl_EH
+		l.bf = avl_EH
 		rRotate(root)
-	case RH:
+	case avl_RH:
 		lr = l.rchild
 		switch lr.bf {
-		case LH:
-			(*root).bf = RH
-			l.bf = EH
-		case EH:
-			(*root).bf = EH
-			l.bf = EH
-		case RH:
-			(*root).bf = EH
-			l.bf = LH
+		case avl_LH:
+			(*root).bf = avl_RH
+			l.bf = avl_EH
+		case avl_EH:
+			(*root).bf = avl_EH
+			l.bf = avl_EH
+		case avl_RH:
+			(*root).bf = avl_EH
+			l.bf = avl_LH
 		}
-		lr.bf = EH
+		lr.bf = avl_EH
 		lRotate(&((*root).lchild))
 		rRotate(root)
 	}
@@ -352,33 +352,33 @@ func rBalance(root **avlNode) {
 	var rl *avlNode
 	r := (*root).rchild
 	switch r.bf {
-	case RH:
-		(*root).bf = EH
-		r.bf = EH
+	case avl_RH:
+		(*root).bf = avl_EH
+		r.bf = avl_EH
 		lRotate(root)
-	case LH:
+	case avl_LH:
 		rl = r.lchild
 		switch rl.bf {
-		case LH:
-			(*root).bf = RH
-			r.bf = EH
-		case EH:
-			(*root).bf = EH
-			r.bf = EH
-		case RH:
-			(*root).bf = EH
-			r.bf = LH
+		case avl_LH:
+			(*root).bf = avl_RH
+			r.bf = avl_EH
+		case avl_EH:
+			(*root).bf = avl_EH
+			r.bf = avl_EH
+		case avl_RH:
+			(*root).bf = avl_EH
+			r.bf = avl_LH
 		}
-		rl.bf = EH
+		rl.bf = avl_EH
 		//pRchild := (avlTree)((*root).rchild)
 		rRotate(&((*root).rchild))
 		lRotate(root)
 	}
 }
 
-func InsertAVL(root **avlNode, e interface{}, taller *bool, compare1 func(interface{}, interface{}) int) bool {
+func insertAVL(root **avlNode, e interface{}, taller *bool, compare1 func(interface{}, interface{}) int) bool {
 	if *root == nil {
-		node := avlNode{e, nil, EH, nil, nil}
+		node := avlNode{e, nil, avl_EH, nil, nil}
 		*root = &node
 		*taller = true
 	} else {
@@ -388,43 +388,43 @@ func InsertAVL(root **avlNode, e interface{}, taller *bool, compare1 func(interf
 				(*root).sameList = make([]interface{}, 0, 2)
 			}
 
-			(*root).sameList = appendSlice((*root).sameList, e)
+			(*root).sameList = appendToSlice((*root).sameList, e)
 			return false
 		}
 
 		if i == -1 {
-			if !InsertAVL(&((*root).lchild), e, taller, compare1) {
+			if !insertAVL(&((*root).lchild), e, taller, compare1) {
 				return false
 			}
 
 			if *taller {
 				switch (*root).bf {
-				case LH:
+				case avl_LH:
 					lBalance(root)
 					*taller = false
-				case EH:
-					(*root).bf = LH
+				case avl_EH:
+					(*root).bf = avl_LH
 					*taller = true
-				case RH:
-					(*root).bf = EH
+				case avl_RH:
+					(*root).bf = avl_EH
 					*taller = false
 				}
 			}
 		} else if i == 1 {
-			if !InsertAVL(&((*root).rchild), e, taller, compare1) {
+			if !insertAVL(&((*root).rchild), e, taller, compare1) {
 				return false
 			}
 
 			if *taller {
 				switch (*root).bf {
-				case RH:
+				case avl_RH:
 					rBalance(root)
 					*taller = false
-				case EH:
-					(*root).bf = RH
+				case avl_EH:
+					(*root).bf = avl_RH
 					*taller = true
-				case LH:
-					(*root).bf = EH
+				case avl_LH:
+					(*root).bf = avl_EH
 					*taller = false
 				}
 			}
@@ -441,7 +441,7 @@ type avlTree struct {
 
 func (this *avlTree) Insert(node interface{}) {
 	var taller bool
-	InsertAVL(&(this.root), node, &taller, this.compare)
+	insertAVL(&(this.root), node, &taller, this.compare)
 	this.count++
 }
 
@@ -514,51 +514,51 @@ func getError(i interface{}) (e error) {
 	return
 }
 
-// NewLinqError returns an error that formats as the given text and includes the given inner errors.
-func NewLinqError(text string, err interface{}) error {
+// NewAggregateError returns an error that formats as the given text and includes the given inner errors.
+func NewAggregateError(text string, err interface{}) error {
 	if aggErr, ok := err.(*promise.AggregateError); ok {
 		//errs := make([]interface{}, len(aggErr.InnerErrs))
 		//for i, e := range aggErr.InnerErrs {
 		//	errs[i] = e
 		//}
-		return &errorLinq{text, aggErr.InnerErrs}
+		return &AggregateError{text, aggErr.InnerErrs}
 	} else if errs, ok := err.([]interface{}); ok {
 		errs1 := make([]error, len(errs))
 		for i, e := range errs {
 			//fmt.Println("get Aggregate errors2", e)
 			errs1[i] = errors.New(fmt.Sprintf("%v", e))
 		}
-		return &errorLinq{text, errs1}
+		return &AggregateError{text, errs1}
 	} else if errs, ok := err.([]error); ok {
 		//v := reflect.ValueOf(err)
 		//fmt.Println("\nget Aggregate errors3", len(errs))
 		//for i := 0; i < v.Len(); i++ {
-		//	se := v.Index(i).Interface().(stepErr)
+		//	se := v.Index(i).Interface().(StepErr)
 		//	fmt.Println("item", i, "=", (&se).Error())
 		//}
 
-		return &errorLinq{text, errs}
+		return &AggregateError{text, errs}
 	} else if e, ok := err.(error); ok {
 		//v := reflect.ValueOf(err)
 		//fmt.Println("\nget Aggregate errors3", len(errs))
 		//for i := 0; i < v.Len(); i++ {
-		//	se := v.Index(i).Interface().(stepErr)
+		//	se := v.Index(i).Interface().(StepErr)
 		//	fmt.Println("item", i, "=", (&se).Error())
 		//}
 
-		return &errorLinq{text, []error{e}}
+		return &AggregateError{text, []error{e}}
 	} else {
 		panic(errors.New("unsupport error type"))
 	}
 }
 
-// errorLinq is a trivial implementation of error.
-type errorLinq struct {
+// AggregateError is a trivial implementation of error.
+type AggregateError struct {
 	s         string
 	innerErrs []error
 }
 
-func (e *errorLinq) Error() string {
+func (e *AggregateError) Error() string {
 	if e.innerErrs == nil {
 		return e.s
 	} else {
@@ -575,13 +575,13 @@ func (e *errorLinq) Error() string {
 	}
 }
 
-type stepErr struct {
+type StepErr struct {
 	stepIdx int
 	stepTyp int
 	errs    []interface{}
 }
 
-func (e *stepErr) Error() string {
+func (e *StepErr) Error() string {
 	buf := bytes.NewBufferString("error appears in ")
 	buf.WriteString(stepTypToString(e.stepTyp))
 	buf.WriteString(":\n")
@@ -641,8 +641,8 @@ func stepTypToString(typ int) string {
 
 }
 
-// NewLinqError returns an error that formats as the given text and includes the given inner errors.
-func NewStepError(stepIdx int, stepTyp int, innerErrs interface{}) *stepErr {
+// NewAggregateError returns an error that formats as the given text and includes the given inner errors.
+func NewStepError(stepIdx int, stepTyp int, innerErrs interface{}) *StepErr {
 	if ies, ok := innerErrs.([]interface{}); ok {
 		rs := make([]interface{}, 0, len(ies))
 		if len(ies) > 0 {
@@ -660,9 +660,9 @@ func NewStepError(stepIdx int, stepTyp int, innerErrs interface{}) *stepErr {
 			rs = ies
 			//}
 		}
-		return &stepErr{stepIdx, stepTyp, rs}
+		return &StepErr{stepIdx, stepTyp, rs}
 	} else if err := innerErrs.(error); err != nil {
-		return &stepErr{stepIdx, stepTyp, []interface{}{innerErrs}}
+		return &StepErr{stepIdx, stepTyp, []interface{}{innerErrs}}
 	} else {
 		return nil
 	}
@@ -983,7 +983,7 @@ func divide(a interface{}, count float64) (r float64) {
 }
 
 //test a value can be used as key in map
-func testCanHash(v interface{}) (ok bool) {
+func testCanAsKey(v interface{}) (ok bool) {
 	defer func() {
 		if e := recover(); e != nil {
 			ok = false
@@ -999,14 +999,14 @@ func testCanUseDefaultHash(src, src2 DataSource) bool {
 	if src.Typ() == SOURCE_CHANNEL && src2.Typ() == SOURCE_CHANNEL {
 		slicer1 := src.ToSlice(false)
 		if slicer1.Len() > 0 {
-			if testCanHash(slicer1.Index(0)) {
+			if testCanAsKey(slicer1.Index(0)) {
 				return true
 			}
 		}
 
 		slicer2 := src2.ToSlice(false)
 		if slicer2.Len() > 0 {
-			if testCanHash(slicer2.Index(0)) {
+			if testCanAsKey(slicer2.Index(0)) {
 				return true
 			}
 		}

@@ -32,8 +32,8 @@ var (
 func init() {
 	fmt.Println("DEFAULTCHUNKSIZE=", DEFAULTCHUNKSIZE)
 	fmt.Println("countForB=", countForB)
-	MAXPROCS = numCPU
-	runtime.GOMAXPROCS(MAXPROCS)
+	maxProcs = numCPU
+	runtime.GOMAXPROCS(maxProcs)
 	for i := 0; i < countForB; i++ {
 		bInts[i] = i
 		bUsers[i] = user{i, "user" + strconv.Itoa(i)}
@@ -337,20 +337,6 @@ func BenchmarkGoLinq_Join(b *testing.B) {
 
 ////test union--------------------------------------------------------------------
 func BenchmarkGoPLinq_Union(b *testing.B) {
-	usei = 1
-	for i := 0; i < b.N; i++ {
-		dst, err := From(bUsers).Union(bUsers2, largeChunkSize).Results()
-		if len(dst) != countForB+countForB/2 {
-			b.Fail()
-			b.Log("err=", err)
-			b.Error("size is ", len(dst))
-			b.Log("dst=", dst)
-		}
-	}
-}
-
-func BenchmarkGoPLinq_Union2(b *testing.B) {
-	usei = 2
 	for i := 0; i < b.N; i++ {
 		dst, err := From(bUsers).Union(bUsers2, largeChunkSize).Results()
 		if len(dst) != countForB+countForB/2 {
@@ -668,7 +654,7 @@ func BenchmarkGoLinq_FirstBy(b *testing.B) {
 //			sortQ.values = tout[c.Order : c.Order+len(c.Data)]
 //			_ = copy(sortQ.values, c.Data)
 //			return []interface{}{&chunk{sortQ.values, c.Order}, true}
-//		}, MAXPROCS)
+//		}, maxProcs)
 
 //		sourceFromFuture(f, func(results []interface{}) source {
 //			//tr := make([]interface{}, len(bUsers), len(bUsers))

@@ -19,7 +19,7 @@ const (
 )
 
 var (
-	MAXPROCS  int
+	maxProcs  int
 	tUsers    []interface{}       = make([]interface{}, count, count)
 	tRptUsers []interface{}       = make([]interface{}, rptCount, rptCount)
 	tUsers2   []interface{}       = make([]interface{}, count, count)
@@ -32,8 +32,8 @@ var (
 )
 
 func init() {
-	MAXPROCS = numCPU
-	runtime.GOMAXPROCS(MAXPROCS)
+	maxProcs = numCPU
+	runtime.GOMAXPROCS(maxProcs)
 	for i := 0; i < count; i++ {
 		tInts[i] = i
 		tUsers[i] = user{i, "user" + strconv.Itoa(i)}
@@ -1198,22 +1198,22 @@ func TestSumCountAvgMaxMin(t *testing.T) {
 }
 
 //获取0到4所有的组合
-func getIndexses(l int) (indexses [][]int) {
-	for i := 0; i < l; i++ {
+func getIndexses(countOfSkipTestData int) (indexses [][]int) {
+	for i := 0; i < countOfSkipTestData; i++ {
 		//开始创建一个随机组合
-		for j := 0; j < l; j++ {
+		for j := 0; j < countOfSkipTestData; j++ {
 			if j == i {
 				continue
 			}
-			for k := 0; k < l; k++ {
+			for k := 0; k < countOfSkipTestData; k++ {
 				if k == j || k == i {
 					continue
 				}
-				for m := 0; m < l; m++ {
+				for m := 0; m < countOfSkipTestData; m++ {
 					if m == k || m == j || m == i {
 						continue
 					}
-					for n := 0; n < l; n++ {
+					for n := 0; n < countOfSkipTestData; n++ {
 						if n == k || n == j || n == i || n == m {
 							continue
 						}
@@ -1227,10 +1227,10 @@ func getIndexses(l int) (indexses [][]int) {
 	return
 }
 
-var l int = 5
+var countOfSkipTestData int = 5
 
 func getChunkByi(i int, ints []interface{}) *Chunk {
-	size := count / l
+	size := count / countOfSkipTestData
 	return &Chunk{NewSlicer(ints[i*size : (i+1)*size]), i, 0}
 }
 
@@ -1259,7 +1259,7 @@ func TestSkipAndTake(t *testing.T) {
 		ints[i] = i
 	}
 
-	indexses := getIndexses(l)
+	indexses := getIndexses(countOfSkipTestData)
 	//indexses := [][]int{[]int{0, 1, 3, 2, 4}}
 
 	getSkipResult := func(i int) []interface{} {
@@ -1572,7 +1572,7 @@ func TestElementAt(t *testing.T) {
 		ints[i] = i
 	}
 
-	indexses := getIndexses(l)
+	indexses := getIndexses(countOfSkipTestData)
 
 	c.Convey("Test ElementAt in channel", t, func() {
 		//c.Convey("ElementAt nothing", func() {
@@ -1629,7 +1629,7 @@ func TestFirstBy(t *testing.T) {
 		ints[i] = i
 	}
 
-	indexses := getIndexses(l)
+	indexses := getIndexses(countOfSkipTestData)
 
 	c.Convey("Test FirstBy in channel", t, func() {
 		c.Convey("FirstBy with panic an error", func() {
