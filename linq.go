@@ -2928,18 +2928,18 @@ func (this *chunkMatchTree) handleChunk(chunkResult *chunkMatchResult) (foundFir
 	//fmt.Println("check handleChunk=", chunkResult, chunkResult.chunk.Order)
 	if chunkResult.match {
 		//如果块中发现匹配的数据
-		foundFirstMatch = this.handleNoMatchChunk(chunkResult)
-	} else {
 		foundFirstMatch = this.handleMatchChunk(chunkResult)
+	} else {
+		foundFirstMatch = this.handleNoMatchChunk(chunkResult)
 	}
 	//fmt.Println("after check handleChunk=", foundFirstMatch)
 	return
 }
 
-//处理符合条件的块，返回true表示该块和后续的连续块中发现了原始序列中第一个不符合条件的块
+//处理不符合条件的块，返回true表示该块和后续的连续块中发现了原始序列中第一个符合条件的块
 //在Skip/Take和管道模式中，块是否不符合条件是在块被放置到正确顺序后才能决定的
-func (this *chunkMatchTree) handleMatchChunk(chunkResult *chunkMatchResult) bool {
-	//如果不满足，则检查当前块order是否等于下一个order，如果是，则进行beforeWhile处理，并更新startOrder
+func (this *chunkMatchTree) handleNoMatchChunk(chunkResult *chunkMatchResult) bool {
+	//如果不符合条件，则检查当前块order是否等于下一个order，如果是，则进行beforeWhile处理，并更新startOrder
 	if chunkResult.chunk.Order == this.startOrder {
 		chunkResult.chunk.StartIndex = this.startIndex
 		//fmt.Println("call beforeMatchAct=", chunkResult.chunk.Order)
@@ -2959,7 +2959,7 @@ func (this *chunkMatchTree) handleMatchChunk(chunkResult *chunkMatchResult) bool
 			return true
 		}
 	} else {
-		//如果不是，则检查是否存在已经满足while条件的前置块
+		//如果不是，则检查是否存在已经满足条件的前置块
 		if this.matchChunk != nil && this.matchChunk.chunk.Order < chunkResult.chunk.Order {
 			//如果存在，则当前块是while之后的块，根据take和skip进行处理
 			this.afterMatchAct(chunkResult)
@@ -2971,17 +2971,17 @@ func (this *chunkMatchTree) handleMatchChunk(chunkResult *chunkMatchResult) bool
 	return false
 }
 
-//处理不符合条件的块，返回true表示是原始序列中第一个不符合条件的块
-func (this *chunkMatchTree) handleNoMatchChunk(chunkResult *chunkMatchResult) bool {
-	//检查avl是否存在已经满足while条件的块
+//处理符合条件的块，返回true表示是原始序列中第一个符合条件的块
+func (this *chunkMatchTree) handleMatchChunk(chunkResult *chunkMatchResult) bool {
+	//检查avl是否存在已经满足条件的块
 	if lastWhile := this.getMatchChunk(); lastWhile != nil {
-		//如果存在符合while的块，则检查当前块是在之前还是之后
+		//如果存在符合的块，则检查当前块是在之前还是之后
 		if chunkResult.chunk.Order < lastWhile.chunk.Order {
 			//如果是之前，检查avl中所有在当前块之后的块，执行对应的take或while操作
-			this.handleWhileAfterChunks(chunkResult)
+			this.handleChunksAfterMatch(chunkResult)
 
-			//替换原有的while块，检查当前块的order是否等于下一个order，如果是，则找到了while块，并进行对应处理
-			if this.setMatchChunk(chunkResult) {
+			//替换原有的匹配块，检查当前块的order是否等于下一个order，如果是，则找到了第一个匹配块，并进行对应处理
+			if this.putMatchChunk(chunkResult) {
 				return true
 			}
 		} else {
@@ -2989,17 +2989,17 @@ func (this *chunkMatchTree) handleNoMatchChunk(chunkResult *chunkMatchResult) bo
 			this.afterMatchAct(chunkResult)
 		}
 	} else {
-		//如果avl中不存在符合while的块，则检查当前块order是否等于下一个order，如果是，则找到了while块，并进行对应处理
+		//如果avl中不存在匹配的块，则检查当前块order是否等于下一个order，如果是，则找到了第一个匹配块，并进行对应处理
 		//如果不是下一个order，则插入AVL，以备后面的检查
 		//fmt.Println("发现第一个当前while块")
-		if this.setMatchChunk(chunkResult) {
+		if this.putMatchChunk(chunkResult) {
 			return true
 		}
 	}
 	return false
 }
 
-func (this *chunkMatchTree) handleWhileAfterChunks(c *chunkMatchResult) {
+func (this *chunkMatchTree) handleChunksAfterMatch(c *chunkMatchResult) {
 	result := make([]*chunkMatchResult, 0, 10)
 	pResult := &result
 	this.forEachAfterChunks(c.chunk.Order, this.avl.root, pResult)
@@ -3053,7 +3053,7 @@ func (this *chunkMatchTree) forEachChunks(currentOrder int, root *avlNode, handl
 	return false
 }
 
-//查找avl中Order在currentOrder之后的块，一直找到发现一个while块为止
+//查找avl中Order在currentOrder之后的块，一直找到发现一个匹配块为止
 func (this *chunkMatchTree) forEachAfterChunks(currentOrder int, root *avlNode, result *[]*chunkMatchResult) bool {
 	return this.forEachChunks(currentOrder, root, func(rootResult *chunkMatchResult) (bool, bool) {
 		rootOrder := rootResult.chunk.Order
@@ -3075,8 +3075,8 @@ func (this *chunkMatchTree) forEachAfterChunks(currentOrder int, root *avlNode, 
 }
 
 //从currentOrder开始查找已经按元素顺序排好的块，一直找到发现一个空缺的位置为止
-//如果是Skip/Take，会在查找同时计算块的起始索引，判断是否符合while条件。因为每块的长度未必等于原始长度，所以必须在得到正确顺序后才能计算
-//如果是SkipWhile/TakeWhile，如果找到第一个符合顺序的while块，就会结束查找。因为SkipWhile/TakeWhile的avl中不会有2个符合while的块存在
+//如果是Skip/Take，会在查找同时计算块的起始索引，判断是否符合条件。因为每块的长度未必等于原始长度，所以必须在得到正确顺序后才能计算
+//如果是SkipWhile/TakeWhile，如果找到第一个符合顺序的匹配块，就会结束查找。因为SkipWhile/TakeWhile的avl中不会有2个匹配的块存在
 func (this *chunkMatchTree) forEachOrderedChunks(currentOrder int, root *avlNode, result *[]*chunkMatchResult) bool {
 	return this.forEachChunks(currentOrder, root, func(rootResult *chunkMatchResult) (bool, bool) {
 		//fmt.Println("check ordered----", this.startOrder, this.foundFirstMatch, this.useIndex, "chunk =", rootResult.chunk, rootResult)
@@ -3085,7 +3085,7 @@ func (this *chunkMatchTree) forEachOrderedChunks(currentOrder int, root *avlNode
 			return false, false
 		}
 		if this.foundFirstMatch && this.useIndex {
-			//前面已经找到了while元素，那只有根据index查找才需要判断后面的块,并且所有后面的块都需要返回
+			//前面已经找到了匹配元素，那只有根据index查找才需要判断后面的块,并且所有后面的块都需要返回
 			this.afterMatchAct(rootResult)
 		} else if rootOrder == this.startOrder { //currentOrder {
 			//如果当前节点的order等于指定order，则找到了要遍历的第一个元素
@@ -3108,7 +3108,7 @@ func (this *chunkMatchTree) forEachOrderedChunks(currentOrder int, root *avlNode
 			//fmt.Println("check ordered return", false, true)
 			return false, true
 		}
-		//如果是SkipWhile/TakeWhile，并且当前节点是while节点，则结束查找
+		//如果是SkipWhile/TakeWhile，并且当前节点是匹配节点，则结束查找
 		//如果是Skip/Take，则不能结束
 		if rootResult.match && !this.useIndex {
 			this.foundFirstMatch = true
@@ -3120,8 +3120,8 @@ func (this *chunkMatchTree) forEachOrderedChunks(currentOrder int, root *avlNode
 	}, result)
 }
 
-func (this *chunkMatchTree) setMatchChunk(c *chunkMatchResult) bool {
-	//检查当前块order是否等于下一个order，如果是，则找到了while块，并进行对应处理
+func (this *chunkMatchTree) putMatchChunk(c *chunkMatchResult) bool {
+	//检查当前块order是否等于下一个order，如果是，则找到了匹配块，并进行对应处理
 	//如果不是下一个order，则插入AVL，以备后面的检查
 	if c.chunk.Order == this.startOrder {
 		this.beMatchAct(c)
