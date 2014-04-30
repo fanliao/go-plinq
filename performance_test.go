@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	countForB      int  = 100
-	rptCountForB   int  = 110
+	countForB      int  = 3000
+	rptCountForB   int  = 3300
 	testGoLinq     bool = true
 	largeChunkSize int  = 1000
 )
@@ -339,10 +339,10 @@ func init() {
 func BenchmarkGoPLinq_Union(b *testing.B) {
 	usei = 1
 	for i := 0; i < b.N; i++ {
-		dst, _ := From(bUsers).Union(bUsers2, largeChunkSize).Results()
+		dst, err := From(bUsers).Union(bUsers2, largeChunkSize).Results()
 		if len(dst) != countForB+countForB/2 {
 			b.Fail()
-			//b.Log("arr=", arr)
+			b.Log("err=", err)
 			b.Error("size is ", len(dst))
 			b.Log("dst=", dst)
 		}
@@ -352,10 +352,10 @@ func BenchmarkGoPLinq_Union(b *testing.B) {
 func BenchmarkGoPLinq_Union2(b *testing.B) {
 	usei = 2
 	for i := 0; i < b.N; i++ {
-		dst, _ := From(bUsers).Union(bUsers2, largeChunkSize).Results()
+		dst, err := From(bUsers).Union(bUsers2, largeChunkSize).Results()
 		if len(dst) != countForB+countForB/2 {
 			b.Fail()
-			//b.Log("arr=", arr)
+			b.Log("err=", err)
 			b.Error("size is ", len(dst))
 			b.Log("dst=", dst)
 		}

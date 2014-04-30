@@ -14,7 +14,7 @@ import (
 const (
 	DEFAULTCHUNKSIZE       = 200
 	DEFAULTMINCUNKSIZE     = 40
-	LARGECHUNKSIZE         = 100
+	LARGECHUNKSIZE         = 2000
 	SOURCE_LIST        int = iota //presents the list source
 	SOURCE_CHANNEL                //presents the channel source
 )
@@ -1419,13 +1419,23 @@ func getJoinImpl(inner interface{},
 	})
 }
 
+func canSequentialSet(src DataSource, src2 DataSource) bool {
+	if src.Typ() == SOURCE_LIST && src2.Typ() == SOURCE_LIST {
+		if src.ToSlice(false).Len() <= LARGECHUNKSIZE && src2.ToSlice(false).Len() <= LARGECHUNKSIZE {
+			return true
+		}
+	}
+	return false
+
+}
+
 // Get the action function for Union operation
 // note the union cannot keep order because the map cannot keep order
 func getUnion(source2 interface{}) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption, first bool) (DataSource, *promise.Future, bool, error) {
 		src2 := From(source2).data
-		if canS(src, source2) {
-			return getUnion2()
+		if canSequentialSet(src, src2) {
+			return union3(src, src2, option, first)
 		}
 		reduceSrcChan := make(chan *Chunk)
 		//if !testCanUseDefaultHash(src, src2){
@@ -1445,15 +1455,37 @@ func getUnion(source2 interface{}) stepAction {
 	})
 }
 
-func canS(src DataSource, source2 DataSource) bool {
-	src2 := newDataSource(source2)
-	if src.Typ() == SOURCE_LIST && src2.Typ() == SOURCE_LIST {
-		if src.ToSlice(false).Len() <= largeChunkSize && src2.ToSlice(false).Len() <= largeChunkSize {
-			return true
+// Get the action function for Union operation
+// note the union cannot keep order because the map cannot keep order
+func union3(src DataSource, src2 DataSource, option *ParallelOption, first bool) (ds DataSource, f *promise.Future, keep bool, e error) {
+	defer func() {
+		if err := recover(); err != nil {
+			e = newErrorWithStacks(err)
+			fmt.Println(e.Error())
 		}
-	}
-	return false
+	}()
+	s2 := src2.ToSlice(false)
+	s1 := src.ToSlice(false)
 
+	//fmt.Println("\n-----s1=", s1, "s2=", s2)
+	var useDefHash uint32 = 0
+	mapChunk := getMapChunkToKVChunk(&useDefHash, nil)
+
+	c1 := mapChunk(&Chunk{s1, 0, 1})
+	c2 := mapChunk(&Chunk{s2, 0, 1})
+	//fmt.Println("\n-----c1=", c1, "c2=", c2)
+	result := make([]interface{}, 0, s1.Len()+s2.Len())
+
+	distKVs := make(map[interface{}]int)
+	//count := 0
+	distinctChunkVals(c1, distKVs, &result)
+	distinctChunkVals(c2, distKVs, &result)
+	//fmt.Println("\n-----result=", result)
+
+	return &listSource{NewSlicer(result)}, nil, option.KeepOrder, nil
+	//c.Data = NewSlicer(result[0:count])
+	//f3, out := reduceDistinctVals(mapFuture, reduceSrcChan, option)
+	//return &chanSource{chunkChan: out}, f3, option.KeepOrder, nil
 }
 
 // Get the action function for Union operation
@@ -1474,6 +1506,7 @@ func getUnion2(source2 interface{}) stepAction {
 
 		c1 := mapChunk(&Chunk{s1, 0, 1})
 		c2 := mapChunk(&Chunk{s2, 0, 1})
+		//fmt.Println("after map", c1.Data.Len(), c2.Data.Len())
 		////map the elements of source and source2 to the a KeyValue slice
 		////includes the hash value and the original element
 		//f1, reduceSrcChan := parallelMapToChan(src, reduceSrcChan, mapChunk, option)
@@ -1481,47 +1514,49 @@ func getUnion2(source2 interface{}) stepAction {
 
 		//mapFuture := promise.WhenAll(f1, f2)
 		//addCloseChanCallback(mapFuture, reduceSrcChan)
-		result := make([]interface{}, s1.Len()+s2.Len())
+		result := make([]interface{}, 0, s1.Len()+s2.Len())
 		//_ = copy(list[0:s1.Len(), s1)
 		//_ = copy()
 
 		distKVs := make(map[interface{}]int)
-		count := 0
-		forEachSlicer(c1.Data, func(i int, v interface{}) {
-			if kv, ok := v.(*hKeyValue); ok {
-				//fmt.Println("distinctChunkVals get==", i, v, kv)
-				if _, ok := distKVs[kv.keyHash]; !ok {
-					distKVs[kv.keyHash] = 1
-					result[count] = kv.value
-					count++
-				}
-			} else {
-				if _, ok := distKVs[v]; !ok {
-					distKVs[v] = 1
-					result[count] = v
-					count++
-				}
-			}
-		})
+		//count := 0
+		distinctChunkVals(c1, distKVs, &result)
+		distinctChunkVals(c2, distKVs, &result)
+		//forEachSlicer(c1.Data, func(i int, v interface{}) {
+		//	if kv, ok := v.(*hKeyValue); ok {
+		//		//fmt.Println("distinctChunkVals get==", i, v, kv)
+		//		if _, ok := distKVs[kv.keyHash]; !ok {
+		//			distKVs[kv.keyHash] = 1
+		//			result[count] = kv.value
+		//			count++
+		//		}
+		//	} else {
+		//		if _, ok := distKVs[v]; !ok {
+		//			distKVs[v] = 1
+		//			result[count] = v
+		//			count++
+		//		}
+		//	}
+		//})
 
-		forEachSlicer(c2.Data, func(i int, v interface{}) {
-			if kv, ok := v.(*hKeyValue); ok {
-				//fmt.Println("distinctChunkVals get==", i, v, kv)
-				if _, ok := distKVs[kv.keyHash]; !ok {
-					distKVs[kv.keyHash] = 1
-					result[count] = kv.value
-					count++
-				}
-			} else {
-				if _, ok := distKVs[v]; !ok {
-					distKVs[v] = 1
-					result[count] = v
-					count++
-				}
-			}
-		})
+		//forEachSlicer(c2.Data, func(i int, v interface{}) {
+		//	if kv, ok := v.(*hKeyValue); ok {
+		//		//fmt.Println("distinctChunkVals get==", i, v, kv)
+		//		if _, ok := distKVs[kv.keyHash]; !ok {
+		//			distKVs[kv.keyHash] = 1
+		//			result[count] = kv.value
+		//			count++
+		//		}
+		//	} else {
+		//		if _, ok := distKVs[v]; !ok {
+		//			distKVs[v] = 1
+		//			result[count] = v
+		//			count++
+		//		}
+		//	}
+		//})
 
-		return &listSource{NewSlicer(result[0:count])}, nil, option.KeepOrder, nil
+		return &listSource{NewSlicer(result)}, nil, option.KeepOrder, nil
 		//c.Data = NewSlicer(result[0:count])
 		//f3, out := reduceDistinctVals(mapFuture, reduceSrcChan, option)
 		//return &chanSource{chunkChan: out}, f3, option.KeepOrder, nil
@@ -1943,6 +1978,11 @@ func forEachChanByOrder(s *chanSource, srcChan chan *Chunk, avl *chunkWhileTree,
 
 func filterSet(src DataSource, source2 interface{}, isExcept bool, option *ParallelOption) (DataSource, *promise.Future, error) {
 	src2 := newDataSource(source2)
+
+	//if canSequentialSet(src, src2) {
+	//	return filterSetByList2(src, src2, isExcept, option)
+	//}
+
 	switch ds2 := src2.(type) {
 	case *listSource:
 		return filterSetByList(src, ds2, isExcept, option)
@@ -2081,6 +2121,38 @@ func filterSetByChan(src DataSource, src2 DataSource, isExcept bool, option *Par
 	}
 	return newListSource(results), nil, nil
 
+}
+
+func filterSetByList2(src DataSource, src2 DataSource, isExcept bool, option *ParallelOption) (DataSource, *promise.Future, error) {
+	mapChunk, mapChunk2 := getFilterSetMapFuncs()
+
+	c1 := mapChunk(&Chunk{src.ToSlice(false), 0, 1})
+	c2 := mapChunk2(&Chunk{src2.ToSlice(false), 0, 1})
+
+	//获取src2对应的map用于筛选
+	distKVs := make(map[interface{}]bool, 100)
+	forEachSlicer(c2.Data, func(i int, v interface{}) {
+		distKVs[v] = true
+	})
+
+	resultKVs := make(map[interface{}]interface{}, 100)
+	mapDistinct := func(c *Chunk) *Chunk {
+		//过滤src
+		count := 0
+		size := c.Data.Len()
+		results := make([]interface{}, size)
+		forEachSlicer(c.Data, func(i int, v interface{}) {
+			k, val := getKV(v)
+
+			if addDistVal(k, val, distKVs, resultKVs, isExcept) {
+				results[count] = val
+				count++
+			}
+		})
+		return &Chunk{NewSlicer(results[0:count]), c.Order, c.StartIndex}
+	}
+	result := mapDistinct(c1)
+	return &listSource{result.Data}, nil, nil
 }
 
 func filterSetByList(src DataSource, src2 DataSource, isExcept bool, option *ParallelOption) (DataSource, *promise.Future, error) {
@@ -2527,34 +2599,40 @@ func reduceDistinctVals(mapFuture *promise.Future, reduceSrcChan chan *Chunk, op
 	distKVs := make(map[interface{}]int)
 	option.Degree = 1
 	return parallelMapChanToChan(&chanSource{chunkChan: reduceSrcChan, future: mapFuture}, nil, func(c *Chunk) *Chunk {
-		r := distinctChunkVals(c, distKVs)
-		//fmt.Println("reduceDistinctVals, dist,", c.Data.ToInterfaces(), r.Data.ToInterfaces())
+		r := distinctChunkVals(c, distKVs, nil)
 		return r
 	}, option)
 }
 
 //util functions-----------------------------------------------------------------
-func distinctChunkVals(c *Chunk, distKVs map[interface{}]int) *Chunk {
-	size := c.Data.Len()
-	result := make([]interface{}, size)
-	count := 0
+func distinctChunkVals(c *Chunk, distKVs map[interface{}]int, pResults *[]interface{}) *Chunk {
+	if pResults == nil {
+		size := c.Data.Len()
+		result := make([]interface{}, 0, size)
+		pResults = &result
+	}
+
+	//count := 0
 	forEachSlicer(c.Data, func(i int, v interface{}) {
 		if kv, ok := v.(*hKeyValue); ok {
 			//fmt.Println("distinctChunkVals get==", i, v, kv)
 			if _, ok := distKVs[kv.keyHash]; !ok {
 				distKVs[kv.keyHash] = 1
-				result[count] = kv.value
-				count++
+				*pResults = append(*pResults, kv.value)
+				//result[count] = kv.value
+				//count++
 			}
 		} else {
 			if _, ok := distKVs[v]; !ok {
 				distKVs[v] = 1
-				result[count] = v
-				count++
+				//*pResults = append(*pResults, kv.value)
+				*pResults = append(*pResults, v)
+				//result[count] = kv.value
+				//count++
 			}
 		}
 	})
-	c.Data = NewSlicer(result[0:count])
+	c.Data = NewSlicer(*pResults)
 	return c
 }
 
@@ -2626,7 +2704,7 @@ func mapSliceToMany(src Slicer, f func(interface{}) []interface{}) []interface{}
 func mapSlice(src Slicer, f oneArgsFunc) []interface{} {
 	size := src.Len()
 	dst := make([]interface{}, size)
-
+	//fmt.Println("mapSlice,", src.ToInterfaces())
 	for i := 0; i < size; i++ {
 		dst[i] = f(src.Index(i))
 	}
@@ -2650,7 +2728,7 @@ func getMapChunkToKeyList(useDefHash *uint32, converter oneArgsFunc, getResult f
 	return func(c *Chunk) (rs Slicer) {
 		useValAsKey := false
 		canUseDefHash := atomic.LoadUint32(useDefHash)
-		useSelf := converter == nil
+		useSelf := isNil(converter)
 
 		if converter == nil {
 			converter = self
@@ -2662,6 +2740,8 @@ func getMapChunkToKeyList(useDefHash *uint32, converter oneArgsFunc, getResult f
 			if c.Data.Len() > 0 && testCanHash(converter(c.Data.Index(0))) {
 				atomic.StoreUint32(useDefHash, 1)
 				useValAsKey = true
+			} else if c.Data.Len() == 0 {
+				useValAsKey = false
 			} else {
 				atomic.StoreUint32(useDefHash, 1000)
 				useValAsKey = false
@@ -2801,6 +2881,9 @@ func ceilChunkSize(a int, b int) int {
 
 func getKeyValues(c *Chunk, hashAsKey bool, keyFunc func(v interface{}) interface{}, KeyValues *[]interface{}) []interface{} {
 	return mapSlice(c.Data, func(v interface{}) interface{} {
+		if v == nil || keyFunc == nil {
+			fmt.Println("v=", v, "keyFunc=", keyFunc)
+		}
 		k := keyFunc(v)
 		if hashAsKey {
 			return &hKeyValue{hash64(k), k, v}
