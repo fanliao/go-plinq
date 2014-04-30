@@ -10,10 +10,10 @@ import (
 )
 
 const (
-	countForB      int  = 1000
-	rptCountForB   int  = 1100
+	countForB      int  = 100
+	rptCountForB   int  = 110
 	testGoLinq     bool = true
-	largeChunkSize int  = 100
+	largeChunkSize int  = 1000
 )
 
 var (
@@ -337,8 +337,22 @@ func init() {
 
 ////test union--------------------------------------------------------------------
 func BenchmarkGoPLinq_Union(b *testing.B) {
+	usei = 1
 	for i := 0; i < b.N; i++ {
-		dst, _ := From(bUsers).Union(bUsers2).Results()
+		dst, _ := From(bUsers).Union(bUsers2, largeChunkSize).Results()
+		if len(dst) != countForB+countForB/2 {
+			b.Fail()
+			//b.Log("arr=", arr)
+			b.Error("size is ", len(dst))
+			b.Log("dst=", dst)
+		}
+	}
+}
+
+func BenchmarkGoPLinq_Union2(b *testing.B) {
+	usei = 2
+	for i := 0; i < b.N; i++ {
+		dst, _ := From(bUsers).Union(bUsers2, largeChunkSize).Results()
 		if len(dst) != countForB+countForB/2 {
 			b.Fail()
 			//b.Log("arr=", arr)
@@ -365,7 +379,7 @@ func BenchmarkGoLinq_Union(b *testing.B) {
 ////test union--------------------------------------------------------------------
 func BenchmarkGoPLinq_UnionSelect(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		dst, _ := From(bUsers).Union(bUsers2).Select(selectUser).Results()
+		dst, _ := From(bUsers).Union(bUsers2, largeChunkSize).Select(selectUser).Results()
 		if len(dst) != countForB+countForB/2 {
 			b.Fail()
 			//b.Log("arr=", arr)
@@ -409,7 +423,7 @@ func BenchmarkGoLinq_UnionSelect(b *testing.B) {
 ////test except--------------------------------------------------------------------
 func BenchmarkGoPLinq_Except(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		dst, _ := From(bUsers).Except(bUsers2).Results()
+		dst, _ := From(bUsers).Except(bUsers2, largeChunkSize).Results()
 		if len(dst) != countForB/2 {
 			b.Fail()
 			b.Error("size is ", len(dst))
@@ -435,7 +449,7 @@ func BenchmarkGoLinq_Except(b *testing.B) {
 ////test intersect--------------------------------------------------------------------
 func BenchmarkGoPLinq_Intersect(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		dst, _ := From(bUsers).Intersect(bUsers2).Results()
+		dst, _ := From(bUsers).Intersect(bUsers2, largeChunkSize).Results()
 		if len(dst) != countForB/2 {
 			b.Fail()
 			b.Error("size is ", len(dst))

@@ -1106,6 +1106,8 @@ func (this commonStep) POption(option ParallelOption) *ParallelOption {
 	return &option
 }
 
+var usei int = 1
+
 func (this commonStep) Action() (act stepAction) {
 	switch this.typ {
 	case ACT_SELECT:
@@ -1123,7 +1125,12 @@ func (this commonStep) Action() (act stepAction) {
 	case ACT_HGROUPBY:
 		act = getGroupBy(this.act.(oneArgsFunc), true)
 	case ACT_UNION:
-		act = getUnion(this.act)
+		if usei == 1 {
+			act = getUnion(this.act)
+		} else {
+			act = getUnion2(this.act)
+
+		}
 	case ACT_CONCAT:
 		act = getConcat(this.act)
 	case ACT_INTERSECT:
@@ -1417,6 +1424,9 @@ func getJoinImpl(inner interface{},
 func getUnion(source2 interface{}) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption, first bool) (DataSource, *promise.Future, bool, error) {
 		src2 := From(source2).data
+		if canS(src, source2) {
+			return getUnion2()
+		}
 		reduceSrcChan := make(chan *Chunk)
 		//if !testCanUseDefaultHash(src, src2){
 		var useDefHash uint32 = 0
@@ -1432,6 +1442,89 @@ func getUnion(source2 interface{}) stepAction {
 
 		f3, out := reduceDistinctVals(mapFuture, reduceSrcChan, option)
 		return &chanSource{chunkChan: out}, f3, option.KeepOrder, nil
+	})
+}
+
+func canS(src DataSource, source2 DataSource) bool {
+	src2 := newDataSource(source2)
+	if src.Typ() == SOURCE_LIST && src2.Typ() == SOURCE_LIST {
+		if src.ToSlice(false).Len() <= largeChunkSize && src2.ToSlice(false).Len() <= largeChunkSize {
+			return true
+		}
+	}
+	return false
+
+}
+
+// Get the action function for Union operation
+// note the union cannot keep order because the map cannot keep order
+func getUnion2(source2 interface{}) stepAction {
+	return stepAction(func(src DataSource, option *ParallelOption, first bool) (DataSource, *promise.Future, bool, error) {
+		s2 := NewSlicer(source2)
+		s1 := src.ToSlice(false)
+
+		//src2 := From(source2).data
+		//reduceSrcChan := make(chan *Chunk)
+		////if !testCanUseDefaultHash(src, src2){
+		var useDefHash uint32 = 0
+		//if testCanHash(src.ToSlice(false).Index(0)) {
+		//	useDefHash = 1
+		//}
+		mapChunk := getMapChunkToKVChunk(&useDefHash, nil)
+
+		c1 := mapChunk(&Chunk{s1, 0, 1})
+		c2 := mapChunk(&Chunk{s2, 0, 1})
+		////map the elements of source and source2 to the a KeyValue slice
+		////includes the hash value and the original element
+		//f1, reduceSrcChan := parallelMapToChan(src, reduceSrcChan, mapChunk, option)
+		//f2, reduceSrcChan := parallelMapToChan(src2, reduceSrcChan, mapChunk, option)
+
+		//mapFuture := promise.WhenAll(f1, f2)
+		//addCloseChanCallback(mapFuture, reduceSrcChan)
+		result := make([]interface{}, s1.Len()+s2.Len())
+		//_ = copy(list[0:s1.Len(), s1)
+		//_ = copy()
+
+		distKVs := make(map[interface{}]int)
+		count := 0
+		forEachSlicer(c1.Data, func(i int, v interface{}) {
+			if kv, ok := v.(*hKeyValue); ok {
+				//fmt.Println("distinctChunkVals get==", i, v, kv)
+				if _, ok := distKVs[kv.keyHash]; !ok {
+					distKVs[kv.keyHash] = 1
+					result[count] = kv.value
+					count++
+				}
+			} else {
+				if _, ok := distKVs[v]; !ok {
+					distKVs[v] = 1
+					result[count] = v
+					count++
+				}
+			}
+		})
+
+		forEachSlicer(c2.Data, func(i int, v interface{}) {
+			if kv, ok := v.(*hKeyValue); ok {
+				//fmt.Println("distinctChunkVals get==", i, v, kv)
+				if _, ok := distKVs[kv.keyHash]; !ok {
+					distKVs[kv.keyHash] = 1
+					result[count] = kv.value
+					count++
+				}
+			} else {
+				if _, ok := distKVs[v]; !ok {
+					distKVs[v] = 1
+					result[count] = v
+					count++
+				}
+			}
+		})
+
+		return &listSource{NewSlicer(result[0:count])}, nil, option.KeepOrder, nil
+		//c.Data = NewSlicer(result[0:count])
+		//f3, out := reduceDistinctVals(mapFuture, reduceSrcChan, option)
+		//return &chanSource{chunkChan: out}, f3, option.KeepOrder, nil
 	})
 }
 
