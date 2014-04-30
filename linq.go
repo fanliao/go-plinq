@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	DEFAULTCHUNKSIZE       = 100
-	DEFAULTMINCUNKSIZE     = 20
+	DEFAULTCHUNKSIZE       = 200
+	DEFAULTMINCUNKSIZE     = 40
+	LARGECHUNKSIZE         = 100
 	SOURCE_LIST        int = iota //presents the list source
 	SOURCE_CHANNEL                //presents the channel source
 )
@@ -721,13 +722,13 @@ func (this *Queryable) execute() (data DataSource, err error) {
 		var f *promise.Future
 		step1 := step
 
+		//execute the step
 		executeStep := func() error {
 			defer func() {
 				if err := recover(); err != nil {
 					stepErrsChan <- NewStepError(i, step1.Typ(), newErrorWithStacks(err))
 				}
 			}()
-			//execute the step
 			if data, f, keepOrder, err = step.Action()(data, step.POption(pOption), i == 0); err != nil {
 				stepErrsChan <- NewStepError(i, step1.Typ(), err)
 				for j := i + 1; j < len(this.steps); j++ {
@@ -1096,8 +1097,8 @@ func (this commonStep) ChunkSize() int { return this.chunkSize }
 func (this commonStep) POption(option ParallelOption) *ParallelOption {
 	if this.typ == ACT_DISTINCT || this.typ == ACT_JOIN {
 		option.ChunkSize = DEFAULTMINCUNKSIZE
-	} else if this.typ == ACT_REVERSE {
-		option.ChunkSize = DEFAULTCHUNKSIZE * 5
+	} else if this.typ == ACT_REVERSE || this.Typ() == ACT_UNION || this.Typ() == ACT_INTERSECT || this.Typ() == ACT_EXCEPT {
+		option.ChunkSize = LARGECHUNKSIZE
 	}
 	if this.chunkSize != 0 {
 		option.ChunkSize = this.chunkSize
@@ -2576,6 +2577,9 @@ func getMapChunkToKeyList(useDefHash *uint32, converter oneArgsFunc, getResult f
 			useValAsKey = false
 		}
 
+		if !useValAsKey {
+			fmt.Println("WARNING:use hash")
+		}
 		if useValAsKey && useSelf {
 			rs = c.Data
 		} else {
@@ -2708,6 +2712,7 @@ func getKeyValues(c *Chunk, hashAsKey bool, keyFunc func(v interface{}) interfac
 		if hashAsKey {
 			return &hKeyValue{hash64(k), k, v}
 		} else {
+			//fmt.Println("use self as key")
 			return &hKeyValue{k, k, v}
 		}
 
@@ -2784,7 +2789,7 @@ func (this *chunkWhileTree) getWhileChunk() *chunkWhileResult {
 func (this *chunkWhileTree) handleChunk(chunkResult *chunkWhileResult) (foundFirstMatch bool) {
 	//fmt.Println("check handleChunk=", chunkResult, chunkResult.chunk.Order)
 	if chunkResult.match {
-		//如果块中发现不匹配的数据
+		//如果块中发现匹配的数据
 		foundFirstMatch = this.handleNoMatchChunk(chunkResult)
 	} else {
 		foundFirstMatch = this.handleMatchChunk(chunkResult)
