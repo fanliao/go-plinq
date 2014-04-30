@@ -1804,18 +1804,18 @@ func getSkipTake(foundMatch func(*Chunk, promise.Canceller) (int, bool), isTake 
 					}
 				}
 				if c.match {
-					//如果发现不满足条件的item，则必然是第一个不满足条件的块
+					//如果发现满足条件的item，则必然是第一个满足条件的块
 					sendMatchChunk(c.chunk, c.matchIndex)
 					return true
 				} else if isTake {
-					//如果没有发现不满足条件的，那可以take
+					//如果不满足条件，那可以take
 					//fmt.Println("send", c.chunk)
 					sendChunk(out, c.chunk)
 				}
 				return false
 			}
 
-			//如果一个块在某个发现了匹配块的后面，将调用afterMatchAct，意味着可以作为Skip的输出
+			//如果一个块在某个匹配块的后面，将调用afterMatchAct，意味着可以作为Skip的输出
 			afterMatchAct := func(c *chunkMatchResult) {
 				if !isTake {
 					sendChunk(out, c.chunk)
