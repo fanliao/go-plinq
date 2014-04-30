@@ -726,6 +726,7 @@ func (this *Queryable) execute() (data DataSource, err error) {
 		executeStep := func() error {
 			defer func() {
 				if err := recover(); err != nil {
+					fmt.Println("err in step----------", i, err)
 					stepErrsChan <- NewStepError(i, step1.Typ(), newErrorWithStacks(err))
 				}
 			}()
@@ -1461,7 +1462,7 @@ func union3(src DataSource, src2 DataSource, option *ParallelOption, first bool)
 	defer func() {
 		if err := recover(); err != nil {
 			e = newErrorWithStacks(err)
-			fmt.Println(e.Error())
+			//fmt.Println(e.Error())
 		}
 	}()
 	s2 := src2.ToSlice(false)
@@ -1979,9 +1980,9 @@ func forEachChanByOrder(s *chanSource, srcChan chan *Chunk, avl *chunkWhileTree,
 func filterSet(src DataSource, source2 interface{}, isExcept bool, option *ParallelOption) (DataSource, *promise.Future, error) {
 	src2 := newDataSource(source2)
 
-	//if canSequentialSet(src, src2) {
-	//	return filterSetByList2(src, src2, isExcept, option)
-	//}
+	if canSequentialSet(src, src2) {
+		return filterSetByList2(src, src2, isExcept, option)
+	}
 
 	switch ds2 := src2.(type) {
 	case *listSource:
@@ -2740,8 +2741,8 @@ func getMapChunkToKeyList(useDefHash *uint32, converter oneArgsFunc, getResult f
 			if c.Data.Len() > 0 && testCanHash(converter(c.Data.Index(0))) {
 				atomic.StoreUint32(useDefHash, 1)
 				useValAsKey = true
-			} else if c.Data.Len() == 0 {
-				useValAsKey = false
+				//} else if c.Data.Len() == 0 {
+				//	useValAsKey = false
 			} else {
 				atomic.StoreUint32(useDefHash, 1000)
 				useValAsKey = false
@@ -2751,7 +2752,9 @@ func getMapChunkToKeyList(useDefHash *uint32, converter oneArgsFunc, getResult f
 		}
 
 		if !useValAsKey {
-			fmt.Println("WARNING:use hash")
+			if c.Data.Len() > 0 {
+				//fmt.Println("WARNING:use hash")
+			}
 		}
 		if useValAsKey && useSelf {
 			rs = c.Data
@@ -2882,7 +2885,7 @@ func ceilChunkSize(a int, b int) int {
 func getKeyValues(c *Chunk, hashAsKey bool, keyFunc func(v interface{}) interface{}, KeyValues *[]interface{}) []interface{} {
 	return mapSlice(c.Data, func(v interface{}) interface{} {
 		if v == nil || keyFunc == nil {
-			fmt.Println("v=", v, "keyFunc=", keyFunc)
+			//fmt.Println("getKeyValues, v=", v, "keyFunc=", keyFunc)
 		}
 		k := keyFunc(v)
 		if hashAsKey {
