@@ -120,16 +120,14 @@ go-linq的并行模式太过简陋，所以在这里没有进行比较。大多�
 N = 100
 <table>
   <tr>
-    <th>Chunk Size</th><th> where </th><th> select </th><th> distinct </th><th> join   </th><th> union  </th><th> except </th><th> reverse </th><th> aggregate</th>
+    <th></th><th>Select</th><th>Where</th><th>Union</th><th>Except</th><th>Intersect</th><th>Reverse</th><th>Sum</th><th>SkipWhile</th><th>FirstBy</th>
+  </tr>
+
+  <tr>
+    <td>go-plinq</td><td>0.249</td><td>0.190</td><td>0.347</td><td>0.255</td><td>0.266</td><td>0.101</td><td>0.029</td><td>0.250</td><td>0.203</td>
   </tr>
   <tr>
-    <td>20 </td><td>128488 </td><td>178262  </td><td>383964    </td><td>831622  </td><td>587263  </td><td>602084  </td><td>76692    </td><td>117172</td>
-  </tr>
-  <tr>
-    <td>100</td><td>42081  </td><td>137802  </td><td>1069072   </td><td>2088570 </td><td>585460  </td><td>578650  </td><td>26158    </td><td>25207</td>
-  </tr>
-  <tr>
-    <td>go-linq</td><td>41636  </td><td>139851  </td><td>936898    </td><td>4019915 </td><td>228010  </td><td>168172  </td><td>24150    </td><td>22684</td>
+    <td>go-linq</td><td>0.224</td><td>0.166</td><td>0.293</td><td>0.233</td><td>0.297</td><td>0.056</td><td>0.024</td><td>0.186</td><td>0.000</td>
   </tr>
 </table>
 
