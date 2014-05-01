@@ -134,54 +134,56 @@ N = 100
 N = 1000
 <table>
   <tr>
-    <th>Chunk Size</th><th> where </th><th> select </th><th> distinct </th><th> join   </th><th> union  </th><th> except </th><th> reverse </th><th> aggregate</th>
+    <th></th><th>Select</th><th>Where</th><th>Union</th><th>Except</th><th>Intersect</th><th>Reverse</th><th>Sum</th><th>SkipWhile</th><th>FirstBy</th>
+  </tr>
+
+  <tr>
+    <td>go-plinq</td><td>1.279</td><td>1.012</td><td>2.930</td><td>2.920</td><td>2.941</td><td>0.766</td><td>0.184</td><td>1.094</td><td>1.121</td>
   </tr>
   <tr>
-    <td>100</td><td>263987 </td><td>587863  </td><td>2048010   </td><td>4422503  </td><td>2833165</td><td>3569247 </td><td>114768   </td><td>159334</td>
-  </tr>
-  <tr>
-    <td>500</td><td>223528 </td><td>742491  </td><td>6090957   </td><td>11717234 </td><td>2976377</td><td>3663385 </td><td>65215    </td><td>151022</td>
-  </tr>
-  <tr>
-    <td>go-linq</td><td>348171 </td><td>1335764 </td><td>91033790  </td><td>369944320</td><td>2176619</td><td>1883032 </td><td>233867   </td><td>220715</td>
+    <td>go-linq</td><td>2.322</td><td>1.635</td><td>2.747</td><td>2.500</td><td>3.230</td><td>0.548</td><td>0.231</td><td>1.733</td><td>0.000</td>
   </tr>
 </table>
 
 N = 10000
 <table>
   <tr>
-    <th>Chunk Size</th><th> where </th><th> select </th><th> distinct </th><th> join   </th><th> union  </th><th> except </th><th> reverse </th><th> aggregate</th>
+    <th></th><th>Select</th><th>Where</th><th>Union</th><th>Except</th><th>Intersect</th><th>Reverse</th><th>Sum</th><th>SkipWhile</th><th>FirstBy</th>
+  </tr>
+
+  <tr>
+    <td>go-plinq</td><td>8.217</td><td>5.883</td><td>36.133</td><td>29.606</td><td>29.444</td><td>4.202</td><td>0.524</td><td>8.472</td><td>8.633</td>
   </tr>
   <tr>
-    <td>100</td><td>1228806</td><td>4118052 </td><td>13039161  </td><td>39417932   </td><td>30144323</td><td>33959925</td><td>437343 </td><td>696423</td>
-  </tr>
-  <tr>
-    <td>500</td><td>896318 </td><td>4156110 </td><td>12358191  </td><td>37515182   </td><td>27840936</td><td>33399107</td><td>414909 </td><td>471292</td>
-  </tr>
-  <tr>
-    <td>go-linq</td><td>3604853</td><td>13508824</td><td>9035282000</td><td>37626549200</td><td>27962687</td><td>18442864</td><td>2379541</td><td>2210405</td>
+    <td>go-linq</td><td>22.568</td><td>15.513</td><td>33.193</td><td>24.343</td><td>30.973</td><td>5.758</td><td>2.339</td><td>17.538</td><td>0.000</td>
   </tr>
 </table>
 
 N = 100000
 <table>
   <tr>
-    <th>Chunk Size</th><th> where </th><th> select </th><th> distinct </th><th> join   </th><th> union  </th><th> except </th><th> reverse </th><th> aggregate</th>
+    <th></th><th>Select</th><th>Where</th><th>Union</th><th>Except</th><th>Intersect</th><th>Reverse</th><th>Sum</th><th>SkipWhile</th><th>FirstBy</th>
+  </tr>
+
+  <tr>
+    <td>go-plinq</td><td>69.763</td><td>50.194</td><td>377.585</td><td>323.476</td><td>322.451</td><td>29.643</td><td>3.746</td><td>83.282</td><td>81.700</td>
   </tr>
   <tr>
-    <td>100</td><td>9949631</td><td>39438016 </td><td>119025020</td><td>382763000 </td><td>261184280</td><td>337719020</td><td>3112578 </td><td>6299257</td>
-  </tr>
-  <tr>
-    <td>500</td><td>6361361 </td><td>37463910 </td><td>109611140</td><td>355923860 </td><td>228035690</td><td>327882800</td><td>2588805 </td><td>3791571</td>
-  </tr>
-  <tr>
-    <td>go-linq</td><td>31383368</td><td>132549770</td><td>N/A</td><td>N/A    </td><td>289903640</td><td>201013840</td><td>22245279</td><td>21519150</td>
+    <td>go-linq</td><td>218.864</td><td>147.164</td><td>359.931</td><td>267.010</td><td>344.306</td><td>55.085</td><td>22.721</td><td>169.383</td><td>0.000</td>
   </tr>
 </table>
 
-从性能测试结果看，即使采取了并行算法，plinq的Union和Except/Intersect的性能仍然低于go-linq的非并行模式。
+N = 1000000
+<table>
+  <tr>
+    <th></th><th>Select</th><th>Where</th><th>Union</th><th>Except</th><th>Intersect</th><th>Reverse</th><th>Sum</th><th>SkipWhile</th><th>FirstBy</th>
+  </tr>
 
-这是因为go-linq在这些运算符的实现中直接采用了interface{}作为map的key，而在go中有些类型特别是slice以及包含了slice的struct都不能作为map的key。
-
-所以go-plinq自己实现了一个hash函数将interface{}转换为hashkey后再作为map的key，其中要用到反射来获取struct的字段值。从测试结果上看，这部分对性能的影响比较大。
+  <tr>
+    <td>go-plinq</td><td>692.519</td><td>572.842</td><td>0.000</td><td>0.000</td><td>0.000</td><td>305.549</td><td>37.175</td><td>712.490</td><td>699.026</td>
+  </tr>
+  <tr>
+    <td>go-linq</td><td>0.000</td><td>0.000</td><td>0.000</td><td>0.000</td><td>0.000</td><td>456.671</td><td>210.697</td><td>0.000</td><td>0.000</td>
+  </tr>
+</table>
 
