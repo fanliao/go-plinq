@@ -57,7 +57,7 @@ Where
 
 * 投影运算符：
 
-Select
+Select, SeleteMany
 
 * 连接运算符：
 
@@ -81,13 +81,9 @@ Skip, SkipWhile, Take, TakeWhile
 
 * 元素运算符：
 
-ElementAt
+ElementAt, FirstBy 
 
 ## 未完成的linq查询运算符:
-
-* 选择：
-
-SeleteMany
 
 * 量词/Quantifiers：
 
@@ -99,21 +95,15 @@ Range, Repeat
 
 * 元素运算符/Element Operators
 
-First, FirstBy, Last, LastBy, Single, 
+First, Last, LastBy, Single 
 
 ## 文档（未完成。。。）:
 
 ## 性能测试
 
-性能测试说明：
+这里采用了go-linq的非并行模式作为对比的依据，测试结果是采用go提供的benchmark统计得到的。
 
-Chunk Size是指plinq内部分割数据的数据块的大小，如果Chunk Size>=N，那将退化为串行的linq查询。
-
-go-linq的并行模式太过简陋，所以在这里没有进行比较。大多数情况下，go-linq的并行模式比串行更慢。
-
-测试结果是采用go提供的benchmark统计得到的。
-
-下面的时间单位是ns。
+测试的CPU为Intel Atom Z3740D（4核 1.33GHZ），时间单位是ms。
 
 ### 性能测试结果
 
@@ -186,4 +176,10 @@ N = 1000000
     <td>go-linq</td><td>2230.280</td><td>1385.038</td><td>3274.814</td><td>2983.577</td><td>3950.806</td><td>456.671</td><td>210.697</td><td>1560.295</td><td>1550.277</td>
   </tr>
 </table>
+
+上面的测试结果中，Union、Intersect， Except的测试结果始终非常接近，这3个运算符基本都是串行的运算，OrderBy同样也是。
+
+Join、Distinct没有列出对比结果，因为go-linq的实现采取了类似双重循环的算法，效率要低很多，所以无法对比并行和串行的差异。
+
+并行算法的加速比取决于许多因素。从测试结果看，当N>=10000时，Select和Where运算的加速比基本稳定在3，但如果在select和where的函数中加入更耗时的操作，加速比将能达到3.5左右。
 
