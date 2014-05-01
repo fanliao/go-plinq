@@ -79,14 +79,18 @@ type ptrSlicer struct {
 }
 
 func (this *ptrSlicer) Len() int {
+	//fmt.Println("ptrSlicer Len()", this.data.Elem().Interface())
 	return this.data.Elem().Len()
 }
 
 func (this *ptrSlicer) Slice(i, j int) Slicer {
-	return &valueSlicer{this.data.Elem().Slice(i, i)}
+	r := &valueSlicer{this.data.Elem().Slice(i, j)}
+	//fmt.Println("ptrSlicer Slice()", r.Len(), i, j)
+	return r
 }
 
 func (this *ptrSlicer) Index(i int) interface{} {
+	//fmt.Println("ptrSlicer Index()", this.data.Elem().Interface())
 	return this.data.Elem().Index(i).Interface()
 }
 
@@ -95,8 +99,9 @@ func (this *ptrSlicer) Elem() Slicer {
 }
 
 func (this *ptrSlicer) ToInterfaces() []interface{} {
-	elem := this.data.Elem()
-	return (&valueSlicer{elem}).ToInterfaces()
+	elem := this.Elem()
+	//fmt.Println("ptrSlicer toInterfaces()", this.data.Elem().Interface())
+	return elem.ToInterfaces()
 }
 
 //stringSlicer

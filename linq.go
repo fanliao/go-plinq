@@ -1166,9 +1166,11 @@ func getSelect(selectFunc oneArgsFunc) stepAction {
 		mapChunk := func(c *Chunk) *Chunk {
 			if first {
 				results := mapSlice(c.Data, selectFunc)
+				//fmt.Println("map in select", results)
 				return &Chunk{NewSlicer(results), c.Order, c.StartIndex}
 			} else {
 				results := mapSliceToSelf(c.Data, selectFunc)
+				//fmt.Println("map in select", results)
 				return &Chunk{NewSlicer(results), c.Order, c.StartIndex}
 			}
 		}
@@ -1213,7 +1215,7 @@ func getWhere(predicate predicateFunc) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption, first bool) (dst DataSource, sf *promise.Future, keep bool, e error) {
 		mapChunk := func(c *Chunk) (r *Chunk) {
 			r = filterChunk(c, predicate)
-			//fmt.Println("map in where:from=", c.Data.ToInterfaces(), " to=", r.Data.ToInterfaces())
+			//fmt.Println("map in where:from=", c.Data.Len(), " to=", r.Data.ToInterfaces())
 			return
 		}
 
