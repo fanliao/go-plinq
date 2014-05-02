@@ -1254,6 +1254,9 @@ func getCChunkSrc(indexs []int, ints []interface{}) chan *Chunk {
 	return chunkSrc
 }
 
+//TODO: outstanding testing item:
+// 1. SkipWhile/TakeWhile after Union operation
+// 2. if the data source includes the count of match item are more than one.
 func TestSkipAndTake(t *testing.T) {
 	ints := make([]interface{}, count)
 	for i := 0; i < count; i++ {

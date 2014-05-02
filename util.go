@@ -496,13 +496,13 @@ func newChunkAvlTree() *avlTree {
 	})
 }
 
-type chunkList struct {
+type chunkOrderedList struct {
 	list     []interface{}
 	count    int
 	maxOrder int
 }
 
-func (this *chunkList) Insert(node interface{}) {
+func (this *chunkOrderedList) Insert(node interface{}) {
 	//fmt.Println("\ninsert chunk", node, len(this.list))
 	order := node.(*Chunk).Order
 	//某些情况下Order会重复，比如Union的第二个数据源的Order会和第一个重复
@@ -526,13 +526,23 @@ func (this *chunkList) Insert(node interface{}) {
 	//fmt.Println("after insert chunk", this.maxOrder, this.count, this.list)
 }
 
-func (this *chunkList) ToSlice() []interface{} {
+func (this *chunkOrderedList) ToSlice() []interface{} {
 	//fmt.Println("\nchunks to slice,", this.maxOrder, this.count, this.list)
+	for i, v := range this.list[0 : this.maxOrder+1] {
+		if isNil(v) {
+			fmt.Println("WARNING: find a nil item, index=", i, "maxOrder=", this.maxOrder)
+			for i, v := range this.list[0 : this.maxOrder+1] {
+				fmt.Println("for all, i=", i, "v=", v)
+			}
+			fmt.Println(newErrorWithStacks("nil item").Error())
+			break
+		}
+	}
 	return this.list[0 : this.maxOrder+1]
 }
 
-func newChunkList() *chunkList {
-	return &chunkList{make([]interface{}, 0, 0), 0, -1}
+func newChunkList() *chunkOrderedList {
+	return &chunkOrderedList{make([]interface{}, 0, 0), 0, -1}
 }
 
 //error handling functions------------------------------------
