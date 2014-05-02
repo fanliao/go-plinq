@@ -188,6 +188,22 @@ func BenchmarkGoLinq_Select(b *testing.B) {
 	}
 }
 
+//func BenchmarkFor_Select(b *testing.B) {
+//	for i := 0; i < b.N; i++ {
+//		rs := make([]interface{}, len(bUsers))
+//		for i, v := range bUsers {
+//			rs[i] = selectUser(v)
+//		}
+
+//		if len(rs) != countForB {
+//			b.Fail()
+//			//b.Log("arr=", arr)
+//			b.Error("size is ", len(rs))
+//			b.Log("dst=", rs)
+//		}
+//	}
+//}
+
 //func BenchmarkGoPLinq_SelectWhere(b *testing.B) {
 //	for i := 0; i < b.N; i++ {
 //		dst, _ := From(bUsers).Where(filterUser).Select(selectUser).Results()

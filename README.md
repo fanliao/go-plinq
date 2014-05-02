@@ -114,10 +114,10 @@ N = 100
   </tr>
 
   <tr>
-    <td>go-plinq</td><td>0.249</td><td>0.190</td><td>0.347</td><td>0.255</td><td>0.266</td><td>0.101</td><td>0.029</td><td>0.250</td><td>0.203</td>
+    <td>go-plinq</td><td>0.684</td><td>0.519</td><td>0.352</td><td>0.261</td><td>0.265</td><td>0.104</td><td>0.028</td><td>0.244</td><td>0.203</td>
   </tr>
   <tr>
-    <td>go-linq</td><td>0.224</td><td>0.166</td><td>0.293</td><td>0.233</td><td>0.297</td><td>0.056</td><td>0.024</td><td>0.186</td><td>0.172</td>
+    <td>go-linq</td><td>0.468</td><td>0.346</td><td>0.294</td><td>0.232</td><td>0.299</td><td>0.056</td><td>0.024</td><td>0.177</td><td>0.172</td>
   </tr>
 </table>
 
@@ -128,10 +128,10 @@ N = 1000
   </tr>
 
   <tr>
-    <td>go-plinq</td><td>1.279</td><td>1.012</td><td>2.930</td><td>2.920</td><td>2.941</td><td>0.766</td><td>0.184</td><td>1.094</td><td>1.121</td>
+    <td>go-plinq</td><td>1.284</td><td>0.983</td><td>2.926</td><td>2.273</td><td>2.294</td><td>0.777</td><td>0.184</td><td>1.095</td><td>1.087</td>
   </tr>
   <tr>
-    <td>go-linq</td><td>2.322</td><td>1.635</td><td>2.747</td><td>2.500</td><td>3.230</td><td>0.548</td><td>0.231</td><td>1.733</td><td>1.665</td>
+    <td>go-linq</td><td>2.403</td><td>1.658</td><td>2.793</td><td>2.481</td><td>3.209</td><td>0.550</td><td>0.229</td><td>1.739</td><td>1.689</td>
   </tr>
 </table>
 
@@ -142,10 +142,10 @@ N = 10000
   </tr>
 
   <tr>
-    <td>go-plinq</td><td>8.217</td><td>5.883</td><td>36.133</td><td>29.606</td><td>29.444</td><td>4.202</td><td>0.524</td><td>8.472</td><td>8.633</td>
+    <td>go-plinq</td><td>8.217</td><td>5.789</td><td>35.713</td><td>29.516</td><td>29.734</td><td>4.374</td><td>0.525</td><td>8.593</td><td>8.387</td>
   </tr>
   <tr>
-    <td>go-linq</td><td>22.568</td><td>15.513</td><td>33.193</td><td>24.343</td><td>30.973</td><td>5.758</td><td>2.339</td><td>17.538</td><td>17.119</td>
+    <td>go-linq</td><td>22.308</td><td>15.337</td><td>33.649</td><td>24.703</td><td>31.231</td><td>5.634</td><td>2.300</td><td>17.066</td><td>17.020</td>
   </tr>
 </table>
 
@@ -156,10 +156,10 @@ N = 100000
   </tr>
 
   <tr>
-    <td>go-plinq</td><td>69.763</td><td>50.194</td><td>377.585</td><td>323.476</td><td>322.451</td><td>29.643</td><td>3.746</td><td>83.282</td><td>81.700</td>
+    <td>go-plinq</td><td>68.521</td><td>49.713</td><td>370.174</td><td>316.697</td><td>317.158</td><td>28.722</td><td>3.733</td><td>82.625</td><td>81.059</td>
   </tr>
   <tr>
-    <td>go-linq</td><td>218.864</td><td>147.164</td><td>359.931</td><td>267.010</td><td>344.306</td><td>55.085</td><td>22.721</td><td>169.383</td><td>167.977</td>
+    <td>go-linq</td><td>215.817</td><td>146.860</td><td>358.402</td><td>265.927</td><td>345.938</td><td>55.790</td><td>22.629</td><td>169.285</td><td>168.506</td>
   </tr>
 </table>
 
@@ -170,10 +170,10 @@ N = 1000000
   </tr>
 
   <tr>
-    <td>go-plinq</td><td>692.519</td><td>572.842</td><td>3557.229</td><td>3747.599</td><td>3740.498</td><td>305.549</td><td>37.175</td><td>712.490</td><td>699.026</td>
+    <td>go-plinq</td><td>698.026</td><td>495.929</td><td>3613.313</td><td>4074.990</td><td>4154.106</td><td>256.377</td><td>35.813</td><td>718.557</td><td>708.542</td>
   </tr>
   <tr>
-    <td>go-linq</td><td>2230.280</td><td>1385.038</td><td>3274.814</td><td>2983.577</td><td>3950.806</td><td>456.671</td><td>210.697</td><td>1560.295</td><td>1550.277</td>
+    <td>go-linq</td><td>2214.319</td><td>1328.957</td><td>3700.441</td><td>2961.360</td><td>4201.261</td><td>506.144</td><td>210.309</td><td>1560.294</td><td>1558.292</td>
   </tr>
 </table>
 

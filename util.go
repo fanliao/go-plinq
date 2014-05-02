@@ -453,8 +453,9 @@ func (this *avlTree) ToSlice() []interface{} {
 
 func avlToSlice(root *avlNode, result *[]interface{}) []interface{} {
 	if result == nil {
-		r := make([]interface{}, 0, 10)
-		result = &r
+		panic(errors.New("avlToSlice, result must be not nil"))
+		//r := make([]interface{}, 0, 10)
+		//result = &r
 	}
 
 	if root == nil {
@@ -673,7 +674,7 @@ func newErrorWithStacks(i interface{}) (e error) {
 	buf := bytes.NewBufferString(err.Error())
 	buf.WriteString("\n")
 
-	pcs := make([]uintptr, 50)
+	pcs := make([]uintptr, 10)
 	num := runtime.Callers(2, pcs)
 	for _, v := range pcs[0:num] {
 		fun := runtime.FuncForPC(v)
