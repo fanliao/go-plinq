@@ -1177,11 +1177,9 @@ func getSelect(selectFunc oneArgsFunc) stepAction {
 		//	results := mapFunc(c.Data, selectFunc)
 		//	return &Chunk{NewSlicer(results), c.Order, c.StartIndex}
 		//}
-		//mapChunk := getMapChunkToSelfFunc(selectFunc)
-		mapChunk := getChunkOprFunc(mapSlice, selectFunc)
+		mapChunk := getMapChunkToSelfFunc(selectFunc)
 		if first {
-			//mapChunk = getMapChunkFunc(selectFunc)
-			mapChunk := getChunkOprFunc(mapSliceToMany, selectFunc)
+			mapChunk = getMapChunkFunc(selectFunc)
 		}
 
 		//try to use sequentail if the size of the data is less than size of chunk
@@ -1964,7 +1962,7 @@ func getFilterSetMapFuncs() (mapFunc1, mapFunc2 func(*Chunk) *Chunk) {
 	var useDefHash uint32 = 0
 	mapFunc1 = getMapChunkToKVChunkFunc(&useDefHash, nil)
 	mapFunc2 = func(c *Chunk) (r *Chunk) {
-		getResult := func(c *Chunk, useValAsKey bool) []interface{} {
+		getResult := func(c *Chunk, useValAsKey bool) Slicer {
 			return mapSlice(c.Data, hash64)
 		}
 		slicer := getMapChunkToKeyList(&useDefHash, nil, getResult)(c)
@@ -2669,14 +2667,12 @@ func forEachSlicer(src Slicer, f func(int, interface{})) {
 	}
 }
 
-func mapSliceToMany(src Slicer, f interface{}) Slicer {
-	mapFunc := f.(func(interface{}) []interface{})
-
+func mapSliceToMany(src Slicer, f func(interface{}) []interface{}) Slicer {
 	size := src.Len()
 	dst := make([]interface{}, 0, size)
 
 	for i := 0; i < size; i++ {
-		rs := mapFunc(src.Index(i))
+		rs := f(src.Index(i))
 		dst = appendToSlice(dst, rs...)
 	}
 	return NewSlicer(dst)
@@ -2697,7 +2693,7 @@ func mapSlice(src Slicer, f interface{}) Slicer {
 	for i := 0; i < size; i++ {
 		dst[i] = mapFunc(src.Index(i))
 	}
-	return dst
+	return NewSlicer(dst)
 }
 
 func mapSliceToSelf(src Slicer, f oneArgsFunc) []interface{} {
@@ -2714,7 +2710,7 @@ func mapSliceToSelf(src Slicer, f oneArgsFunc) []interface{} {
 	}
 }
 
-func getMapChunkToKeyList(useDefHash *uint32, converter oneArgsFunc, getResult func(*Chunk, bool) []interface{}) func(c *Chunk) Slicer {
+func getMapChunkToKeyList(useDefHash *uint32, converter oneArgsFunc, getResult func(*Chunk, bool) Slicer) func(c *Chunk) Slicer {
 	return func(c *Chunk) (rs Slicer) {
 		useValAsKey := false
 		valCanAsKey := atomic.LoadUint32(useDefHash)
@@ -2748,14 +2744,14 @@ func getMapChunkToKeyList(useDefHash *uint32, converter oneArgsFunc, getResult f
 		if useValAsKey && useSelf {
 			rs = c.Data
 		} else {
-			rs = NewSlicer(getResult(c, useValAsKey))
+			rs = getResult(c, useValAsKey)
 		}
 		return
 	}
 }
 
 func getMapChunkToKVs(useDefHash *uint32, converter oneArgsFunc) func(c *Chunk) Slicer {
-	return getMapChunkToKeyList(useDefHash, converter, func(c *Chunk, useValAsKey bool) []interface{} {
+	return getMapChunkToKeyList(useDefHash, converter, func(c *Chunk, useValAsKey bool) Slicer {
 		return chunkToKeyValues(c, !useValAsKey, converter, nil)
 	})
 }
@@ -2898,7 +2894,7 @@ func ceilChunkSize(a int, b int) int {
 	}
 }
 
-func chunkToKeyValues(c *Chunk, hashAsKey bool, keyFunc func(v interface{}) interface{}, KeyValues *[]interface{}) []interface{} {
+func chunkToKeyValues(c *Chunk, hashAsKey bool, keyFunc func(v interface{}) interface{}, KeyValues *[]interface{}) Slicer {
 	return mapSlice(c.Data, func(v interface{}) interface{} {
 		if v == nil || keyFunc == nil {
 			//fmt.Println("chunkToKeyValues, v=", v, "keyFunc=", keyFunc)

@@ -338,26 +338,26 @@ func TestSelect(t *testing.T) {
 		}
 		c.Convey("Select an interface{} slice", func() {
 			rs, err := From(tUsers).SetSizeOfChunk(size).Select(selectUser).Results()
-			c.So(rs, shouldSlicesResemble, newUsers)
 			c.So(err, c.ShouldBeNil)
+			c.So(rs, shouldSlicesResemble, newUsers)
 		})
 
 		c.Convey("Select an interface{} channel", func() {
 			rs, err := From(getChan(tUsers)).SetSizeOfChunk(size).Select(selectUser).Results()
-			c.So(rs, shouldSlicesResemble, newUsers)
 			c.So(err, c.ShouldBeNil)
+			c.So(rs, shouldSlicesResemble, newUsers)
 		})
 
 		c.Convey("Select an int channel", func() {
 			rs, err := From(getIntChan(tInts)).SetSizeOfChunk(size).Select(selectInt).Results()
-			c.So(rs, shouldSlicesResemble, newInts)
 			c.So(err, c.ShouldBeNil)
+			c.So(rs, shouldSlicesResemble, newInts)
 		})
 
 		c.Convey("Select an int channel, and keep original order", func() {
 			rs, err := From(getIntChan(tInts)).SetSizeOfChunk(size).Select(selectIntForConfusedOrder).Results()
-			c.So(rs, shouldSlicesResemble, newInts)
 			c.So(err, c.ShouldBeNil)
+			c.So(rs, shouldSlicesResemble, newInts)
 		})
 
 	}
