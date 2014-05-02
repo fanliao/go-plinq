@@ -541,7 +541,7 @@ func (this *chunkOrderedList) ToSlice() []interface{} {
 	return this.list[0 : this.maxOrder+1]
 }
 
-func newChunkList() *chunkOrderedList {
+func newChunkOrderedList() *chunkOrderedList {
 	return &chunkOrderedList{make([]interface{}, 0, 0), 0, -1}
 }
 
