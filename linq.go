@@ -1877,7 +1877,8 @@ func getSkipTake(foundMatch func(*Chunk, promise.Canceller) (int, bool), isTake 
 			//开始处理channel中的块
 			srcChan := s.ChunkChan(option.ChunkSize)
 			f := promise.Start(func() (interface{}, error) {
-				avl := newChunkMatchTree(beforeMatchAct, afterMatchAct, beMatchAct, useIndex)
+				//avl := newChunkMatchTree(beforeMatchAct, afterMatchAct, beMatchAct, useIndex)
+				avl := newChunkMatchList(beforeMatchAct, afterMatchAct, beMatchAct, useIndex)
 				return forEachChanByOrder(s, srcChan, avl, func(c *Chunk, foundFirstMatch *bool) bool {
 					if !*foundFirstMatch {
 						//检查块是否存在匹配的数据，按Index计算的总是返回false，因为必须要等前面所有的块已经排好序后才能得到正确的索引
@@ -1957,7 +1958,8 @@ func getFirstElement(src DataSource, foundMatch func(c *Chunk, canceller promise
 
 		srcChan := s.ChunkChan(option.ChunkSize)
 		f := promise.Start(func() (interface{}, error) {
-			avl := newChunkMatchTree(beforeMatchAct, afterMatchAct, beMatchAct, useIndex)
+			//			avl := newChunkMatchTree(beforeMatchAct, afterMatchAct, beMatchAct, useIndex)
+			avl := newChunkMatchList(beforeMatchAct, afterMatchAct, beMatchAct, useIndex)
 			return forEachChanByOrder(s, srcChan, avl, func(c *Chunk, foundFirstMatch *bool) bool {
 				if !*foundFirstMatch {
 					chunkResult := &chunkMatchResult{chunk: c}
@@ -1990,7 +1992,8 @@ func getFirstElement(src DataSource, foundMatch func(c *Chunk, canceller promise
 	panic(ErrUnsupportSource)
 }
 
-func forEachChanByOrder(s *chanSource, srcChan chan *Chunk, avl *chunkMatchTree, action func(*Chunk, *bool) bool) (interface{}, error) {
+//func forEachChanByOrder(s *chanSource, srcChan chan *Chunk, avl *chunkMatchTree, action func(*Chunk, *bool) bool) (interface{}, error) {
+func forEachChanByOrder(s *chanSource, srcChan chan *Chunk, avl *chunkMatchList, action func(*Chunk, *bool) bool) (interface{}, error) {
 	foundFirstMatch := false
 	shouldBreak := false
 	//Noted the order of sent from source chan maybe confused
