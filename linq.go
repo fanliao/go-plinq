@@ -946,7 +946,8 @@ func (this chanSource) Close() {
 func (this chanSource) ToSlice(keepOrder bool) Slicer {
 	if this.chunkChan != nil {
 		chunks := make([]interface{}, 0, 2)
-		avl := newChunkAvlTree()
+		//avl := newChunkAvlTree()
+		ordered := newChunkList()
 
 		for c := range this.chunkChan {
 			if isNil(c) {
@@ -959,13 +960,23 @@ func (this chanSource) ToSlice(keepOrder bool) Slicer {
 			}
 
 			if keepOrder {
-				avl.Insert(c)
-			} else {
+				//avl.Insert(c)
+				ordered.Insert(c)
+				//fmt.Println("\n after insert:", ordered.maxOrder, ordered.count)
+				//for i, v := range ordered.list {
+				//	if isNil(v) {
+				//		fmt.Println("chunk ordered, ", i, nil)
+				//	} else {
+				//		fmt.Println("chunk ordered, ", i, v.(*Chunk).Data.ToInterfaces())
+				//	}
+				//}
 				chunks = appendToSlice(chunks, c)
 			}
 		}
 		if keepOrder {
-			chunks = avl.ToSlice()
+			//chunks = avl.ToSlice()
+			chunks = ordered.ToSlice()
+			//fmt.Println("latest chunks :", chunks, ordered.list)
 		}
 
 		//fmt.Println("toslice, result1===", chunks)
@@ -979,7 +990,7 @@ func (this chanSource) ToSlice(keepOrder bool) Slicer {
 		result := make([]interface{}, 0, 10)
 		for {
 			if v, ok := srcChan.Recv(); ok {
-				result = append(result, v.Interface())
+				result = appendToSlice(result, v.Interface())
 			} else {
 				break
 			}
@@ -1178,10 +1189,40 @@ func getSelect(selectFunc oneArgsFunc) stepAction {
 		//try to use sequentail if the size of the data is less than size of chunk
 		if list, err, handled := trySequentialMap(src, option, mapChunk); handled {
 			return list, nil, option.KeepOrder, err
+		} else if err != nil {
+			return nil, nil, option.KeepOrder, err
 		}
 
+		if src.Typ() == SOURCE_LIST && src.ToSlice(false).Len() <= option.ChunkSize {
+			fmt.Println("WARNING! parallel, src=", src.ToSlice(false).ToInterfaces())
+		}
 		f, out := parallelMapToChan(src, nil, mapChunk, option)
 		sf, dst, e = f, &chanSource{chunkChan: out}, nil
+
+		return
+	})
+
+}
+
+func getSelect2(selectFunc oneArgsFunc) stepAction {
+	return stepAction(func(src DataSource, option *ParallelOption, first bool) (dst DataSource, sf *promise.Future, keep bool, e error) {
+		keep = option.KeepOrder
+		mapChunk := func(c *Chunk) *Chunk {
+			if first {
+				results := mapSlice(c.Data, selectFunc)
+				//fmt.Println("map in select", results)
+				return &Chunk{NewSlicer(results), c.Order, c.StartIndex}
+			} else {
+				results := mapSliceToSelf(c.Data, selectFunc)
+				//fmt.Println("map in select", results)
+				return &Chunk{NewSlicer(results), c.Order, c.StartIndex}
+			}
+		}
+
+		//try to use sequentail if the size of the data is less than size of chunk
+		if list, err, handled := trySequentialMap(src, option, mapChunk); handled {
+			return list, nil, option.KeepOrder, err
+		}
 
 		return
 	})
@@ -1215,7 +1256,7 @@ func getWhere(predicate predicateFunc) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption, first bool) (dst DataSource, sf *promise.Future, keep bool, e error) {
 		mapChunk := func(c *Chunk) (r *Chunk) {
 			r = filterChunk(c, predicate)
-			//fmt.Println("map in where:from=", c.Data.Len(), " to=", r.Data.ToInterfaces())
+			//fmt.Println("map in where:from=", c, " to=", r)
 			return
 		}
 
@@ -1435,7 +1476,12 @@ func getUnion(source2 interface{}) stepAction {
 		}
 		reduceSrcChan := make(chan *Chunk)
 		//if !testCanUseDefaultHash(src, src2){
-		var useDefHash uint32 = 0
+		var (
+			useDefHash uint32
+		//maxOrder int
+		)
+
+		//mapChunk := getMapChunkToKVChunk2(&useDefHash, &maxOrder, nil)
 		mapChunk := getMapChunkToKVChunk(&useDefHash, nil)
 
 		//map the elements of source and source2 to the a KeyValue slice
@@ -1621,7 +1667,6 @@ func getReverse() stepAction {
 			wholeSlice = src.ToSlice(true).ToInterfaces()
 			slicer = NewSlicer(wholeSlice)
 		}
-		//fmt.Println("getReverse, wholeSlice1===", wholeSlice)
 		size := slicer.Len()
 		srcSlice := slicer.Slice(0, size/2) //wholeSlice[0 : size/2]
 
@@ -2126,12 +2171,12 @@ func filterSetByList2(src DataSource, src2 DataSource, isExcept bool, option *Pa
 	c2 := mapChunk2(&Chunk{src2.ToSlice(false), 0, 1})
 
 	//获取src2对应的map用于筛选
-	distKVs := make(map[interface{}]bool, 100)
+	distKVs := make(map[interface{}]bool, c2.Data.Len())
 	forEachSlicer(c2.Data, func(i int, v interface{}) {
 		distKVs[v] = true
 	})
 
-	resultKVs := make(map[interface{}]interface{}, 100)
+	resultKVs := make(map[interface{}]interface{}, c1.Data.Len())
 	mapDistinct := func(c *Chunk) *Chunk {
 		//过滤src
 		count := 0
@@ -2235,19 +2280,25 @@ func foundMatchFunc(predicate predicateFunc) func(c *Chunk, canceller promise.Ca
 
 //paralleliam functions--------------------------------------------------
 
-func parallelMapToChan(src DataSource, reduceSrcChan chan *Chunk, mapChunk func(c *Chunk) (r *Chunk), option *ParallelOption) (f *promise.Future, ch chan *Chunk) {
+func parallelMapToChan(src DataSource, reduceSrcChan chan *Chunk, mapChunk func(c *Chunk) (r *Chunk), option *ParallelOption, startOrders ...int) (f *promise.Future, ch chan *Chunk) {
 	//get all values and keys
 	switch s := src.(type) {
 	case *listSource:
 		return parallelMapListToChan(s, reduceSrcChan, mapChunk, option)
 	case *chanSource:
-		return parallelMapChanToChan(s, reduceSrcChan, mapChunk, option)
+		return parallelMapChanToChan(s, reduceSrcChan, mapChunk, option, startOrders...)
 	default:
 		panic(ErrUnsupportSource)
 	}
 }
 
-func parallelMapChanToChan(src *chanSource, out chan *Chunk, task func(*Chunk) *Chunk, option *ParallelOption) (*promise.Future, chan *Chunk) {
+//在某些情况比如Union的操作下，后面的数据源的Order必须接着前面的Order，所以需要更改
+func parallelMapChanToChan(src *chanSource, out chan *Chunk, task func(*Chunk) *Chunk, option *ParallelOption, startOrders ...int) (*promise.Future, chan *Chunk) {
+	startOrder := 0
+	if startOrders != nil && len(startOrders) > 0 {
+		startOrder = startOrders[0]
+	}
+
 	var createOutChan bool
 	if out == nil {
 		out = make(chan *Chunk, option.Degree)
@@ -2269,8 +2320,9 @@ func parallelMapChanToChan(src *chanSource, out chan *Chunk, task func(*Chunk) *
 			for c := range srcChan {
 				if !isNil(c) {
 					d := task(c)
-					//fmt.Println("parallelMapChanToChan, from=", c.Data.ToInterfaces(), "to=", d.Data.ToInterfaces())
+					//fmt.Println("\nparallelMapChanToChan, from=", c.Data.ToInterfaces(), "to=", d.Data.ToInterfaces())
 					if out != nil && d != nil {
+						d.Order += startOrder
 						//out <- d
 						sendChunk(out, d)
 					}
@@ -2322,7 +2374,7 @@ func parallelMapListToChan(src DataSource, out chan *Chunk, task func(*Chunk) *C
 				if end >= lenOfData {
 					end = lenOfData
 				}
-				c := &Chunk{data.Slice(i*size, end), i * size, i * size} //, end}
+				c := &Chunk{data.Slice(i*size, end), i, i * size} //, end}
 				//fmt.Println("parallelMapListToChan, send", i, size, data.Slice(i*size, end).ToInterfaces())
 				//ch <- c
 				sendChunk(ch, c)
@@ -2367,7 +2419,7 @@ func parallelMapList(src DataSource, getAction func(*Chunk) func() (interface{},
 		if end >= lenOfData {
 			end = lenOfData
 		}
-		c := &Chunk{data.Slice(i*size, end), i * size, i * size} //, end}
+		c := &Chunk{data.Slice(i*size, end), i, i * size} //, end}
 
 		f = promise.Start(getAction(c))
 		fs[i] = f
@@ -2507,6 +2559,7 @@ func trySequentialMap(src DataSource, option *ParallelOption, mapChunk func(c *C
 	if useSingle := singleDegree(src, option); useSingle {
 		c := &Chunk{src.ToSlice(false), 0, 0}
 		r := mapChunk(c)
+		//fmt.Println("single", r.Data.Len())
 		return newListSource(r.Data), nil, true
 	} else {
 		return nil, nil, false
@@ -2570,7 +2623,9 @@ func reduceDistinctValues(mapFuture *promise.Future, reduceSrcChan chan *Chunk, 
 	distKVs := make(map[interface{}]int)
 	option.Degree = 1
 	return parallelMapChanToChan(&chanSource{chunkChan: reduceSrcChan, future: mapFuture}, nil, func(c *Chunk) *Chunk {
+
 		r := distinctChunkValues(c, distKVs, nil)
+		//fmt.Println("\nreduceDistinctValues", c, r.Data)
 		return r
 	}, option)
 }
@@ -2638,20 +2693,19 @@ func filterChunk(c *Chunk, f predicateFunc) *Chunk {
 	return &Chunk{result, c.Order, c.StartIndex}
 }
 
-func filterSlice(src Slicer, f predicateFunc) Slicer {
-	dst := make([]interface{}, 0, 10)
+func filterSlice(data Slicer, f predicateFunc) Slicer {
 
-	//fmt.Println("filterSlice, src=", reflect.ValueOf(src).Interface())
-	size := src.Len()
+	size := data.Len()
+	count, dst := 0, make([]interface{}, size)
 	for i := 0; i < size; i++ {
-		v := src.Index(i)
-		//fmt.Println("filterSlice, v=", i, v)
-		//for _, v := range src {
+		v := data.Index(i)
 		if f(v) {
-			dst = append(dst, v)
+			//dst = appendToSlice(dst, v)
+			dst[count] = v
+			count++
 		}
 	}
-	return NewSlicer(dst)
+	return NewSlicer(dst[0:count])
 }
 
 func forEachSlicer(src Slicer, f func(int, interface{})) {
@@ -2745,6 +2799,18 @@ func getMapChunkToKVs(useDefHash *uint32, converter oneArgsFunc) func(c *Chunk) 
 func getMapChunkToKVChunk(useDefHash *uint32, converter oneArgsFunc) func(c *Chunk) (r *Chunk) {
 	return func(c *Chunk) (r *Chunk) {
 		slicer := getMapChunkToKVs(useDefHash, converter)(c)
+		//fmt.Println("\ngetMapChunkToKVChunk", c, slicer)
+		return &Chunk{slicer, c.Order, c.StartIndex}
+	}
+}
+
+func getMapChunkToKVChunk2(useDefHash *uint32, maxOrder *int, converter oneArgsFunc) func(c *Chunk) (r *Chunk) {
+	return func(c *Chunk) (r *Chunk) {
+		slicer := getMapChunkToKVs(useDefHash, converter)(c)
+		fmt.Println("\ngetMapChunkToKVChunk", c, slicer)
+		if c.Order > *maxOrder {
+			*maxOrder = c.Order
+		}
 		return &Chunk{slicer, c.Order, c.StartIndex}
 	}
 }
@@ -2785,6 +2851,13 @@ func expandChunks(src []interface{}, keepOrder bool) []interface{} {
 			var (
 				a1, b1 *Chunk
 			)
+
+			if isNil(a) {
+				return true
+			} else if isNil(b) {
+				return false
+			}
+
 			switch v := a.(type) {
 			case []interface{}:
 				a1, b1 = v[0].(*Chunk), b.([]interface{})[0].(*Chunk)
@@ -2799,6 +2872,9 @@ func expandChunks(src []interface{}, keepOrder bool) []interface{} {
 	count := 0
 	chunks := make([]*Chunk, len(src))
 	for i, c := range src {
+		if isNil(c) {
+			continue
+		}
 		switch v := c.(type) {
 		case []interface{}:
 			chunks[i] = v[0].(*Chunk)
@@ -2812,6 +2888,11 @@ func expandChunks(src []interface{}, keepOrder bool) []interface{} {
 	result := make([]interface{}, count)
 	start := 0
 	for _, c := range chunks {
+		//fmt.Println("range chunks,", i)
+		if c == nil {
+			//fmt.Println("range chunk!!!!!!!!!,", i, chunks)
+			continue
+		}
 		size := c.Data.Len()
 		copy(result[start:start+size], c.Data.ToInterfaces())
 		start += size
@@ -3146,4 +3227,285 @@ func newChunkMatchTree(beforeMatchAct func(*chunkMatchResult) bool, afterMatchAc
 			return 1
 		}
 	}), 0, 0, nil, beforeMatchAct, afterMatchAct, beMatchAct, useIndex, false}
+}
+
+//the AVL tree for Skip/SkipWhile/Take/TakeWhile operation----------------------------------------------------
+//用来对乱序的channel数据源进行Skip/Take处理的avl树
+//channel输出的数据在排序后是一个连续的块的列表，而Skip/Take必须根据第一个匹配条件的数据位置进行处理，
+//关键在于尽快对得到的块进行判断
+//因为数据源可以乱序输出，所以用avl树来对得到的块进行排序，每当从channel中得到一个块时，
+//都会判断是否列表从头开始的部分是否已经被填充，并对所有已经从头构成连续填充的块进行判断，
+//判断是否块包含有匹配条件的数据，是否是第一个匹配的块，并通过startOrder记录头开始的顺序号
+//如果一个块不在从头开始连续填充的区域中，则判断是否在前面有包含匹配数据的块，如果有的话，则可以执行Skip操作
+//avl中始终只保留一个最靠前的匹配的块，其后的块可以直接进行Skip操作，无需插入avl树
+type chunkMatchList struct {
+	//avl             *avlTree          //保留了待处理块的avl树
+	list            []*chunkMatchResult //保留了待处理块的list
+	startOrder      int                 //下一个头块的顺序号
+	startIndex      int                 //下一个头块的起始索引号
+	matchChunk      *chunkMatchResult   //当前最靠前的包含匹配数据的块
+	beforeMatchAct  func(*chunkMatchResult) bool
+	afterMatchAct   func(*chunkMatchResult)
+	beMatchAct      func(*chunkMatchResult)
+	useIndex        bool //是否根据索引进行判断，如果是的话，每个块都必须成为头块后才根据StartIndex进行计算。因为某些操作比如Where将导致块内的数据量不等于原始的数据量
+	foundFirstMatch bool //是否已经发现第一个匹配的块
+}
+
+func (this *chunkMatchList) Insert(node *chunkMatchResult) {
+	order := node.chunk.Order
+	if len(this.list) > order {
+		this.list[order] = node
+	} else {
+		newList := make([]*chunkMatchResult, order+1, max(2*len(this.list), order+1))
+		_ = copy(newList[0:len(this.list)], this.list)
+		newList[order] = node
+		this.list = newList
+	}
+	//this.avl.Insert(node)
+	if node.match {
+		this.matchChunk = node
+	}
+
+	////fmt.Println("\ninsert chunk", node, len(this.list))
+	//order := node.(*Chunk).Order
+	////某些情况下Order会重复，比如Union的第二个数据源的Order会和第一个重复
+	//if order < len(this.list) && this.list[order] != nil {
+	//	order = this.maxOrder + 1
+	//}
+
+	//if order > this.maxOrder {
+	//	this.maxOrder = order
+	//}
+
+	//if len(this.list) > order {
+	//	this.list[order] = node
+	//} else {
+	//	newList := make([]interface{}, order+1, max(2*len(this.list), order+1))
+	//	_ = copy(newList[0:len(this.list)], this.list)
+	//	newList[order] = node
+	//	this.list = newList
+	//}
+	//this.count++
+	////fmt.Println("after insert chunk", this.maxOrder, this.count, this.list)
+}
+
+func (this *chunkMatchList) getMatchChunk() *chunkMatchResult {
+	return this.matchChunk
+}
+
+func (this *chunkMatchList) handleChunk(chunkResult *chunkMatchResult) (foundFirstMatch bool) {
+	//fmt.Println("check handleChunk=", chunkResult, chunkResult.chunk.Order)
+	if chunkResult.match {
+		//如果块中发现匹配的数据
+		foundFirstMatch = this.handleMatchChunk(chunkResult)
+	} else {
+		foundFirstMatch = this.handleNoMatchChunk(chunkResult)
+	}
+	//fmt.Println("after check handleChunk=", foundFirstMatch)
+	return
+}
+
+//处理不符合条件的块，返回true表示该块和后续的连续块中发现了原始序列中第一个符合条件的块
+//在Skip/Take和管道模式中，块是否不符合条件是在块被放置到正确顺序后才能决定的
+func (this *chunkMatchList) handleNoMatchChunk(chunkResult *chunkMatchResult) bool {
+	//如果不符合条件，则检查当前块order是否等于下一个order，如果是，则进行beforeWhile处理，并更新startOrder
+	if chunkResult.chunk.Order == this.startOrder {
+		chunkResult.chunk.StartIndex = this.startIndex
+		//fmt.Println("call beforeMatchAct=", chunkResult.chunk.Order)
+		if found := this.beforeMatchAct(chunkResult); found {
+			//fmt.Println("call beforeMatchAct get", find)
+			this.foundFirstMatch = true
+			if !this.useIndex {
+				return true
+			}
+		}
+		this.startOrder += 1
+		this.startIndex += chunkResult.chunk.Data.Len()
+		//检查avl中是否还有符合顺序的块
+		_ = this.handleOrderedChunks()
+
+		if this.foundFirstMatch {
+			return true
+		}
+	} else {
+		//如果不是，则检查是否存在已经满足条件的前置块
+		if this.matchChunk != nil && this.matchChunk.chunk.Order < chunkResult.chunk.Order {
+			//如果存在，则当前块是while之后的块，根据take和skip进行处理
+			this.afterMatchAct(chunkResult)
+		} else {
+			//如果不存在，则插入list
+			this.Insert(chunkResult)
+		}
+	}
+	return false
+}
+
+//处理符合条件的块，返回true表示是原始序列中第一个符合条件的块
+func (this *chunkMatchList) handleMatchChunk(chunkResult *chunkMatchResult) bool {
+	//检查avl是否存在已经满足条件的块
+	if lastWhile := this.getMatchChunk(); lastWhile != nil {
+		//如果存在符合的块，则检查当前块是在之前还是之后
+		if chunkResult.chunk.Order < lastWhile.chunk.Order {
+			//如果是之前，检查avl中所有在当前块之后的块，执行对应的take或while操作
+			this.handleChunksAfterMatch(chunkResult)
+
+			//替换原有的匹配块，检查当前块的order是否等于下一个order，如果是，则找到了第一个匹配块，并进行对应处理
+			if this.putMatchChunk(chunkResult) {
+				return true
+			}
+		} else {
+			//如果是之后，则对当前块执行对应的take或while操作
+			this.afterMatchAct(chunkResult)
+		}
+	} else {
+		//如果avl中不存在匹配的块，则检查当前块order是否等于下一个order，如果是，则找到了第一个匹配块，并进行对应处理
+		//如果不是下一个order，则插入AVL，以备后面的检查
+		//fmt.Println("发现第一个当前while块")
+		if this.putMatchChunk(chunkResult) {
+			return true
+		}
+	}
+	return false
+}
+
+func (this *chunkMatchList) handleChunksAfterMatch(c *chunkMatchResult) {
+	result := make([]*chunkMatchResult, 0, 10)
+	pResult := &result
+	this.forEachAfterChunks(c.chunk.Order, pResult)
+	for _, c := range result {
+		this.afterMatchAct(c)
+	}
+}
+
+func (this *chunkMatchList) handleOrderedChunks() (foundNotMatch bool) {
+	result := make([]*chunkMatchResult, 0, 10)
+	pResult := &result
+	startOrder := this.startOrder
+	foundNotMatch = this.forEachOrderedChunks(startOrder, pResult)
+	return
+}
+
+func (this *chunkMatchList) forEachChunks(currentOrder int, handler func(*chunkMatchResult) (bool, bool), result *[]*chunkMatchResult) bool {
+	if result == nil {
+		r := make([]*chunkMatchResult, 0, 10)
+		result = &r
+	}
+
+	if len(this.list) < 1 {
+		return false
+	}
+
+	for i := currentOrder; i < len(this.list); i++ {
+		rootResult := this.list[i]
+		if rootResult == nil {
+			continue
+		}
+
+		//处理节点
+		if found, end := handler(rootResult); end {
+			return found
+		}
+	}
+
+	//rootResult := root.data.(*chunkMatchResult)
+	//rootOrder := rootResult.chunk.Order
+	//if rootOrder > currentOrder {
+	//	//如果当前节点的Order大于要查找的order，则先查找左子树
+	//	if lc := (root).lchild; lc != nil {
+	//		l := root.lchild
+	//		if this.forEachChunks(currentOrder, l, handler, result) {
+	//			return true
+	//		}
+	//	}
+	//}
+
+	////处理节点
+	//if found, end := handler(rootResult); end {
+	//	return found
+	//}
+
+	//if (root).rchild != nil {
+	//	// 查找右子树
+	//	r := (root.rchild)
+	//	if this.forEachChunks(currentOrder, r, handler, result) {
+	//		return true
+	//	}
+	//}
+	return false
+}
+
+//查找avl中Order在currentOrder之后的块，一直找到发现一个匹配块为止
+func (this *chunkMatchList) forEachAfterChunks(currentOrder int, result *[]*chunkMatchResult) bool {
+	return this.forEachChunks(currentOrder, func(rootResult *chunkMatchResult) (bool, bool) {
+		rootOrder := rootResult.chunk.Order
+		//查找左子树完成，判断当前节点
+		if rootOrder >= currentOrder {
+			*result = append(*result, rootResult)
+		}
+		//如果当前节点是while节点，则结束查找
+		if rootResult.match {
+			return true, true
+		}
+		return false, false
+	}, result)
+}
+
+//从currentOrder开始查找已经按元素顺序排好的块，一直找到发现一个空缺的位置为止
+//如果是Skip/Take，会在查找同时计算块的起始索引，判断是否符合条件。因为每块的长度未必等于原始长度，所以必须在得到正确顺序后才能计算
+//如果是SkipWhile/TakeWhile，如果找到第一个符合顺序的匹配块，就会结束查找。因为SkipWhile/TakeWhile的avl中不会有2个匹配的块存在
+func (this *chunkMatchList) forEachOrderedChunks(currentOrder int, result *[]*chunkMatchResult) bool {
+	return this.forEachChunks(currentOrder, func(rootResult *chunkMatchResult) (bool, bool) {
+		//fmt.Println("check ordered----", this.startOrder, this.foundFirstMatch, this.useIndex, "chunk =", rootResult.chunk, rootResult)
+		rootOrder := rootResult.chunk.Order
+		if rootResult.chunk.Order < this.startOrder {
+			return false, false
+		}
+		if this.foundFirstMatch && this.useIndex {
+			//前面已经找到了匹配元素，那只有根据index查找才需要判断后面的块,并且所有后面的块都需要返回
+			this.afterMatchAct(rootResult)
+		} else if rootOrder == this.startOrder { //currentOrder {
+			//如果当前节点的order等于指定order，则找到了要遍历的第一个元素
+			*result = append(*result, rootResult)
+			rootResult.chunk.StartIndex = this.startIndex
+
+			if this.useIndex || !rootResult.match {
+				if find := this.beforeMatchAct(rootResult); find {
+					//fmt.Println("find before no match-------", rootResult.chunk)
+					this.foundFirstMatch = true
+				}
+			}
+			this.startOrder += 1
+			this.startIndex += rootResult.chunk.Data.Len()
+		} else if rootOrder > this.startOrder { //currentOrder {
+			//this.startOrder在列表中不存在
+			//fmt.Println("check ordered return", false, true)
+			return false, true
+		}
+		//如果是SkipWhile/TakeWhile，并且当前节点是匹配节点，则结束查找
+		//如果是Skip/Take，则不能结束
+		if rootResult.match && !this.useIndex {
+			this.foundFirstMatch = true
+			this.beMatchAct(rootResult)
+			//fmt.Println("find while", this.startOrder, this.foundFirstMatch, this.useIndex, rootResult.chunk, rootResult)
+			return true, true
+		}
+		return false, false
+	}, result)
+}
+
+func (this *chunkMatchList) putMatchChunk(c *chunkMatchResult) bool {
+	//检查当前块order是否等于下一个order，如果是，则找到了匹配块，并进行对应处理
+	//如果不是下一个order，则插入AVL，以备后面的检查
+	if c.chunk.Order == this.startOrder {
+		this.beMatchAct(c)
+		//this.beforeMatchAct(c)
+		return true
+	} else {
+		this.Insert(c)
+		return false
+	}
+}
+
+func newChunkMatchList(beforeMatchAct func(*chunkMatchResult) bool, afterMatchAct func(*chunkMatchResult), beMatchAct func(*chunkMatchResult), useIndex bool) *chunkMatchList {
+	return &chunkMatchList{make([]*chunkMatchResult, 0), 0, 0, nil, beforeMatchAct, afterMatchAct, beMatchAct, useIndex, false}
 }

@@ -496,6 +496,45 @@ func newChunkAvlTree() *avlTree {
 	})
 }
 
+type chunkList struct {
+	list     []interface{}
+	count    int
+	maxOrder int
+}
+
+func (this *chunkList) Insert(node interface{}) {
+	//fmt.Println("\ninsert chunk", node, len(this.list))
+	order := node.(*Chunk).Order
+	//某些情况下Order会重复，比如Union的第二个数据源的Order会和第一个重复
+	if order < len(this.list) && this.list[order] != nil {
+		order = this.maxOrder + 1
+	}
+
+	if order > this.maxOrder {
+		this.maxOrder = order
+	}
+
+	if len(this.list) > order {
+		this.list[order] = node
+	} else {
+		newList := make([]interface{}, order+1, max(2*len(this.list), order+1))
+		_ = copy(newList[0:len(this.list)], this.list)
+		newList[order] = node
+		this.list = newList
+	}
+	this.count++
+	//fmt.Println("after insert chunk", this.maxOrder, this.count, this.list)
+}
+
+func (this *chunkList) ToSlice() []interface{} {
+	//fmt.Println("\nchunks to slice,", this.maxOrder, this.count, this.list)
+	return this.list[0 : this.maxOrder+1]
+}
+
+func newChunkList() *chunkList {
+	return &chunkList{make([]interface{}, 0, 0), 0, -1}
+}
+
 //error handling functions------------------------------------
 type stringer interface {
 	String() string
