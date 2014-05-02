@@ -2613,14 +2613,14 @@ func getChunkOprFunc(sliceOpr func(Slicer, interface{}) Slicer, opr interface{})
 func getMapChunkFunc(f oneArgsFunc) func(*Chunk) *Chunk {
 	return func(c *Chunk) *Chunk {
 		result := mapSlice(c.Data, f)
-		return &Chunk{NewSlicer(result), c.Order, c.StartIndex}
+		return &Chunk{result, c.Order, c.StartIndex}
 	}
 }
 
 func getMapChunkToSelfFunc(f oneArgsFunc) func(*Chunk) *Chunk {
 	return func(c *Chunk) *Chunk {
 		result := mapSliceToSelf(c.Data, f)
-		return &Chunk{NewSlicer(result), c.Order, c.StartIndex}
+		return &Chunk{result, c.Order, c.StartIndex}
 	}
 }
 
@@ -2696,14 +2696,21 @@ func mapSlice(src Slicer, f interface{}) Slicer {
 	return NewSlicer(dst)
 }
 
-func mapSliceToSelf(src Slicer, f oneArgsFunc) []interface{} {
+func mapSliceToSelf(src Slicer, f interface{}) Slicer {
+	var (
+		mapFunc oneArgsFunc
+		ok      bool
+	)
+	if mapFunc, ok = f.(oneArgsFunc); !ok {
+		mapFunc = oneArgsFunc(f.(func(interface{}) interface{}))
+	}
 	//var dst []interface{}
 	if s, ok := src.(*interfaceSlicer); ok {
 		size := src.Len()
 		for i := 0; i < size; i++ {
-			s.data[i] = f(s.data[i])
+			s.data[i] = mapFunc(s.data[i])
 		}
-		return s.data
+		return NewSlicer(s.data)
 	} else {
 		panic(errors.New(fmt.Sprint("mapSliceToSelf, Unsupport type",
 			reflect.Indirect(reflect.ValueOf(src)).Type())))
