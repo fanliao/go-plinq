@@ -702,13 +702,16 @@ func TestGroupJoin(t *testing.T) {
 		}
 		return &userRoles{u.(user), roles}
 	}
+	_ = groupResultSelector
 
 	userSelectorPanic := func(v interface{}) interface{} {
 		panic(errors.New("panic"))
 	}
+	_ = userSelectorPanic
 	roleSelectorPanic := func(v interface{}) interface{} {
 		panic(errors.New("panic"))
 	}
+	_ = roleSelectorPanic
 	resultSelectorPanic := func(u interface{}, v []interface{}) interface{} {
 		panic(errors.New("panic"))
 	}
