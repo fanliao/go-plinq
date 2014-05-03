@@ -1741,14 +1741,14 @@ func TestToChannel(t *testing.T) {
 	}
 	c.Convey("Test ToChan of channel source", t, func() {
 		c.Convey("For emtpy channel", func() {
-			out, err := From([]int{}).Where(filterWithPanic).ToChan()
+			out, _, err := From([]int{}).Where(filterWithPanic).ToChan()
 			c.So(err, c.ShouldBeNil)
 			rs := chanToSlice(out)
 			c.So(rs, shouldSlicesResemble, []interface{}{})
 		})
 
 		c.Convey("For channel", func() {
-			out, err := From(tInts).Where(filterInt).ToChan()
+			out, _, err := From(tInts).Where(filterInt).ToChan()
 			c.So(err, c.ShouldBeNil)
 			rs := chanToSlice(out)
 			c.So(rs, shouldSlicesResemble, expectedInts)
@@ -1762,7 +1762,7 @@ func TestToChannel(t *testing.T) {
 				}
 				close(src)
 			}()
-			out, err := From(src).ToChan()
+			out, _, err := From(src).ToChan()
 			c.So(err, c.ShouldBeNil)
 			rs := chanToSlice(out)
 			c.So(rs, shouldSlicesResemble, tInts)
