@@ -137,6 +137,8 @@ func From(src interface{}) (q *Queryable) {
 // 	results, err := From([]interface{}{"Jack", "Rock"}).Select(something).Results()
 func (this *Queryable) Results() (results []interface{}, err error) {
 	if ds, e := this.execute(); e == nil {
+		//在Channel模式下，必须先取完全部的数据，否则stepErrs将死锁
+		//e将被丢弃，因为e会被send到errChan并在this.stepErrs()中返回
 		results = ds.ToSlice(this.KeepOrder).ToInterfaces()
 	}
 
@@ -144,7 +146,6 @@ func (this *Queryable) Results() (results []interface{}, err error) {
 	if err != nil {
 		results = nil
 	}
-
 	return
 }
 
@@ -153,17 +154,27 @@ func (this *Queryable) Results() (results []interface{}, err error) {
 //
 // Example:
 // 	ch, err := From([]interface{}{"Jack", "Rock"}).Select(something).toChan
-func (this *Queryable) ToChan() (out chan interface{}, err error) {
+func (this *Queryable) ToChan() (out chan interface{}, errChan chan error, err error) {
 	if ds, e := this.execute(); e == nil {
 		out = ds.ToChan()
+		errChan = make(chan error)
+		go func() {
+			err = this.stepErrs()
+			if err != nil {
+				errChan <- err
+			}
+			close(errChan)
+		}()
+		return
+	} else {
+		return nil, nil, e
 	}
 
-	err = this.stepErrs()
-	if err != nil {
-		out = nil
-	}
+	//err = this.stepErrs()
+	//if err != nil {
+	//out = nil
+	//}
 
-	return
 }
 
 // ElementAt returns the element at the specified index i.
@@ -725,11 +736,12 @@ func (this *Queryable) execute() (data DataSource, err error) {
 		executeStep := func() error {
 			defer func() {
 				if err := recover(); err != nil {
-					fmt.Println("err in step----------", i, err)
+					//fmt.Println("err in step1----------", i, err)
 					stepErrsChan <- NewStepError(i, step1.Typ(), newErrorWithStacks(err))
 				}
 			}()
 			if data, f, keepOrder, err = step.Action()(data, step.POption(pOption), i == 0); err != nil {
+				//fmt.Println("err in step2----------", i, err)
 				stepErrsChan <- NewStepError(i, step1.Typ(), err)
 				for j := i + 1; j < len(this.steps); j++ {
 					stepErrsChan <- nil
@@ -741,6 +753,7 @@ func (this *Queryable) execute() (data DataSource, err error) {
 				//because the steps will be paralle in piplline mode,
 				//so cannot use return value of the function
 				f.Fail(func(results interface{}) {
+					//fmt.Println("err in step3----------", j, NewStepError(j, step1.Typ(), results))
 					stepErrsChan <- NewStepError(j, step1.Typ(), results)
 				}).Done(func(results interface{}) {
 					stepErrsChan <- nil
@@ -956,14 +969,6 @@ func (this chanSource) ToSlice(keepOrder bool) Slicer {
 
 			if keepOrder {
 				ordered.Insert(c)
-				//fmt.Println("\n after insert:", ordered.maxOrder, ordered.count)
-				//for i, v := range ordered.list {
-				//	if isNil(v) {
-				//		fmt.Println("chunk ordered, ", i, nil)
-				//	} else {
-				//		fmt.Println("chunk ordered, ", i, v.(*Chunk).Data.ToInterfaces())
-				//	}
-				//}
 				chunks = appendToSlice(chunks, c)
 			}
 		}
@@ -1188,6 +1193,7 @@ func getSelect(selectFunc oneArgsFunc) stepAction {
 		if list, err, handled := trySequentialMap(src, option, mapChunk); handled {
 			return list, nil, option.KeepOrder, err
 		} else if err != nil {
+			fmt.Println("get error!!!!")
 			return nil, nil, option.KeepOrder, err
 		}
 
@@ -2240,7 +2246,7 @@ func parallelMapChanToChan(src *chanSource, out chan *Chunk, task func(*Chunk) *
 			defer func() {
 				if err := recover(); err != nil {
 					e = newErrorWithStacks(err)
-					//fmt.Println("parallelMapChanToChan, get error:", cc, e)
+					//fmt.Println("parallelMapChanToChan, get error===:", cc, e)
 				}
 			}()
 			for c := range srcChan {
@@ -2260,9 +2266,11 @@ func parallelMapChanToChan(src *chanSource, out chan *Chunk, task func(*Chunk) *
 			}
 			if src.future != nil {
 				if _, err := src.future.Get(); err != nil {
+					//fmt.Println("parallelMapChanToChan, return 1", nil, err)
 					return nil, err
 				}
 			}
+			//fmt.Println("parallelMapChanToChan, return 2")
 			return
 		})
 		fs[i] = f
@@ -2310,6 +2318,7 @@ func parallelMapListToChan(src DataSource, out chan *Chunk, task func(*Chunk) *C
 		}()
 
 		cs := &chanSource{chunkChan: ch}
+		//fmt.Println("start parallelMapChanToChan")
 		f, out = parallelMapChanToChan(cs, out, task, option)
 	}
 	if createOutChan {
@@ -2597,8 +2606,10 @@ func addCallbackToCloseChan(f *promise.Future, out chan *Chunk) {
 		go func() {
 			if out != nil {
 				if cap(out) == 0 {
+					//fmt.Println("close chan")
 					close(out)
 				} else {
+					//fmt.Println("send nil to chan")
 					sendChunk(out, nil)
 				}
 			}

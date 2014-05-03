@@ -1754,7 +1754,7 @@ func TestToChannel(t *testing.T) {
 			c.So(rs, shouldSlicesResemble, expectedInts)
 		})
 
-		c.Convey("For origin channel", func() {
+		c.Convey("For int channel", func() {
 			src := make(chan int)
 			go func() {
 				for i := 0; i < count; i++ {

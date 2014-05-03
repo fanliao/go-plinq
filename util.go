@@ -527,17 +527,17 @@ func (this *chunkOrderedList) Insert(node interface{}) {
 }
 
 func (this *chunkOrderedList) ToSlice() []interface{} {
-	//fmt.Println("\nchunks to slice,", this.maxOrder, this.count, this.list)
-	for i, v := range this.list[0 : this.maxOrder+1] {
-		if isNil(v) {
-			fmt.Println("WARNING: find a nil item, index=", i, "maxOrder=", this.maxOrder)
-			for i, v := range this.list[0 : this.maxOrder+1] {
-				fmt.Println("for all, i=", i, "v=", v)
-			}
-			fmt.Println(newErrorWithStacks("nil item").Error())
-			break
-		}
-	}
+	//if the error appears, this.list may includes nil
+	//for i, v := range this.list[0 : this.maxOrder+1] {
+	//	if isNil(v) {
+	//		fmt.Println("WARNING: find a nil item, index=", i, "maxOrder=", this.maxOrder)
+	//		for i, v := range this.list[0 : this.maxOrder+1] {
+	//			fmt.Println("for all, i=", i, "v=", v)
+	//		}
+	//		fmt.Println(newErrorWithStacks("nil item").Error())
+	//		break
+	//	}
+	//}
 	return this.list[0 : this.maxOrder+1]
 }
 
@@ -615,6 +615,9 @@ func (e *AggregateError) Error() string {
 		var str string
 		str += e.s + "\n"
 		for _, ie := range e.innerErrs {
+			if ie == nil {
+				continue
+			}
 			if se, ok := ie.(error); ok {
 				str += se.Error() + "\n"
 			} else {
