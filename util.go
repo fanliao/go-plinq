@@ -528,16 +528,6 @@ func (this *chunkOrderedList) Insert(node interface{}) {
 
 func (this *chunkOrderedList) ToSlice() []interface{} {
 	//if the error appears, this.list may includes nil
-	//for i, v := range this.list[0 : this.maxOrder+1] {
-	//	if isNil(v) {
-	//		fmt.Println("WARNING: find a nil item, index=", i, "maxOrder=", this.maxOrder)
-	//		for i, v := range this.list[0 : this.maxOrder+1] {
-	//			fmt.Println("for all, i=", i, "v=", v)
-	//		}
-	//		fmt.Println(newErrorWithStacks("nil item").Error())
-	//		break
-	//	}
-	//}
 	return this.list[0 : this.maxOrder+1]
 }
 
@@ -567,10 +557,6 @@ func getError(i interface{}) (e error) {
 // NewAggregateError returns an error that formats as the given text and includes the given inner errors.
 func NewAggregateError(text string, err interface{}) *AggregateError {
 	if aggErr, ok := err.(*promise.AggregateError); ok {
-		//errs := make([]interface{}, len(aggErr.InnerErrs))
-		//for i, e := range aggErr.InnerErrs {
-		//	errs[i] = e
-		//}
 		return &AggregateError{text, aggErr.InnerErrs}
 	} else if errs, ok := err.([]interface{}); ok {
 		errs1 := make([]error, len(errs))
@@ -580,22 +566,8 @@ func NewAggregateError(text string, err interface{}) *AggregateError {
 		}
 		return &AggregateError{text, errs1}
 	} else if errs, ok := err.([]error); ok {
-		//v := reflect.ValueOf(err)
-		//fmt.Println("\nget Aggregate errors3", len(errs))
-		//for i := 0; i < v.Len(); i++ {
-		//	se := v.Index(i).Interface().(StepErr)
-		//	fmt.Println("item", i, "=", (&se).Error())
-		//}
-
 		return &AggregateError{text, errs}
 	} else if e, ok := err.(error); ok {
-		//v := reflect.ValueOf(err)
-		//fmt.Println("\nget Aggregate errors3", len(errs))
-		//for i := 0; i < v.Len(); i++ {
-		//	se := v.Index(i).Interface().(StepErr)
-		//	fmt.Println("item", i, "=", (&se).Error())
-		//}
-
 		return &AggregateError{text, []error{e}}
 	} else {
 		panic(errors.New("unsupport error type"))
@@ -1119,8 +1091,6 @@ func checkEquals(a interface{}, b interface{}) bool {
 
 func bytesEquals(addr1 uintptr, addr2 uintptr, size uintptr) bool {
 	for i := 0; uintptr(i) < size; i++ {
-		//fmt.Println(addr1+uintptr(i), addr2+uintptr(i))
-		//fmt.Println(*((*byte)(unsafe.Pointer(addr1 + uintptr(i)))), *((*byte)(unsafe.Pointer(addr2 + uintptr(i)))))
 		if *((*byte)(unsafe.Pointer(addr1 + uintptr(i)))) != *((*byte)(unsafe.Pointer(addr2 + uintptr(i)))) {
 			return false
 		}
