@@ -185,15 +185,66 @@ func (this *Queryable) ToChan() (out chan interface{}, errChan chan error, err e
 // i, found, err := From([]int{0,1,2}).ElementAt(2)
 //		// i is 2
 func (this *Queryable) ElementAt(i int) (result interface{}, found bool, err error) {
-	if ds, e := this.execute(); e == nil {
-		if err = this.stepErrs(); err != nil {
-			return nil, false, err
-		}
+	//if ds, e := this.execute(); e == nil {
+	//	if err = this.stepErrs(); err != nil {
+	//		return nil, false, err
+	//	}
 
+	//	return getElementAt(ds, i, &(this.ParallelOption))
+	//} else {
+	//	return nil, false, e
+	//}
+	return this.singleValue(func(DataSource, *ParallelOption) (result interface{}, found bool, err error) {
 		return getElementAt(ds, i, &(this.ParallelOption))
-	} else {
-		return nil, false, e
+	})
+	//if ds, e := this.execute(); e == nil {
+	//	//在Channel模式下，必须先取完全部的数据，否则stepErrs将死锁
+	//	//e将被丢弃，因为e会被send到errChan并在this.stepErrs()中返回
+	//	result, found, err = getElementAt(ds, i, &(this.ParallelOption))
+	//}
+
+	//err = this.stepErrs()
+	//if err != nil {
+	//	result, found = nil, false
+	//}
+	//return
+}
+
+func (this *Queryable) singleValue(getVal func(DataSource, *ParallelOption) (result interface{}, found bool, err error)) (result interface{}, found bool, err error) {
+	//if ds, e := this.execute(); e == nil {
+	//	if err = this.stepErrs(); err != nil {
+	//		return nil, false, err
+	//	}
+
+	//	return getElementAt(ds, i, &(this.ParallelOption))
+	//} else {
+	//	return nil, false, e
+	//}
+	if ds, e := this.execute(); e == nil {
+		//在Channel模式下，必须先取完全部的数据，否则stepErrs将死锁
+		//e将被丢弃，因为e会被send到errChan并在this.stepErrs()中返回
+		result, found, err = getVal(ds, &(this.ParallelOption))
 	}
+
+	err = this.stepErrs()
+	if err != nil {
+		result, found = nil, false
+	}
+	return
+}
+
+// First returns the first element in the data source that matchs the
+// provided value. If source is empty or such element is not found, found
+// value will be false, otherwise elem is returned.
+// Example:
+// 	r, found, err := From([]int{0,1,2,3}).FirstBy(func (i interface{})bool{
+//		return i.(int) % 2 == 1
+// 	})
+// 	if err == nil && found {
+//		// r is 1
+// 	}
+func (this *Queryable) First(val interface{}, chunkSizes ...int) (result interface{}, found bool, err error) {
+	return this.FirstBy(func(item interface{}) bool { return Equals(item, val) }, chunkSizes...)
 }
 
 // FirstBy returns the first element in the data source that matchs the
@@ -217,6 +268,46 @@ func (this *Queryable) FirstBy(predicate predicateFunc, chunkSizes ...int) (resu
 			option.ChunkSize = chunkSize
 		}
 		return getFirstBy(ds, predicate, &option)
+	} else {
+		return nil, false, e
+	}
+}
+
+// Last returns the last element in the data source that matchs the
+// provided value. If source is empty or such element is not found, found
+// value will be false, otherwise elem is returned.
+// Example:
+// 	r, found, err := From([]int{0,1,2,3}).LasyBy(func (i interface{})bool{
+//		return i.(int) % 2 == 1
+// 	})
+// 	if err == nil && found {
+//		// r is 3
+// 	}
+func (this *Queryable) Last(val interface{}, chunkSizes ...int) (result interface{}, found bool, err error) {
+	return this.LastBy(func(item interface{}) bool { return Equals(item, val) }, chunkSizes...)
+}
+
+// LastBy returns the last element in the data source that matchs the
+// provided predicate. If source is empty or such element is not found, found
+// value will be false, otherwise elem is returned.
+// Example:
+// 	r, found, err := From([]int{0,1,2,3}).LasyBy(func (i interface{})bool{
+//		return i.(int) % 2 == 1
+// 	})
+// 	if err == nil && found {
+//		// r is 3
+// 	}
+func (this *Queryable) LastBy(predicate predicateFunc, chunkSizes ...int) (result interface{}, found bool, err error) {
+	if ds, e := this.execute(); e == nil {
+		if err = this.stepErrs(); err != nil {
+			return nil, false, err
+		}
+
+		option, chunkSize := this.ParallelOption, getChunkSizeArg(chunkSizes...)
+		if chunkSize != 0 {
+			option.ChunkSize = chunkSize
+		}
+		return getLastBy(ds, predicate, &option)
 	} else {
 		return nil, false, e
 	}
@@ -1634,7 +1725,7 @@ func getSkipTakeCount(count int, isTake bool) stepAction {
 
 // Get the action function for SkipWhile/TakeWhile operation
 func getSkipTakeWhile(predicate predicateFunc, isTake bool) stepAction {
-	return getSkipTake(foundMatchFunc(invFunc(predicate)), isTake, false)
+	return getSkipTake(foundMatchFunc(invFunc(predicate), true), isTake, false)
 }
 
 // note the elementAt cannot keep order because the map cannot keep order
@@ -1653,7 +1744,13 @@ func getElementAt(src DataSource, i int, option *ParallelOption) (element interf
 // Get the action function for FirstBy operation
 // 根据条件查找第一个符合的元素
 func getFirstBy(src DataSource, predicate predicateFunc, option *ParallelOption) (element interface{}, found bool, err error) {
-	return getFirstElement(src, foundMatchFunc(predicate), false, option)
+	return getFirstElement(src, foundMatchFunc(predicate, true), false, option)
+}
+
+// Get the action function for LastBy operation
+// 根据条件查找最后一个符合的元素
+func getLastBy(src DataSource, predicate predicateFunc, option *ParallelOption) (element interface{}, found bool, err error) {
+	return getLastElement(src, foundMatchFunc(predicate, false), option)
 }
 
 // Get the action function for Aggregate operation
@@ -1723,7 +1820,7 @@ func getAggregate(src DataSource, aggregateFuncs []*AggregateOpretion, option *P
 
 }
 
-func getSkipTake(foundMatch func(*Chunk, promise.Canceller) (int, bool), isTake bool, useIndex bool) stepAction {
+func getSkipTake(findMatch func(*Chunk, promise.Canceller) (int, bool), isTake bool, useIndex bool) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption, first bool) (dst DataSource, sf *promise.Future, keep bool, e error) {
 		switch s := src.(type) {
 		case *listSource:
@@ -1734,9 +1831,9 @@ func getSkipTake(foundMatch func(*Chunk, promise.Canceller) (int, bool), isTake 
 			)
 			//如果是根据索引查询列表，可以直接计算，否则要一个个判断
 			if useIndex {
-				i, _ = foundMatch(&Chunk{s.data, 0, 0}, nil)
+				i, _ = findMatch(&Chunk{s.data, 0, 0}, nil)
 			} else {
-				if i, found, e = getFirstOrLastIndex(s, foundMatch, option, true); !found {
+				if i, found, e = getFirstOrLastIndex(s, findMatch, option, true); !found {
 					i = s.data.Len()
 				}
 			}
@@ -1761,7 +1858,7 @@ func getSkipTake(foundMatch func(*Chunk, promise.Canceller) (int, bool), isTake 
 			beforeMatchAct := func(c *chunkMatchResult) (while bool) {
 				//如果useIndex，则只有等到前置块都判断完成时才能得出正确的起始索引号，所以在这里才判断是否匹配
 				if useIndex {
-					if i, found := foundMatch(c.chunk, nil); found {
+					if i, found := findMatch(c.chunk, nil); found {
 						c.matched = true
 						c.matchIndex = i
 					}
@@ -1797,18 +1894,18 @@ func getSkipTake(foundMatch func(*Chunk, promise.Canceller) (int, bool), isTake 
 			srcChan := s.ChunkChan(option.ChunkSize)
 			f := promise.Start(func() (interface{}, error) {
 				//avl := newChunkMatchTree(beforeMatchAct, afterMatchAct, beMatchAct, useIndex)
-				avl := newChunkMatchResultList(beforeMatchAct, afterMatchAct, beMatchAct, useIndex)
+				matchedList := newChunkMatchResultList(beforeMatchAct, afterMatchAct, beMatchAct, useIndex)
 				return forEachChanByOrder(s, srcChan, func(c *Chunk, foundFirstMatch *bool) bool {
 					if !*foundFirstMatch {
 						//检查块是否存在匹配的数据，按Index计算的总是返回false，因为必须要等前面所有的块已经排好序后才能得到正确的索引
-						chunkResult := &chunkMatchResult{chunk: c}
-						if !useIndex {
-							chunkResult.matchIndex, chunkResult.matched = foundMatch(c, nil)
-							//fmt.Println("\nfound no matched---", c, chunkResult.matched)
-						}
+						//chunkResult := &chunkMatchResult{chunk: c}
+						//if !useIndex {
+						//	chunkResult.matchIndex, chunkResult.matched = foundMatch(c, nil)
+						//}
+						chunkResult := getChunkMatchResult(c, findMatch, useIndex)
 
 						//判断是否找到了第一个匹配的块
-						if *foundFirstMatch = avl.handleChunk(chunkResult); *foundFirstMatch {
+						if *foundFirstMatch = matchedList.handleChunk(chunkResult); *foundFirstMatch {
 							if isTake {
 								s.Close()
 								return true
@@ -1834,20 +1931,20 @@ func getSkipTake(foundMatch func(*Chunk, promise.Canceller) (int, bool), isTake 
 }
 
 // Get the action function for ElementAt operation
-func getFirstElement(src DataSource, foundMatch func(c *Chunk, canceller promise.Canceller) (r int, found bool), useIndex bool, option *ParallelOption) (element interface{}, found bool, err error) {
+func getFirstElement(src DataSource, findMatch func(c *Chunk, canceller promise.Canceller) (r int, found bool), useIndex bool, option *ParallelOption) (element interface{}, found bool, err error) {
 	switch s := src.(type) {
 	case *listSource:
 		rs := s.data
 		if useIndex {
 			//使用索引查找列表非常简单，无需并行
-			if i, found := foundMatch(&Chunk{rs, 0, 0}, nil); found {
+			if i, found := findMatch(&Chunk{rs, 0, 0}, nil); found {
 				return rs.Index(i), true, nil
 			} else {
 				return nil, false, nil
 			}
 		} else {
 			//根据数据量大小进行并行或串行查找
-			if i, found, err := getFirstOrLastIndex(newListSource(rs), foundMatch, option, true); err != nil {
+			if i, found, err := getFirstOrLastIndex(newListSource(rs), findMatch, option, true); err != nil {
 				return nil, false, err
 			} else if !found {
 				return nil, false, nil
@@ -1859,7 +1956,7 @@ func getFirstElement(src DataSource, foundMatch func(c *Chunk, canceller promise
 		beforeMatchAct := func(c *chunkMatchResult) (while bool) {
 			if useIndex {
 				//判断是否满足条件
-				if idx, found := foundMatch(c.chunk, nil); found {
+				if idx, found := findMatch(c.chunk, nil); found {
 					element = c.chunk.Data.Index(idx)
 					return true
 				}
@@ -1877,16 +1974,16 @@ func getFirstElement(src DataSource, foundMatch func(c *Chunk, canceller promise
 
 		srcChan := s.ChunkChan(option.ChunkSize)
 		f := promise.Start(func() (interface{}, error) {
-			//			avl := newChunkMatchTree(beforeMatchAct, afterMatchAct, beMatchAct, useIndex)
-			avl := newChunkMatchResultList(beforeMatchAct, afterMatchAct, beMatchAct, useIndex)
+			matchedList := newChunkMatchResultList(beforeMatchAct, afterMatchAct, beMatchAct, useIndex)
 			return forEachChanByOrder(s, srcChan, func(c *Chunk, foundFirstMatch *bool) bool {
 				if !*foundFirstMatch {
-					chunkResult := &chunkMatchResult{chunk: c}
-					if !useIndex {
-						chunkResult.matchIndex, chunkResult.matched = foundMatch(c, nil)
-					}
+					//chunkResult := &chunkMatchResult{chunk: c}
+					//if !useIndex {
+					//	chunkResult.matchIndex, chunkResult.matched = foundMatch(c, nil)
+					//}
+					chunkResult := getChunkMatchResult(c, findMatch, useIndex)
 					//fmt.Println("check", c.Data, c.Order, chunkResult, *foundFirstMatch)
-					*foundFirstMatch = avl.handleChunk(chunkResult)
+					*foundFirstMatch = matchedList.handleChunk(chunkResult)
 					//fmt.Println("after check", c.Data, chunkResult, *foundFirstMatch)
 					if *foundFirstMatch {
 						//element = c.chunk.Data[idx]
@@ -1911,6 +2008,15 @@ func getFirstElement(src DataSource, foundMatch func(c *Chunk, canceller promise
 	panic(ErrUnsupportSource)
 }
 
+func getChunkMatchResult(c *Chunk, findMatch func(c *Chunk, canceller promise.Canceller) (r int, found bool), useIndex bool) (r *chunkMatchResult) {
+	r = &chunkMatchResult{chunk: c}
+	if !useIndex {
+		r.matchIndex, r.matched = findMatch(c, nil)
+		//fmt.Println("\nfound no matched---", c, chunkResult.matched)
+	}
+	return
+}
+
 // Get the action function for ElementAt operation
 func getLastElement(src DataSource, foundMatch func(c *Chunk, canceller promise.Canceller) (r int, found bool), option *ParallelOption) (element interface{}, found bool, err error) {
 	switch s := src.(type) {
@@ -1930,18 +2036,21 @@ func getLastElement(src DataSource, foundMatch func(c *Chunk, canceller promise.
 		f := promise.Start(func() (interface{}, error) {
 			var r interface{}
 			maxOrder := -1
-			return forEachChanByOrder(s, srcChan, func(c *Chunk, foundFirstMatch *bool) bool {
-				if !*foundFirstMatch {
-					index, matched := foundMatch(c, nil)
-					if matched {
-						if c.Order > maxOrder {
-							maxOrder = c.Order
-							r = c.Data.Index(index)
-						}
+			_, _ = forEachChanByOrder(s, srcChan, func(c *Chunk, foundFirstMatch *bool) bool {
+				index, matched := foundMatch(c, nil)
+				if matched {
+					if c.Order > maxOrder {
+						maxOrder = c.Order
+						r = c.Data.Index(index)
 					}
 				}
 				return false
 			})
+			if maxOrder >= 0 {
+				element = r
+				found = true
+			}
+			return nil, nil
 		})
 
 		if _, err := f.Get(); err != nil {
@@ -2223,11 +2332,20 @@ func getFirstOrLastIndex(src *listSource, predicate func(c *Chunk, canceller pro
 	}
 }
 
-func foundMatchFunc(predicate predicateFunc) func(c *Chunk, canceller promise.Canceller) (r int, found bool) {
+func foundMatchFunc(predicate predicateFunc, findFirst bool) func(c *Chunk, canceller promise.Canceller) (r int, found bool) {
 	return func(c *Chunk, canceller promise.Canceller) (r int, found bool) {
 		r = -1
 		size := c.Data.Len()
-		for i := 0; i < size; i++ {
+		i, end := 0, size
+		if !findFirst {
+			i, end = size-1, -1
+		}
+
+		for {
+			//for i := 0; i < size; i++ {
+			if i == end {
+				break
+			}
 			v := c.Data.Index(i)
 			if canceller != nil && canceller.IsCancellationRequested() {
 				canceller.SetCancelled()
@@ -2238,6 +2356,11 @@ func foundMatchFunc(predicate predicateFunc) func(c *Chunk, canceller promise.Ca
 				//fmt.Println("firstof find", j, )
 				found = true
 				break
+			}
+			if findFirst {
+				i++
+			} else {
+				i--
 			}
 		}
 		return

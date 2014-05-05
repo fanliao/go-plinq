@@ -565,7 +565,7 @@ func getError(i interface{}) (e error) {
 }
 
 // NewAggregateError returns an error that formats as the given text and includes the given inner errors.
-func NewAggregateError(text string, err interface{}) error {
+func NewAggregateError(text string, err interface{}) *AggregateError {
 	if aggErr, ok := err.(*promise.AggregateError); ok {
 		//errs := make([]interface{}, len(aggErr.InnerErrs))
 		//for i, e := range aggErr.InnerErrs {
@@ -1065,4 +1065,67 @@ func testCanUseDefaultHash(src, src2 DataSource) bool {
 		}
 	}
 	return false
+}
+
+// compare functions------------------------------------------------
+
+func equals(a interface{}, b interface{}) bool {
+	return checkEquals(a, b)
+}
+
+// equals tests for equality. It uses normal == equality where
+// possible but will scan elements of arrays, slices, maps, and fields of
+// structs. In maps, keys are compared with == but elements use deep
+// equality. DeepEqual correctly handles recursive types. Functions are equal
+// only if they are pointer to one function.
+// An empty slice is not equal to a nil slice.
+// A pointer with nil value is equal to nil
+func checkEquals(a interface{}, b interface{}) bool {
+
+	//fmt.Printf("interface layout is %v %v\n", faceToStruct(a), faceToStruct(b))
+	v1, v2 := reflect.ValueOf(a), reflect.ValueOf(b)
+	addr1, _ := dataPtr(a)
+	addr2, _ := dataPtr(b)
+	aIsNil, bIsNil := isNil(a), isNil(b)
+	if aIsNil || bIsNil {
+		//fmt.Printf("isnil is %v %v %v %v\n", aIsNil, bIsNil, a, b)
+		return aIsNil == bIsNil
+	}
+
+	if v1.Type() != v2.Type() {
+		//fmt.Println("type isnot same", a, b, v1.Type(), v2.Type())
+		return false
+	}
+
+	switch k := v1.Type().Kind(); k {
+	case reflect.Map, reflect.Slice:
+		return bytesEquals(uintptr(addr1), uintptr(addr2), v1.Type().Size())
+	case reflect.Func:
+		return addr1 == addr2
+
+	case reflect.Struct:
+		if v1.Type().Size() > ptrSize {
+			return bytesEquals(uintptr(addr1), uintptr(addr2), v1.Type().Size())
+		} else {
+			return addr1 == addr2
+		}
+
+	default:
+		return a == b
+	}
+}
+
+func bytesEquals(addr1 uintptr, addr2 uintptr, size uintptr) bool {
+	for i := 0; uintptr(i) < size; i++ {
+		//fmt.Println(addr1+uintptr(i), addr2+uintptr(i))
+		//fmt.Println(*((*byte)(unsafe.Pointer(addr1 + uintptr(i)))), *((*byte)(unsafe.Pointer(addr2 + uintptr(i)))))
+		if *((*byte)(unsafe.Pointer(addr1 + uintptr(i)))) != *((*byte)(unsafe.Pointer(addr2 + uintptr(i)))) {
+			return false
+		}
+	}
+	return true
+}
+
+func Equals(a, b interface{}) bool {
+	return equals(a, b)
 }

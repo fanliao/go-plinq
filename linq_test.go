@@ -1711,6 +1711,87 @@ func TestFirstBy(t *testing.T) {
 	})
 }
 
+func TestLastBy(t *testing.T) {
+	ints := make([]interface{}, count)
+	for i := 0; i < count; i++ {
+		ints[i] = i
+	}
+
+	indexses := getIndexses(countOfSkipTestData)
+
+	c.Convey("Test LastBy in channel", t, func() {
+		c.Convey("LastBy with panic an error", func() {
+			for _, v := range indexses {
+				_, found, err := From(getCChunkSrc(v, ints)).LastBy(func(v interface{}) bool {
+					panic(errors.New("!error"))
+				})
+				c.So(err, c.ShouldNotBeNil)
+				c.So(found, c.ShouldEqual, false)
+			}
+		})
+		c.Convey("LastBy nothing", func() {
+			for _, v := range indexses {
+				_, found, err := From(getCChunkSrc(v, ints)).LastBy(func(v interface{}) bool {
+					return v.(int) == -1
+				})
+				c.So(err, c.ShouldBeNil)
+				c.So(found, c.ShouldEqual, false)
+			}
+		})
+		c.Convey("LastBy nothing", func() {
+			for _, v := range indexses {
+				_, found, err := From(getCChunkSrc(v, ints)).LastBy(func(v interface{}) bool {
+					return v.(int) == count
+				})
+				c.So(err, c.ShouldBeNil)
+				c.So(found, c.ShouldEqual, false)
+			}
+		})
+		c.Convey("LastBy v.(int) % 3 ==0", func() {
+			for _, v := range indexses {
+				r, found, err := From(getCChunkSrc(v, ints)).LastBy(func(v interface{}) bool {
+					return v.(int)%3 == 0
+				})
+				c.So(err, c.ShouldBeNil)
+				c.So(r, c.ShouldEqual, (count/3)*3)
+				c.So(found, c.ShouldEqual, true)
+			}
+		})
+	})
+
+	c.Convey("Test LastBy in list", t, func() {
+		c.Convey("LastBy with panic an error", func() {
+			_, found, err := From(tInts).LastBy(func(v interface{}) bool {
+				panic(errors.New("!error"))
+			})
+			c.So(err, c.ShouldNotBeNil)
+			c.So(found, c.ShouldEqual, false)
+		})
+		c.Convey("LastBy nothing", func() {
+			_, found, err := From(tInts).LastBy(func(v interface{}) bool {
+				return v.(int) == -1
+			})
+			c.So(err, c.ShouldBeNil)
+			c.So(found, c.ShouldEqual, false)
+		})
+		c.Convey("LastBy nothing", func() {
+			_, found, err := From(tInts).LastBy(func(v interface{}) bool {
+				return v.(int) == count
+			})
+			c.So(err, c.ShouldBeNil)
+			c.So(found, c.ShouldEqual, false)
+		})
+		c.Convey("LastBy v.(int) % 3 ==0 ", func() {
+			r, found, err := From(tInts).LastBy(func(v interface{}) bool {
+				return v.(int)%3 == 0
+			})
+			c.So(err, c.ShouldBeNil)
+			c.So(r, c.ShouldEqual, (count/3)*3)
+			c.So(found, c.ShouldEqual, true)
+		})
+	})
+}
+
 func chanToSlice(out chan interface{}) (rs []interface{}) {
 	rs = make([]interface{}, 0, 4)
 	for v := range out {
