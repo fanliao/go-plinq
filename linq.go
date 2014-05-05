@@ -143,8 +143,10 @@ func (this *Queryable) Results() (results []interface{}, err error) {
 	}
 
 	err = this.stepErrs()
-	if err != nil {
+	if !isNil(err) {
 		results = nil
+	} else {
+		err = nil
 	}
 	return
 }
@@ -194,8 +196,8 @@ func (this *Queryable) ElementAt(i int) (result interface{}, found bool, err err
 	//} else {
 	//	return nil, false, e
 	//}
-	return this.singleValue(func(DataSource, *ParallelOption) (result interface{}, found bool, err error) {
-		return getElementAt(ds, i, &(this.ParallelOption))
+	return this.singleValue(func(ds DataSource, pOption *ParallelOption) (result interface{}, found bool, err error) {
+		return getElementAt(ds, i, pOption)
 	})
 	//if ds, e := this.execute(); e == nil {
 	//	//在Channel模式下，必须先取完全部的数据，否则stepErrs将死锁
@@ -226,9 +228,16 @@ func (this *Queryable) singleValue(getVal func(DataSource, *ParallelOption) (res
 		result, found, err = getVal(ds, &(this.ParallelOption))
 	}
 
-	err = this.stepErrs()
-	if err != nil {
+	stepErrs := this.stepErrs()
+	if !isNil(stepErrs) {
 		result, found = nil, false
+		if err != nil {
+			stepErrs.innerErrs = append(stepErrs.innerErrs,
+				NewStepError(1000, ACT_SINGLEVALUE, err))
+		}
+		err = stepErrs
+	} else if isNil(err) {
+		err = nil
 	}
 	return
 }
@@ -258,19 +267,26 @@ func (this *Queryable) First(val interface{}, chunkSizes ...int) (result interfa
 //		// r is 1
 // 	}
 func (this *Queryable) FirstBy(predicate predicateFunc, chunkSizes ...int) (result interface{}, found bool, err error) {
-	if ds, e := this.execute(); e == nil {
-		if err = this.stepErrs(); err != nil {
-			return nil, false, err
-		}
+	//if ds, e := this.execute(); e == nil {
+	//	if err = this.stepErrs(); err != nil {
+	//		return nil, false, err
+	//	}
 
+	//	option, chunkSize := this.ParallelOption, getChunkSizeArg(chunkSizes...)
+	//	if chunkSize != 0 {
+	//		option.ChunkSize = chunkSize
+	//	}
+	//	return getFirstBy(ds, predicate, &option)
+	//} else {
+	//	return nil, false, e
+	//}
+	return this.singleValue(func(ds DataSource, pOption *ParallelOption) (result interface{}, found bool, err error) {
 		option, chunkSize := this.ParallelOption, getChunkSizeArg(chunkSizes...)
 		if chunkSize != 0 {
 			option.ChunkSize = chunkSize
 		}
 		return getFirstBy(ds, predicate, &option)
-	} else {
-		return nil, false, e
-	}
+	})
 }
 
 // Last returns the last element in the data source that matchs the
@@ -298,19 +314,26 @@ func (this *Queryable) Last(val interface{}, chunkSizes ...int) (result interfac
 //		// r is 3
 // 	}
 func (this *Queryable) LastBy(predicate predicateFunc, chunkSizes ...int) (result interface{}, found bool, err error) {
-	if ds, e := this.execute(); e == nil {
-		if err = this.stepErrs(); err != nil {
-			return nil, false, err
-		}
+	//if ds, e := this.execute(); e == nil {
+	//	if err = this.stepErrs(); err != nil {
+	//		return nil, false, err
+	//	}
 
+	//	option, chunkSize := this.ParallelOption, getChunkSizeArg(chunkSizes...)
+	//	if chunkSize != 0 {
+	//		option.ChunkSize = chunkSize
+	//	}
+	//	return getLastBy(ds, predicate, &option)
+	//} else {
+	//	return nil, false, e
+	//}
+	return this.singleValue(func(ds DataSource, pOption *ParallelOption) (result interface{}, found bool, err error) {
 		option, chunkSize := this.ParallelOption, getChunkSizeArg(chunkSizes...)
 		if chunkSize != 0 {
 			option.ChunkSize = chunkSize
 		}
 		return getLastBy(ds, predicate, &option)
-	} else {
-		return nil, false, e
-	}
+	})
 }
 
 // Aggregate returns the results of aggregation operation
@@ -329,24 +352,37 @@ func (this *Queryable) LastBy(predicate predicateFunc, chunkSizes ...int) (resul
 //	// or
 //	sum, err := From(arr).Aggregate(Sum) // sum is 18
 func (this *Queryable) Aggregate(aggregateFuncs ...*AggregateOpretion) (result interface{}, err error) {
-	if ds, e := this.execute(); e == nil {
-		if err = this.stepErrs(); err != nil {
-			return nil, err
-		}
+	//if ds, e := this.execute(); e == nil {
+	//	if err = this.stepErrs(); err != nil {
+	//		return nil, err
+	//	}
 
+	//	results, e := getAggregate(ds, aggregateFuncs, &(this.ParallelOption))
+	//	if e != nil {
+	//		return nil, e
+	//	}
+	//	if len(aggregateFuncs) == 1 {
+	//		result = results[0]
+	//	} else {
+	//		result = results
+	//	}
+	//	return
+	//} else {
+	//	return nil, e
+	//}
+	result, _, err = this.singleValue(func(ds DataSource, pOption *ParallelOption) (resultValue interface{}, found bool, err1 error) {
 		results, e := getAggregate(ds, aggregateFuncs, &(this.ParallelOption))
 		if e != nil {
-			return nil, e
+			return nil, false, e
 		}
 		if len(aggregateFuncs) == 1 {
-			result = results[0]
+			resultValue = results[0]
 		} else {
-			result = results
+			resultValue = results
 		}
 		return
-	} else {
-		return nil, e
-	}
+	})
+	return
 }
 
 // Sum computes sum of numeric values in the data source.
@@ -869,7 +905,7 @@ func (this *Queryable) execute() (data DataSource, err error) {
 	return data, nil
 }
 
-func (this *Queryable) stepErrs() (err error) {
+func (this *Queryable) stepErrs() (err *AggregateError) {
 	if errs := <-this.errChan; len(errs) > 0 {
 		err = NewAggregateError("Aggregate errors", errs)
 	}
@@ -1156,6 +1192,7 @@ const (
 	ACT_TAKE
 	ACT_TAKEWHILE
 	ACT_ELEMENTAT
+	ACT_SINGLEVALUE
 )
 
 // stepAction presents a action related to a linq operation
@@ -1284,7 +1321,7 @@ func getSelect(selectFunc oneArgsFunc) stepAction {
 		if list, err, handled := trySequentialMap(src, option, mapChunk); handled {
 			return list, nil, option.KeepOrder, err
 		} else if err != nil {
-			fmt.Println("get error!!!!")
+			//fmt.Println("get error!!!!")
 			return nil, nil, option.KeepOrder, err
 		}
 
@@ -1614,6 +1651,7 @@ func getConcat(source2 interface{}) stepAction {
 			_ = copy(result[len(slice1):len(slice1)+len(slice2)], slice2)
 			return newDataSource(result), nil, option.KeepOrder, nil
 		} else {
+			fmt.Println("concat return error2, ", err2)
 			return nil, nil, option.KeepOrder, err2
 		}
 
@@ -1755,7 +1793,7 @@ func getLastBy(src DataSource, predicate predicateFunc, option *ParallelOption) 
 
 // Get the action function for Aggregate operation
 func getAggregate(src DataSource, aggregateFuncs []*AggregateOpretion, option *ParallelOption) (result []interface{}, err error) {
-	if aggregateFuncs == nil || len(aggregateFuncs) == 0 {
+	if isNil(aggregateFuncs) || len(aggregateFuncs) == 0 {
 		return nil, newErrorWithStacks(errors.New("Aggregation function cannot be nil"))
 	}
 	keep := option.KeepOrder

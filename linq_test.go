@@ -252,20 +252,20 @@ func TestWhere(t *testing.T) {
 
 		c.Convey("Filter an int slice", func() {
 			rs, err := From(tInts).SetSizeOfChunk(size).Where(filterInt).Results()
-			c.So(rs, shouldSlicesResemble, expectedInts)
 			c.So(err, c.ShouldBeNil)
+			c.So(rs, shouldSlicesResemble, expectedInts)
 		})
 
 		c.Convey("Filter an int slice, and keep original order", func() {
 			rs, err := From(tInts).SetSizeOfChunk(size).Where(filterIntForConfusedOrder).Results()
-			c.So(rs, shouldSlicesResemble, expectedInts)
 			c.So(err, c.ShouldBeNil)
+			c.So(rs, shouldSlicesResemble, expectedInts)
 		})
 
 		c.Convey("Filter an interface{} slice", func() {
 			rs, err := From(tUsers).SetSizeOfChunk(size).Where(filterUser).Results()
-			c.So(rs, shouldSlicesResemble, expectedUsers)
 			c.So(err, c.ShouldBeNil)
+			c.So(rs, shouldSlicesResemble, expectedUsers)
 		})
 
 		//TODO: still have bugs
@@ -702,16 +702,13 @@ func TestGroupJoin(t *testing.T) {
 		}
 		return &userRoles{u.(user), roles}
 	}
-	_ = groupResultSelector
 
 	userSelectorPanic := func(v interface{}) interface{} {
 		panic(errors.New("panic"))
 	}
-	_ = userSelectorPanic
 	roleSelectorPanic := func(v interface{}) interface{} {
 		panic(errors.New("panic"))
 	}
-	_ = roleSelectorPanic
 	resultSelectorPanic := func(u interface{}, v []interface{}) interface{} {
 		panic(errors.New("panic"))
 	}
@@ -869,35 +866,35 @@ func TestConcat(t *testing.T) {
 
 		c.Convey("Concat an empty slice as first source", func() {
 			rs, err := From([]int{}).SetSizeOfChunk(size).Concat(tUsers2).Results()
-			c.So(len(rs), c.ShouldEqual, count)
 			c.So(err, c.ShouldBeNil)
+			c.So(len(rs), c.ShouldEqual, count)
 		})
 
 		c.Convey("Concat an empty slice as secondary source", func() {
 			rs, err := From(tUsers).SetSizeOfChunk(size).Concat([]interface{}{}).Results()
-			c.So(len(rs), c.ShouldEqual, count)
 			c.So(err, c.ShouldBeNil)
+			c.So(len(rs), c.ShouldEqual, count)
 		})
 
 		c.Convey("Concat an interface{} slice as secondary source", func() {
 			rs, err := From(tUsers).SetSizeOfChunk(size).Concat(tUsers2).Results()
 			//TODO: need test KeepOrder()
-			c.So(len(rs), c.ShouldEqual, count*2)
 			c.So(err, c.ShouldBeNil)
+			c.So(len(rs), c.ShouldEqual, count*2)
 		})
 
 		c.Convey("Concat an interface{} channel as first source", func() {
 			rs, err := From(getChan(tUsers)).SetSizeOfChunk(size).Concat(tUsers2).Results()
 			//TODO: need test KeepOrder()
-			c.So(len(rs), c.ShouldEqual, count*2)
 			c.So(err, c.ShouldBeNil)
+			c.So(len(rs), c.ShouldEqual, count*2)
 		})
 
 		c.Convey("Concat an interface{} channel as secondary source", func() {
 			rs, err := From(tUsers).SetSizeOfChunk(size).Concat(getChan(tUsers2)).Results()
 			//TODO: need test KeepOrder()
-			c.So(len(rs), c.ShouldEqual, count*2)
 			c.So(err, c.ShouldBeNil)
+			c.So(len(rs), c.ShouldEqual, count*2)
 		})
 	}
 	c.Convey("Test Concat Sequential", t, func() { test(sequentialChunkSize) })
@@ -1711,87 +1708,6 @@ func TestFirstBy(t *testing.T) {
 	})
 }
 
-func TestLastBy(t *testing.T) {
-	ints := make([]interface{}, count)
-	for i := 0; i < count; i++ {
-		ints[i] = i
-	}
-
-	indexses := getIndexses(countOfSkipTestData)
-
-	c.Convey("Test LastBy in channel", t, func() {
-		c.Convey("LastBy with panic an error", func() {
-			for _, v := range indexses {
-				_, found, err := From(getCChunkSrc(v, ints)).LastBy(func(v interface{}) bool {
-					panic(errors.New("!error"))
-				})
-				c.So(err, c.ShouldNotBeNil)
-				c.So(found, c.ShouldEqual, false)
-			}
-		})
-		c.Convey("LastBy nothing", func() {
-			for _, v := range indexses {
-				_, found, err := From(getCChunkSrc(v, ints)).LastBy(func(v interface{}) bool {
-					return v.(int) == -1
-				})
-				c.So(err, c.ShouldBeNil)
-				c.So(found, c.ShouldEqual, false)
-			}
-		})
-		c.Convey("LastBy nothing", func() {
-			for _, v := range indexses {
-				_, found, err := From(getCChunkSrc(v, ints)).LastBy(func(v interface{}) bool {
-					return v.(int) == count
-				})
-				c.So(err, c.ShouldBeNil)
-				c.So(found, c.ShouldEqual, false)
-			}
-		})
-		c.Convey("LastBy v.(int) % 3 ==0", func() {
-			for _, v := range indexses {
-				r, found, err := From(getCChunkSrc(v, ints)).LastBy(func(v interface{}) bool {
-					return v.(int)%3 == 0
-				})
-				c.So(err, c.ShouldBeNil)
-				c.So(r, c.ShouldEqual, (count/3)*3)
-				c.So(found, c.ShouldEqual, true)
-			}
-		})
-	})
-
-	c.Convey("Test LastBy in list", t, func() {
-		c.Convey("LastBy with panic an error", func() {
-			_, found, err := From(tInts).LastBy(func(v interface{}) bool {
-				panic(errors.New("!error"))
-			})
-			c.So(err, c.ShouldNotBeNil)
-			c.So(found, c.ShouldEqual, false)
-		})
-		c.Convey("LastBy nothing", func() {
-			_, found, err := From(tInts).LastBy(func(v interface{}) bool {
-				return v.(int) == -1
-			})
-			c.So(err, c.ShouldBeNil)
-			c.So(found, c.ShouldEqual, false)
-		})
-		c.Convey("LastBy nothing", func() {
-			_, found, err := From(tInts).LastBy(func(v interface{}) bool {
-				return v.(int) == count
-			})
-			c.So(err, c.ShouldBeNil)
-			c.So(found, c.ShouldEqual, false)
-		})
-		c.Convey("LastBy v.(int) % 3 ==0 ", func() {
-			r, found, err := From(tInts).LastBy(func(v interface{}) bool {
-				return v.(int)%3 == 0
-			})
-			c.So(err, c.ShouldBeNil)
-			c.So(r, c.ShouldEqual, (count/3)*3)
-			c.So(found, c.ShouldEqual, true)
-		})
-	})
-}
-
 func chanToSlice(out chan interface{}) (rs []interface{}) {
 	rs = make([]interface{}, 0, 4)
 	for v := range out {
@@ -1835,7 +1751,7 @@ func TestToChannel(t *testing.T) {
 			c.So(rs, shouldSlicesResemble, expectedInts)
 		})
 
-		c.Convey("For int channel", func() {
+		c.Convey("For origin channel", func() {
 			src := make(chan int)
 			go func() {
 				for i := 0; i < count; i++ {

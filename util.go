@@ -688,6 +688,8 @@ func stepTypToString(typ int) string {
 		return "TakeWhile opretion"
 	case ACT_ELEMENTAT:
 		return "ElementAt opretion"
+	case ACT_SINGLEVALUE:
+		return "Single value opretion"
 	default:
 		return "unknown opretion" + strconv.Itoa(typ)
 	}
