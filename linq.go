@@ -1959,7 +1959,10 @@ func getSkipTake(findMatch func(*Chunk, promise.Canceller) (int, bool), isTake b
 					}
 					return false
 				})
+			}).Fail(func(err interface{}) {
+				s.Close()
 			})
+
 			addCallbackToCloseChan(f, out)
 
 			return &chanSource{chunkChan: out}, f, option.KeepOrder, nil
@@ -2039,6 +2042,7 @@ func getFirstElement(src DataSource, findMatch func(c *Chunk, canceller promise.
 		})
 
 		if _, err := f.Get(); err != nil {
+			s.Close()
 			return nil, false, err
 		}
 		return
@@ -2092,9 +2096,9 @@ func getLastElement(src DataSource, foundMatch func(c *Chunk, canceller promise.
 		})
 
 		if _, err := f.Get(); err != nil {
+			s.Close()
 			return nil, false, err
 		}
-		return
 	}
 	panic(ErrUnsupportSource)
 }
@@ -2471,7 +2475,7 @@ func parallelMapChanToChan(src *chanSource, out chan *Chunk, task func(*Chunk) *
 		})
 		fs[i] = f
 	}
-	f := promise.WhenAll(fs...)
+	f := promise.WhenAll(fs...).Fail(func(err interface{}) { src.Close() })
 
 	if createOutChan {
 		addCallbackToCloseChan(f, out)
@@ -2510,7 +2514,10 @@ func parallelMapListToChan(src DataSource, out chan *Chunk, task func(*Chunk) *C
 				//ch <- c
 				sendChunk(ch, c)
 			}
-			close(ch)
+			func() {
+				defer func() { _ = recover() }()
+				close(ch)
+			}()
 		}()
 
 		cs := &chanSource{chunkChan: ch}

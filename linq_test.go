@@ -87,6 +87,13 @@ func filterWithPanic(v interface{}) bool {
 	return true
 }
 
+func filterWithPanic2(v interface{}) bool {
+	if v.(int) == count-1 {
+		var s []interface{}
+		_ = s[2]
+	}
+	return true
+}
 func getChan(src []interface{}) chan interface{} {
 	chanSrc := make(chan interface{})
 	go func() {
@@ -132,10 +139,12 @@ func filterMap(v interface{}) bool {
 	return u.Key.(int)%2 == 0
 }
 
-func selectWithPanic(v interface{}) interface{} {
-	var s []interface{}
-	_ = s[2]
+func selectUserWithPanic(v interface{}) interface{} {
 	u := v.(user)
+	if u.id == count-1 {
+		var s []interface{}
+		_ = s[2]
+	}
 	return strconv.Itoa(u.id) + "/" + u.name
 }
 
@@ -149,6 +158,14 @@ func selectInt(v interface{}) interface{} {
 	return v.(int) * 10
 }
 
+func selectIntWithPanic(v interface{}) interface{} {
+	if v.(int) == count-1 {
+		var s []interface{}
+		_ = s[2]
+	}
+	return v
+}
+
 func selectIntForConfusedOrder(v interface{}) interface{} {
 	rand.Seed(10)
 	confusedOrder()
@@ -156,9 +173,11 @@ func selectIntForConfusedOrder(v interface{}) interface{} {
 }
 
 func selectManyWithPanic(v interface{}) []interface{} {
-	var s []interface{}
-	_ = s[2]
-	return s
+	if v.(int) == count-1 {
+		var s []interface{}
+		_ = s[2]
+	}
+	return []interface{}{}
 }
 
 func selectIntMany(v interface{}) []interface{} {
@@ -215,6 +234,62 @@ func leftResultSelector(u interface{}, v interface{}) interface{} {
 	}
 }
 
+var countOfSkipTestData int = 5
+
+func getChunkByi(i int, ints []interface{}) *Chunk {
+	size := count / countOfSkipTestData
+	return &Chunk{NewSlicer(ints[i*size : (i+1)*size]), i, 0}
+}
+
+func getCChunkSrc(indexs []int, ints []interface{}) chan *Chunk {
+	chunkSrc := make(chan *Chunk)
+	go func() {
+		//indexs := []int{3, 0, 1, 4, 2}
+		defer func() {
+			if e := recover(); e != nil {
+				_ = e
+			}
+		}()
+		//fmt.Println("\nsend----------------")
+		for _, i := range indexs {
+			//fmt.Println("\nsend", getChunkByi(i))
+			chunkSrc <- getChunkByi(i, ints)
+		}
+		close(chunkSrc)
+	}()
+	return chunkSrc
+}
+
+//获取0到4所有的组合
+func getIndexses(countOfSkipTestData int) (indexses [][]int) {
+	for i := 0; i < countOfSkipTestData; i++ {
+		//开始创建一个随机组合
+		for j := 0; j < countOfSkipTestData; j++ {
+			if j == i {
+				continue
+			}
+			for k := 0; k < countOfSkipTestData; k++ {
+				if k == j || k == i {
+					continue
+				}
+				for m := 0; m < countOfSkipTestData; m++ {
+					if m == k || m == j || m == i {
+						continue
+					}
+					for n := 0; n < countOfSkipTestData; n++ {
+						if n == k || n == j || n == i || n == m {
+							continue
+						}
+						indexs := []int{i, j, k, m, n}
+						indexses = append(indexses, indexs)
+					}
+				}
+			}
+		}
+	}
+	return
+}
+
 // Testing functions----------------------------------------------------------
 func TestFrom(t *testing.T) {
 	c.Convey("Nil as data source", t, func() {
@@ -239,8 +314,18 @@ func TestWhere(t *testing.T) {
 			c.So(func() { From(tInts).SetSizeOfChunk(size).Where(nil) }, c.ShouldPanicWith, ErrNilAction)
 		})
 
-		c.Convey("An error should be returned if the error appears in where function", func() {
+		c.Convey("If the error appears in where function from list source", func() {
 			_, err := From(tInts).SetSizeOfChunk(size).Where(filterWithPanic).Results()
+			c.So(err, c.ShouldNotBeNil)
+		})
+
+		c.Convey("If the error appears in where function from channel source", func() {
+			_, err := From(getIntChan(tInts)).SetSizeOfChunk(size).Where(filterWithPanic).Results()
+			c.So(err, c.ShouldNotBeNil)
+		})
+
+		c.Convey("If the error appears in before operation", func() {
+			_, err := From(getIntChan(tInts)).SetSizeOfChunk(size).Select(selectIntWithPanic).Where(filterInt).Results()
 			c.So(err, c.ShouldNotBeNil)
 		})
 
@@ -305,13 +390,18 @@ func TestSelect(t *testing.T) {
 			c.So(func() { From(tInts).SetSizeOfChunk(size).Select(nil) }, c.ShouldPanicWith, ErrNilAction)
 		})
 
-		c.Convey("An error should be returned if the error appears in select function", func() {
-			_, err := From(tInts).SetSizeOfChunk(size).Select(selectWithPanic).Results()
+		c.Convey("If the error appears in select function", func() {
+			_, err := From(tInts).SetSizeOfChunk(size).Select(selectUserWithPanic).Results()
+			c.So(err, c.ShouldNotBeNil)
+		})
+
+		c.Convey("If the error appears in before operations", func() {
+			_, err := From(getIntChan(tInts)).SetSizeOfChunk(size).Where(filterWithPanic2).Select(selectInt).Results()
 			c.So(err, c.ShouldNotBeNil)
 		})
 
 		c.Convey("Select an empty slice", func() {
-			rs, err := From([]int{}).SetSizeOfChunk(size).Select(selectWithPanic).Results()
+			rs, err := From([]int{}).SetSizeOfChunk(size).Select(selectUserWithPanic).Results()
 			c.So(len(rs), c.ShouldEqual, 0)
 			c.So(err, c.ShouldBeNil)
 		})
@@ -425,10 +515,12 @@ func TestDistinct(t *testing.T) {
 		})
 
 		c.Convey("An error should be returned if the error appears in DistinctBy function", func() {
-			rs, err := From(tRptUsers).SetSizeOfChunk(size).DistinctBy(distinctUserPanic).Results()
-			if err == nil {
-				fmt.Println("\nDistinct An error returned:", rs)
-			}
+			_, err := From(tRptUsers).SetSizeOfChunk(size).DistinctBy(distinctUserPanic).Results()
+			c.So(err, c.ShouldNotBeNil)
+		})
+
+		c.Convey("If the error appears in before operations", func() {
+			_, err := From(getChan(tRptUsers)).SetSizeOfChunk(size).Select(selectUserWithPanic).DistinctBy(distinctUser).Results()
 			c.So(err, c.ShouldNotBeNil)
 		})
 
@@ -497,11 +589,13 @@ func TestGroupBy(t *testing.T) {
 			c.So(func() { From(tInts).SetSizeOfChunk(size).GroupBy(nil) }, c.ShouldPanicWith, ErrNilAction)
 		})
 
+		c.Convey("If the error appears in before operations", func() {
+			_, err := From(getChan(tUsers)).SetSizeOfChunk(size).Select(selectUserWithPanic).GroupBy(groupUser).Results()
+			c.So(err, c.ShouldNotBeNil)
+		})
+
 		c.Convey("An error should be returned if the error appears in GroupBy function", func() {
-			rs, err := From(tRptUsers).SetSizeOfChunk(size).GroupBy(groupUserPanic).Results()
-			if err == nil {
-				fmt.Println("\nGroup An error should be returned----------:", rs)
-			}
+			_, err := From(tRptUsers).SetSizeOfChunk(size).GroupBy(groupUserPanic).Results()
 			c.So(err, c.ShouldNotBeNil)
 		})
 
@@ -581,6 +675,11 @@ func TestJoin(t *testing.T) {
 			c.So(err, c.ShouldNotBeNil)
 
 			_, err = From(tUsers).SetSizeOfChunk(size).Join(tRoles, userSelector, roleSelector, resultSelectorPanic).Results()
+			c.So(err, c.ShouldNotBeNil)
+		})
+
+		c.Convey("If the error appears in before operations", func() {
+			_, err := From(getChan(tUsers)).SetSizeOfChunk(size).Select(selectUserWithPanic).Join(tRoles, userSelector, roleSelector, resultSelector).Results()
 			c.So(err, c.ShouldNotBeNil)
 		})
 
@@ -820,6 +919,11 @@ func TestUnion(t *testing.T) {
 			c.So(func() { From(tUsers).SetSizeOfChunk(size).Union(nil) }, c.ShouldPanicWith, ErrUnionNilSource)
 		})
 
+		c.Convey("If error appears in before operation", func() {
+			_, err := From(getChan(tUsers)).SetSizeOfChunk(size).Select(selectUserWithPanic).Union([]interface{}{}).Results()
+			c.So(err, c.ShouldNotBeNil)
+		})
+
 		c.Convey("Union an empty slice as first source", func() {
 			rs, err := From([]int{}).SetSizeOfChunk(size).Union(tUsers2).Results()
 			if len(rs) != count {
@@ -862,6 +966,11 @@ func TestConcat(t *testing.T) {
 	test := func(size int) {
 		c.Convey("When passed nil source, error be returned", func() {
 			c.So(func() { From(tUsers).SetSizeOfChunk(size).Concat(nil) }, c.ShouldPanicWith, ErrConcatNilSource)
+		})
+
+		c.Convey("If error appears in before operation from channel source", func() {
+			_, err := From(getChan(tUsers)).SetSizeOfChunk(size).Select(selectUserWithPanic).Concat([]interface{}{}).Results()
+			c.So(err, c.ShouldNotBeNil)
 		})
 
 		c.Convey("Concat an empty slice as first source", func() {
@@ -908,6 +1017,11 @@ func TestInterest(t *testing.T) {
 			c.So(func() { From(tUsers).SetSizeOfChunk(size).Intersect(nil) }, c.ShouldPanicWith, ErrInterestNilSource)
 		})
 
+		c.Convey("If error appears in before operation from channel source", func() {
+			_, err := From(getChan(tUsers)).SetSizeOfChunk(size).Select(selectUserWithPanic).Intersect([]interface{}{}).Results()
+			c.So(err, c.ShouldNotBeNil)
+		})
+
 		c.Convey("Interest an empty slice as first source", func() {
 			rs, err := From([]int{}).SetSizeOfChunk(size).Intersect(tUsers2).Results()
 			c.So(len(rs), c.ShouldEqual, 0)
@@ -950,6 +1064,11 @@ func TestExcept(t *testing.T) {
 	test := func(size int) {
 		c.Convey("When passed nil source, error be returned", func() {
 			c.So(func() { From(tUsers).SetSizeOfChunk(size).Except(nil) }, c.ShouldPanicWith, ErrExceptNilSource)
+		})
+
+		c.Convey("If error appears in before operation from channel source", func() {
+			_, err := From(getChan(tUsers)).SetSizeOfChunk(size).Select(selectUserWithPanic).Except([]interface{}{}).Results()
+			c.So(err, c.ShouldNotBeNil)
 		})
 
 		c.Convey("Except an empty slice as first source", func() {
@@ -1024,6 +1143,11 @@ func TestOrderBy(t *testing.T) {
 			c.So(err, c.ShouldBeNil)
 		})
 
+		c.Convey("OrderBy an interface{} slice, but before operation appears error", func() {
+			_, err := From(getChan(tRptUsers)).SetSizeOfChunk(size).Select(selectIntWithPanic).OrderBy(orderUserById).Results()
+			c.So(err, c.ShouldNotBeNil)
+		})
+
 		c.Convey("OrderBy an interface{} slice", func() {
 			rs, err := From(tRptUsers).SetSizeOfChunk(size).OrderBy(orderUserById).Results()
 			c.So(len(rs), c.ShouldEqual, len(tRptUsers))
@@ -1055,6 +1179,10 @@ func TestOrderBy(t *testing.T) {
 
 func TestReverse(t *testing.T) {
 	test := func(size int) {
+		c.Convey("An error appears in before operation", func() {
+			_, err := From(getChan(tRptUsers)).SetSizeOfChunk(size).Select(selectUserWithPanic).Reverse().Results()
+			c.So(err, c.ShouldNotBeNil)
+		})
 
 		c.Convey("Reverse an interface{} slice", func() {
 			rs, err := From(tRptUsers).SetSizeOfChunk(size).OrderBy(orderUserById).Reverse().Results()
@@ -1110,13 +1238,13 @@ func TestAggregate(t *testing.T) {
 			c.So(err, c.ShouldNotBeNil)
 		})
 
-		c.Convey("An error should be returned if the error appears in Aggregate function", func() {
+		c.Convey("If the error appears in Aggregate function", func() {
 			_, err := From([]int{4, 2, 3, 1}).SetSizeOfChunk(size).Aggregate(&AggregateOpretion{0, aggregatePanic, nil})
 			c.So(err, c.ShouldNotBeNil)
 		})
 
 		c.Convey("An error appears in previous operation", func() {
-			_, err := From(tUsers).SetSizeOfChunk(size).Select(selectWithPanic).Aggregate(myAgg)
+			_, err := From(tUsers).SetSizeOfChunk(size).Select(selectUserWithPanic).Aggregate(myAgg)
 			c.So(err, c.ShouldNotBeNil)
 		})
 
@@ -1198,63 +1326,7 @@ func TestSumCountAvgMaxMin(t *testing.T) {
 	c.Convey("Test Sum/Count/Avg/Max/Min parallel", t, func() { test(parallelChunkSize) })
 }
 
-//获取0到4所有的组合
-func getIndexses(countOfSkipTestData int) (indexses [][]int) {
-	for i := 0; i < countOfSkipTestData; i++ {
-		//开始创建一个随机组合
-		for j := 0; j < countOfSkipTestData; j++ {
-			if j == i {
-				continue
-			}
-			for k := 0; k < countOfSkipTestData; k++ {
-				if k == j || k == i {
-					continue
-				}
-				for m := 0; m < countOfSkipTestData; m++ {
-					if m == k || m == j || m == i {
-						continue
-					}
-					for n := 0; n < countOfSkipTestData; n++ {
-						if n == k || n == j || n == i || n == m {
-							continue
-						}
-						indexs := []int{i, j, k, m, n}
-						indexses = append(indexses, indexs)
-					}
-				}
-			}
-		}
-	}
-	return
-}
-
-var countOfSkipTestData int = 5
-
-func getChunkByi(i int, ints []interface{}) *Chunk {
-	size := count / countOfSkipTestData
-	return &Chunk{NewSlicer(ints[i*size : (i+1)*size]), i, 0}
-}
-
-func getCChunkSrc(indexs []int, ints []interface{}) chan *Chunk {
-	chunkSrc := make(chan *Chunk)
-	go func() {
-		//indexs := []int{3, 0, 1, 4, 2}
-		defer func() {
-			if e := recover(); e != nil {
-				_ = e
-			}
-		}()
-		//fmt.Println("\nsend----------------")
-		for _, i := range indexs {
-			//fmt.Println("\nsend", getChunkByi(i))
-			chunkSrc <- getChunkByi(i, ints)
-		}
-		close(chunkSrc)
-	}()
-	return chunkSrc
-}
-
-//TODO: outstanding testing item:
+///TODO: outstanding testing item:
 // 1. SkipWhile/TakeWhile after Union operation
 // 2. if the data source includes the count of match item are more than one.
 func TestSkipAndTake(t *testing.T) {
@@ -1448,6 +1520,11 @@ func TestSkipAndTake(t *testing.T) {
 				c.So(err, c.ShouldNotBeNil)
 			})
 
+			c.Convey("If an error appears in before operation", func() {
+				_, err := From(getChan(ints)).SetSizeOfChunk(size).Select(selectIntWithPanic).SkipWhile(filterWithPanic).Results()
+				c.So(err, c.ShouldNotBeNil)
+			})
+
 			c.Convey("SkipWhile nothing", func() {
 				for _, v := range indexses {
 					r, err := From(getCChunkSrc(v, ints)).SetSizeOfChunk(size).SkipWhile(func(v interface{}) bool {
@@ -1524,6 +1601,11 @@ func TestSkipAndTake(t *testing.T) {
 				c.So(err, c.ShouldNotBeNil)
 			})
 
+			c.Convey("TakeWhile using a predicate func with panic error after a where operation with panic error", func() {
+				_, err := From(getChan(ints)).SetSizeOfChunk(size).Where(filterWithPanic2).TakeWhile(filterWithPanic).Results()
+				c.So(err, c.ShouldNotBeNil)
+			})
+
 			c.Convey("TakeWhile nothing", func() {
 				for _, v := range indexses {
 					r, err := From(getCChunkSrc(v, ints)).SetSizeOfChunk(size).TakeWhile(func(v interface{}) bool {
@@ -1593,6 +1675,13 @@ func TestElementAt(t *testing.T) {
 				c.So(found, c.ShouldEqual, false)
 			}
 		})
+		c.Convey("If an error appears in before operation", func() {
+			for _, v := range indexses {
+				_, _, err := From(getCChunkSrc(v, ints)).Select(selectIntWithPanic).ElementAt(100)
+				c.So(err, c.ShouldNotBeNil)
+			}
+		})
+
 		c.Convey("ElementAt 12", func() {
 			for _, v := range indexses {
 				//_ = indexses
@@ -1643,6 +1732,14 @@ func TestFirstBy(t *testing.T) {
 				})
 				c.So(err, c.ShouldNotBeNil)
 				c.So(found, c.ShouldEqual, false)
+			}
+		})
+		c.Convey("If an error appears in before operation", func() {
+			for _, v := range indexses {
+				_, _, err := From(getCChunkSrc(v, ints)).Select(selectIntWithPanic).FirstBy(func(v interface{}) bool {
+					return v.(int) == -1
+				})
+				c.So(err, c.ShouldNotBeNil)
 			}
 		})
 		c.Convey("FirstBy nothing", func() {
@@ -1699,6 +1796,38 @@ func TestFirstBy(t *testing.T) {
 		})
 		c.Convey("FirstBy 12", func() {
 			r, found, err := From(tInts).FirstBy(func(v interface{}) bool {
+				return v.(int) == 12
+			})
+			c.So(err, c.ShouldBeNil)
+			c.So(r, c.ShouldEqual, 12)
+			c.So(found, c.ShouldEqual, true)
+		})
+	})
+
+	c.Convey("Test FirstBy after where", t, func() {
+		c.Convey("FirstBy with panic an error in both two operations", func() {
+			_, found, err := From(tInts).Where(filterWithPanic2, parallelChunkSize).FirstBy(func(v interface{}) bool {
+				panic(errors.New("!error"))
+			})
+			c.So(err, c.ShouldNotBeNil)
+			c.So(found, c.ShouldEqual, false)
+		})
+		c.Convey("FirstBy nothing with panic an error in where operations", func() {
+			_, found, err := From(tInts).Where(filterWithPanic2, parallelChunkSize).FirstBy(func(v interface{}) bool {
+				return v.(int) == -1
+			})
+			c.So(err, c.ShouldNotBeNil)
+			c.So(found, c.ShouldEqual, false)
+		})
+		c.Convey("FirstBy nothing", func() {
+			_, found, err := From(tInts).Where(filterInt, parallelChunkSize).FirstBy(func(v interface{}) bool {
+				return v.(int) == 100
+			})
+			c.So(err, c.ShouldBeNil)
+			c.So(found, c.ShouldEqual, false)
+		})
+		c.Convey("FirstBy 12", func() {
+			r, found, err := From(tInts).Where(filterInt, parallelChunkSize).FirstBy(func(v interface{}) bool {
 				return v.(int) == 12
 			})
 			c.So(err, c.ShouldBeNil)
@@ -1765,6 +1894,66 @@ func TestToChannel(t *testing.T) {
 			c.So(rs, shouldSlicesResemble, tInts)
 		})
 	})
+
+	c.Convey("Test error handling for ToChan", t, func() {
+		c.Convey("no error appears from list source", func() {
+			out, errChan, err := From(tInts).Where(filterInt, parallelChunkSize).Select(selectInt, parallelChunkSize).ToChan()
+			c.So(err, c.ShouldBeNil)
+			rs, stepErr := getChanResult(out, errChan)
+			c.So(stepErr, c.ShouldBeNil)
+			c.So(len(rs), c.ShouldEqual, count/2)
+		})
+
+		c.Convey("When error appears in last chunk from list source", func() {
+			out, errChan, err := From(tInts).Where(filterWithPanic2, parallelChunkSize).Select(selectInt, parallelChunkSize).ToChan()
+			c.So(err, c.ShouldBeNil)
+			_, stepErr := getChanResult(out, errChan)
+			c.So(stepErr, c.ShouldNotBeNil)
+		})
+
+		c.Convey("no error appears from chan source", func() {
+			out, errChan, err := From(getIntChan(tInts)).Where(filterInt, parallelChunkSize).Select(selectInt, parallelChunkSize).ToChan()
+			c.So(err, c.ShouldBeNil)
+			rs, stepErr := getChanResult(out, errChan)
+			c.So(stepErr, c.ShouldBeNil)
+			c.So(len(rs), c.ShouldEqual, count/2)
+		})
+
+		c.Convey("When error appears in last chunk from chan source", func() {
+			out, errChan, err := From(getIntChan(tInts)).Where(filterWithPanic2, parallelChunkSize).Select(selectInt, parallelChunkSize).ToChan()
+			c.So(err, c.ShouldBeNil)
+			_, stepErr := getChanResult(out, errChan)
+			c.So(stepErr, c.ShouldNotBeNil)
+		})
+
+	})
+
+}
+
+func getChanResult(out chan interface{}, errChan chan error) (rs []interface{}, err error) {
+	var (
+		r interface{}
+	)
+	rs = make([]interface{}, 0, 1)
+	ok := false
+L1:
+	for {
+		select {
+		case r, ok = <-out:
+			//fmt.Println("To chan get", r)
+			rs = append(rs, r)
+		case err, ok = <-errChan:
+			//fmt.Println("To chan get error!!!!!!!!", err)
+			if ok {
+				break L1
+			}
+		}
+		//if !ok {
+		//	break L1
+		//}
+	}
+	return
+
 }
 
 func shouldSlicesResemble(actual interface{}, expected ...interface{}) string {
