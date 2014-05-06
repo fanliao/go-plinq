@@ -39,8 +39,8 @@ func init() {
 	_ = fmt.Println
 	//fmt.Println("numCPU is", numCPU)
 
-	Sum = &AggregateOpretion{0, sumOpr, sumOpr}
-	Count = &AggregateOpretion{0, countOpr, sumOpr}
+	Sum = &AggregateOperation{0, sumOpr, sumOpr}
+	Count = &AggregateOperation{0, countOpr, sumOpr}
 	Min = getMinOpr(defLess)
 	Max = getMaxOpr(defLess)
 }
@@ -75,7 +75,7 @@ type KeyValue struct {
 //Aggregate operation structs and functions-------------------------------
 
 //TODO: let user can set the size of chunk for Aggregate operation
-type AggregateOpretion struct {
+type AggregateOperation struct {
 	Seed         interface{}
 	AggAction    twoArgsFunc
 	ReduceAction twoArgsFunc
@@ -83,10 +83,10 @@ type AggregateOpretion struct {
 
 // Standard Sum, Count, Min and Max Aggregation operation
 var (
-	Sum   *AggregateOpretion
-	Count *AggregateOpretion
-	Min   *AggregateOpretion
-	Max   *AggregateOpretion
+	Sum   *AggregateOperation
+	Count *AggregateOperation
+	Min   *AggregateOperation
+	Max   *AggregateOperation
 )
 
 //the queryable struct-------------------------------------------------------------------------
@@ -278,7 +278,7 @@ func (this *Queryable) LastBy(predicate predicateFunc, chunkSizes ...int) (resul
 }
 
 // Aggregate returns the results of aggregation operation
-// Aggregation operation aggregates the result in the data source base on the AggregateOpretion.
+// Aggregation operation aggregates the result in the data source base on the AggregateOperation.
 //
 // Aggregate can return a slice includes multiple results if passes multiple aggregation operation once.
 // If passes one aggregation operation, Aggregate will return single interface{}
@@ -292,7 +292,7 @@ func (this *Queryable) LastBy(predicate predicateFunc, chunkSizes ...int) (resul
 //	aggResults, err := From(arr).Aggregate(Sum, Count, Max, Min) // return [18, 4, 9, 0]
 //	// or
 //	sum, err := From(arr).Aggregate(Sum) // sum is 18
-func (this *Queryable) Aggregate(aggregateFuncs ...*AggregateOpretion) (result interface{}, err error) {
+func (this *Queryable) Aggregate(aggregateFuncs ...*AggregateOperation) (result interface{}, err error) {
 	result, _, err = this.singleValue(func(ds DataSource, pOption *ParallelOption) (resultValue interface{}, found bool, err1 error) {
 		results, e := getAggregate(ds, aggregateFuncs, &(this.ParallelOption))
 		if e != nil {
@@ -314,7 +314,7 @@ func (this *Queryable) Aggregate(aggregateFuncs ...*AggregateOpretion) (result i
 //	arr = []interface{}{0, 3, 6, 9}
 //	sum, err := From(arr).Sum() // sum is 18
 func (this *Queryable) Sum() (result interface{}, err error) {
-	aggregateOprs := []*AggregateOpretion{Sum}
+	aggregateOprs := []*AggregateOperation{Sum}
 
 	if result, err = this.Aggregate(aggregateOprs...); err == nil {
 		return result, nil
@@ -328,7 +328,7 @@ func (this *Queryable) Sum() (result interface{}, err error) {
 //	arr = []interface{}{0, 3, 6, 9}
 //	count, err := From(arr).Count() // count is 4
 func (this *Queryable) Count() (result interface{}, err error) {
-	aggregateOprs := []*AggregateOpretion{Count}
+	aggregateOprs := []*AggregateOperation{Count}
 
 	if result, err = this.Aggregate(aggregateOprs...); err == nil {
 		return result, nil
@@ -345,7 +345,7 @@ func (this *Queryable) CountBy(predicate predicateFunc) (result interface{}, err
 	if predicate == nil {
 		predicate = predicateFunc(func(interface{}) bool { return true })
 	}
-	aggregateOprs := []*AggregateOpretion{getCountByOpr(predicate)}
+	aggregateOprs := []*AggregateOperation{getCountByOpr(predicate)}
 
 	if result, err = this.Aggregate(aggregateOprs...); err == nil {
 		return result, nil
@@ -359,7 +359,7 @@ func (this *Queryable) CountBy(predicate predicateFunc) (result interface{}, err
 //	arr = []interface{}{0, 3, 6, 9}
 //	arg, err := From(arr).Average() // sum is 4.5
 func (this *Queryable) Average() (result interface{}, err error) {
-	aggregateOprs := []*AggregateOpretion{Sum, Count}
+	aggregateOprs := []*AggregateOperation{Sum, Count}
 
 	if results, err := this.Aggregate(aggregateOprs...); err == nil {
 		count := float64(results.([]interface{})[1].(int))
@@ -385,7 +385,7 @@ func (this *Queryable) Max(lesses ...func(interface{}, interface{}) bool) (resul
 		less = lesses[0]
 	}
 
-	aggregateOprs := []*AggregateOpretion{getMaxOpr(less)}
+	aggregateOprs := []*AggregateOperation{getMaxOpr(less)}
 
 	if results, err := this.Aggregate(aggregateOprs...); err == nil {
 		return results, nil
@@ -408,7 +408,7 @@ func (this *Queryable) Min(lesses ...func(interface{}, interface{}) bool) (resul
 		less = lesses[0]
 	}
 
-	aggregateOprs := []*AggregateOpretion{getMinOpr(less)}
+	aggregateOprs := []*AggregateOperation{getMinOpr(less)}
 
 	if results, err := this.Aggregate(aggregateOprs...); err == nil {
 		return results, nil
@@ -1679,7 +1679,7 @@ func getLastBy(src DataSource, predicate predicateFunc, option *ParallelOption) 
 }
 
 // Get the action function for Aggregate operation
-func getAggregate(src DataSource, aggregateFuncs []*AggregateOpretion, option *ParallelOption) (result []interface{}, err error) {
+func getAggregate(src DataSource, aggregateFuncs []*AggregateOperation, option *ParallelOption) (result []interface{}, err error) {
 	if isNil(aggregateFuncs) || len(aggregateFuncs) == 0 {
 		return nil, newErrorWithStacks(errors.New("Aggregation function cannot be nil"))
 	}
@@ -2582,7 +2582,7 @@ func trySequentialMap(src DataSource, option *ParallelOption, mapChunk func(c *C
 
 }
 
-func trySequentialAggregate(src DataSource, option *ParallelOption, aggregateFuncs []*AggregateOpretion) (rs []interface{}, err error, handled bool) {
+func trySequentialAggregate(src DataSource, option *ParallelOption, aggregateFuncs []*AggregateOperation) (rs []interface{}, err error, handled bool) {
 	defer func() {
 		if e := recover(); e != nil {
 			err = newErrorWithStacks(e)
@@ -2605,7 +2605,7 @@ func trySequentialAggregate(src DataSource, option *ParallelOption, aggregateFun
 
 }
 
-func ifMustSequential(aggregateFuncs []*AggregateOpretion) bool {
+func ifMustSequential(aggregateFuncs []*AggregateOperation) bool {
 	for _, f := range aggregateFuncs {
 		if f.ReduceAction == nil {
 			return true
@@ -2876,7 +2876,7 @@ func getMapChunkToKVChunk2(useDefHash *uint32, maxOrder *int, converter oneArgsF
 }
 
 //TODO: the code need be restructured
-func aggregateSlice(src Slicer, fs []*AggregateOpretion, asSequential bool, asParallel bool) Slicer {
+func aggregateSlice(src Slicer, fs []*AggregateOperation, asSequential bool, asParallel bool) Slicer {
 	size := src.Len()
 	if size == 0 {
 		panic(errors.New("Cannot aggregate empty slice"))

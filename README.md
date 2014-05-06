@@ -11,9 +11,7 @@ PLINQ library for go, support the lazy evaluated and can use channel as source
 src := make([]int, 0, 100)
 pSrc := &src
 
-q := From(pSrc).Where(func(v interface{}) bool {
-	//...
-}).Select(func(v interface{}) interface{} {
+q := From(pSrc).Select(func(v interface{}) interface{} {
 	//...
 })
 
@@ -51,7 +49,7 @@ go-plinq默认采用并行查询，但也可以以非并行方式运行。在后
     chUsers := make(chan *User)
     //send user to chUsers....
 
-    q := plinq.From(chUsers).Select(func(u    interface{}) interface{} {
+    q := plinq.From(chUsers).Select(func(u interface{}) interface{} {
 	    return u.(User).name
     })
     if rsChan, errChan, err := q.ToChan(); err != nil {

@@ -799,28 +799,28 @@ func maxOpr(v interface{}, t interface{}, less func(interface{}, interface{}) bo
 	}
 }
 
-func getMinOpr(less func(interface{}, interface{}) bool) *AggregateOpretion {
+func getMinOpr(less func(interface{}, interface{}) bool) *AggregateOperation {
 	fun := func(a interface{}, b interface{}) interface{} {
 		return minOpr(a, b, less)
 	}
-	return &AggregateOpretion{0, fun, fun}
+	return &AggregateOperation{0, fun, fun}
 }
 
-func getMaxOpr(less func(interface{}, interface{}) bool) *AggregateOpretion {
+func getMaxOpr(less func(interface{}, interface{}) bool) *AggregateOperation {
 	fun := func(a interface{}, b interface{}) interface{} {
 		return maxOpr(a, b, less)
 	}
-	return &AggregateOpretion{0, fun, fun}
+	return &AggregateOperation{0, fun, fun}
 }
 
-func getCountByOpr(predicate predicateFunc) *AggregateOpretion {
+func getCountByOpr(predicate predicateFunc) *AggregateOperation {
 	fun := func(v interface{}, t interface{}) interface{} {
 		if predicate(v) {
 			t = t.(int) + 1
 		}
 		return t
 	}
-	return &AggregateOpretion{0, fun, sumOpr}
+	return &AggregateOperation{0, fun, sumOpr}
 }
 
 func defLess(a interface{}, b interface{}) bool {

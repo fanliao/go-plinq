@@ -1232,7 +1232,7 @@ func aggregatePanic(v interface{}, summary interface{}) interface{} {
 	panic(errors.New("panic"))
 }
 func TestAggregate(t *testing.T) {
-	myAgg := &AggregateOpretion{
+	myAgg := &AggregateOperation{
 		Seed: "",
 		AggAction: func(v interface{}, t interface{}) interface{} {
 			v1, t1 := v.(user), t.(string)
@@ -1247,12 +1247,12 @@ func TestAggregate(t *testing.T) {
 		c.Convey("When passed nil function, should use the default compare function", func() {
 			_, err := From([]int{4, 2, 3, 1}).SetSizeOfChunk(size).Aggregate(nil)
 			c.So(err, c.ShouldNotBeNil)
-			_, err = From([]int{4, 2, 3, 1}).SetSizeOfChunk(size).Aggregate(([]*AggregateOpretion{})...)
+			_, err = From([]int{4, 2, 3, 1}).SetSizeOfChunk(size).Aggregate(([]*AggregateOperation{})...)
 			c.So(err, c.ShouldNotBeNil)
 		})
 
 		c.Convey("If the error appears in Aggregate function", func() {
-			_, err := From([]int{4, 2, 3, 1}).SetSizeOfChunk(size).Aggregate(&AggregateOpretion{0, aggregatePanic, nil})
+			_, err := From([]int{4, 2, 3, 1}).SetSizeOfChunk(size).Aggregate(&AggregateOperation{0, aggregatePanic, nil})
 			c.So(err, c.ShouldNotBeNil)
 		})
 
