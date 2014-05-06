@@ -8,12 +8,16 @@ PLINQ library for go, support the lazy evaluated and can use channel as source
 * 延迟查询
 
 ```go
-src := make([]int, 100)
+src := make([]int, 0, 100)
 pSrc := &src
 
-q := From(pSrc).Where(whereFunc).Select(selectFunc)
+q := From(pSrc).Where(func(v interface{}) bool {
+	//...
+}).Select(func(v interface{}) interface{} {
+	//...
+})
 
-for i := count; i < count+10; i++ { src = append(src, i) }
+for i := 0; i < 10; i++ { src = append(src, i) }
 
 rs, err := q1.Results()
 ```

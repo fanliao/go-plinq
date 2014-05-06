@@ -298,6 +298,19 @@ func TestFrom(t *testing.T) {
 		var pSlice *[]interface{} = nil
 		c.So(func() { _ = From(pSlice) }, c.ShouldPanicWith, ErrNilSource)
 	})
+
+	c.Convey("Test lazy execution", t, func() {
+		ints := make([]int, len(tInts))
+		_ = copy(ints, tInts)
+		pSrc := &ints
+		q := From(pSrc).Select(selectInt)
+		for i := count; i < count+10; i++ {
+			ints = append(ints, i)
+		}
+		rs, err := q.Results()
+		c.So(err, c.ShouldBeNil)
+		c.So(len(rs), c.ShouldEqual, count+10)
+	})
 }
 
 func TestWhere(t *testing.T) {
