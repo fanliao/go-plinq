@@ -161,9 +161,11 @@ func (this *Queryable) ToChan() (out chan interface{}, errChan chan error, err e
 		out = ds.ToChan()
 		errChan = make(chan error)
 		go func() {
-			err = this.stepErrs()
-			if err != nil {
-				errChan <- err
+			fmt.Println("check err!!!!!!!!!!!")
+			err1 := this.stepErrs()
+			if !isNil(err1) {
+				fmt.Println("send err,", err1)
+				errChan <- err1
 			}
 			close(errChan)
 		}()

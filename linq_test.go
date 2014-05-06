@@ -1901,6 +1901,9 @@ func TestToChannel(t *testing.T) {
 			c.So(err, c.ShouldBeNil)
 			rs, stepErr := getChanResult(out, errChan)
 			c.So(stepErr, c.ShouldBeNil)
+			if len(rs) != count/2 {
+				fmt.Println("list count error, ", rs, tInts)
+			}
 			c.So(len(rs), c.ShouldEqual, count/2)
 		})
 
@@ -1916,6 +1919,9 @@ func TestToChannel(t *testing.T) {
 			c.So(err, c.ShouldBeNil)
 			rs, stepErr := getChanResult(out, errChan)
 			c.So(stepErr, c.ShouldBeNil)
+			if len(rs) != count/2 {
+				fmt.Println("chan count error, ", rs, tInts)
+			}
 			c.So(len(rs), c.ShouldEqual, count/2)
 		})
 
@@ -1935,18 +1941,25 @@ func getChanResult(out chan interface{}, errChan chan error) (rs []interface{}, 
 		r interface{}
 	)
 	rs = make([]interface{}, 0, 1)
-	ok := false
+	ok1, ok2 := false, false
 L1:
 	for {
 		select {
-		case r, ok = <-out:
+		case r, ok1 = <-out:
+			if ok1 {
+				//break L1
+				rs = append(rs, r)
+			}
 			//fmt.Println("To chan get", r)
-			rs = append(rs, r)
-		case err, ok = <-errChan:
-			//fmt.Println("To chan get error!!!!!!!!", err)
-			if ok {
+		case err, ok2 = <-errChan:
+			//fmt.Println("To chan get error!", err)
+			if ok2 && !isNil(err) {
+				fmt.Println("To chan get error!!!!!!!!", err)
 				break L1
 			}
+		}
+		if !ok1 && !ok2 {
+			break
 		}
 	}
 	return
