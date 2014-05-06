@@ -36,7 +36,8 @@ var (
 
 func init() {
 	numCPU = runtime.NumCPU()
-	fmt.Println("numCPU is", numCPU)
+	_ = fmt.Println
+	//fmt.Println("numCPU is", numCPU)
 
 	Sum = &AggregateOpretion{0, sumOpr, sumOpr}
 	Count = &AggregateOpretion{0, countOpr, sumOpr}
@@ -161,10 +162,8 @@ func (this *Queryable) ToChan() (out chan interface{}, errChan chan error, err e
 		out = ds.ToChan()
 		errChan = make(chan error)
 		go func() {
-			fmt.Println("check err!!!!!!!!!!!")
 			err1 := this.stepErrs()
 			if !isNil(err1) {
-				fmt.Println("send err,", err1)
 				errChan <- err1
 			}
 			close(errChan)
@@ -1240,7 +1239,7 @@ func getSelect(selectFunc oneArgsFunc) stepAction {
 		}
 
 		if src.Typ() == SOURCE_LIST && src.ToSlice(false).Len() <= option.ChunkSize {
-			fmt.Println("WARNING! parallel for small source, src=", src.ToSlice(false).ToInterfaces())
+			//fmt.Println("WARNING! parallel for small source, src=", src.ToSlice(false).ToInterfaces())
 		}
 
 		f, out := parallelMapToChan(src, nil, mapChunk, option)
@@ -1548,7 +1547,7 @@ func getConcat(source2 interface{}) stepAction {
 			_ = copy(result[len(slice1):len(slice1)+len(slice2)], slice2)
 			return newDataSource(result), nil, option.KeepOrder, nil
 		} else {
-			fmt.Println("concat return error2, ", err2)
+			//fmt.Println("concat return error2, ", err2)
 			return nil, nil, option.KeepOrder, err2
 		}
 
@@ -2869,7 +2868,6 @@ func getMapChunkToKVChunkFunc(useDefHash *uint32, converter oneArgsFunc) func(c 
 func getMapChunkToKVChunk2(useDefHash *uint32, maxOrder *int, converter oneArgsFunc) func(c *Chunk) (r *Chunk) {
 	return func(c *Chunk) (r *Chunk) {
 		slicer := getMapChunkToKVs(useDefHash, converter)(c)
-		fmt.Println("\ngetMapChunkToKVChunk", c, slicer)
 		if c.Order > *maxOrder {
 			*maxOrder = c.Order
 		}

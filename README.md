@@ -8,39 +8,63 @@ PLINQ library for go, support the lazy evaluated and can use channel as source
 * 延迟查询
 
 ```go
+src := make([]int, 100)
 pSrc := &src
+
 q := From(pSrc).Where(whereFunc).Select(selectFunc)
+
 for i := count; i < count+10; i++ { src = append(src, i) }
+
 rs, err := q1.Results()
 ```
 
 * 并行查询
 
-go-plinq默认采用并行查询，但也可以以非并行方式运行。为了测量plinq的并行加速比，在后面采用了go-linq的非并行模式作为对比。从测试结果看，当N为1000时，plinq的加速比大约为2，当N达到10000或以上时，plinq的加速比稳定在3左右。这里的加速比只是一个参考值，在并行算法中，加速比取决于很多因素，难以一概而论。
+go-plinq默认采用并行查询，但也可以以非并行方式运行。在后面采用了go-linq的非并行模式对plinq的并行加速比进行了测试。从测试结果看，在4核CPU上，当N为1000时，plinq的加速比大约为2，当N达到10000或以上时，plinq的加速比稳定在3左右，如果加大运算的复杂度，加速比可以进一步提高到3.5左右。这里的加速比只是一个参考值，在并行算法中，加速比取决于很多因素，难以一概而论。
 
-通过设置数据块的大小，可以让plinq以非并行模式运行，以防止并行带来的开销超过了收益。
+如果在小数据量下，并行的开销将大于收益，此时plinq将以非并行模式运行。这个阀值可以在运行时设置，默认为100。
 
-* 支持Channel作为查询数据源
+* 除了支持slice，也支持channel作为数据源和输出
 
-```go
-type User struct {
-	id   int
-	name string
-}
-chUsers := make(chan *User)
-rs, err := From(chUsers).Select(func(u interface{})interface{} {
-	return u.name
-}).Results()
-```
+    * Channel作为查询数据源
 
-* 支持返回Channel作为查询结果
+    ```go
+    type User struct {
+	    id   int
+	    name string
+    }
+    chUsers := make(chan *User)
+    //send user to chUsers...
 
-```go
-users := make([]*User, 100)
-rs, err := From(users).Select(func(u interface{})interface{} {
-	return u.name
-}).ToChan()
-```
+    rs, err := From(chUsers).Select(func(u    interface{})interface{} {
+	    return u.name
+    }).Results()
+    ```
+
+    * 返回Channel作为查询结果
+
+    ```go
+    chUsers := make(chan *User)
+    //send user to chUsers....
+
+    q := plinq.From(chUsers).Select(func(u    interface{}) interface{} {
+	    return u.(User).name
+    })
+    if rsChan, errChan, err := q.ToChan(); err != nil {
+	    fmt.Println("Return an error:", err)
+    } else {
+	    names := make([]interface{}, 0, 1)
+	    for v := range rsChan {
+	  	    names = append(names, v)
+	    }
+
+	    if e, ok := <-errChan; ok {
+		    fmt.Println("Get an error in linq:", e)
+	    } else {
+		    fmt.Println("Return:", names)
+	    }
+    }
+    ```
 
 ## 已经实现的linq查询运算符:
 * 排序运算符：
@@ -81,7 +105,7 @@ Skip, SkipWhile, Take, TakeWhile
 
 * 元素运算符：
 
-ElementAt, FirstBy 
+ElementAt, First, FirstBy, Last, LastBy
 
 ## 未完成的linq查询运算符:
 
@@ -95,7 +119,7 @@ Range, Repeat
 
 * 元素运算符/Element Operators
 
-First, Last, LastBy, Single 
+, Single 
 
 ## 文档（未完成。。。）:
 
@@ -103,7 +127,7 @@ First, Last, LastBy, Single
 
 这里采用了go-linq的非并行模式作为对比的依据，测试结果是采用go提供的benchmark统计得到的。
 
-测试的CPU为Intel Atom Z3740D（4核 1.33GHZ），时间单位是ms。
+测试的CPU为Intel Atom Z3740D（4核 1.33GHZ）， 操作系统为Win8.1，时间单位是ms。
 
 ### 性能测试结果
 

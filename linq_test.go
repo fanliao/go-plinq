@@ -1937,32 +1937,58 @@ func TestToChannel(t *testing.T) {
 }
 
 func getChanResult(out chan interface{}, errChan chan error) (rs []interface{}, err error) {
-	var (
-		r interface{}
-	)
 	rs = make([]interface{}, 0, 1)
-	ok1, ok2 := false, false
-L1:
-	for {
-		select {
-		case r, ok1 = <-out:
-			if ok1 {
-				//break L1
-				rs = append(rs, r)
-			}
-			//fmt.Println("To chan get", r)
-		case err, ok2 = <-errChan:
-			//fmt.Println("To chan get error!", err)
-			if ok2 && !isNil(err) {
-				fmt.Println("To chan get error!!!!!!!!", err)
-				break L1
-			}
-		}
-		if !ok1 && !ok2 {
-			break
-		}
+	for v := range out {
+		rs = append(rs, v)
+	}
+
+	if e, ok := <-errChan; ok {
+		err = e
 	}
 	return
+}
+
+func getChanResult1(out chan interface{}, errChan chan error) (rs []interface{}, err error) {
+	//var (
+	//	r interface{}
+	//)
+	rs = make([]interface{}, 0, 1)
+	for v := range out {
+		rs = append(rs, v)
+	}
+
+	//ok := false
+	if e, ok := <-errChan; ok {
+		//if !isNil(e) {
+		err = e
+		//}
+	}
+	return
+
+	//L1:
+	//L1:
+	//	select {
+	//	case r, ok = <-out:
+	//		if ok {
+	//			rs = append(rs, r)
+	//		} else {
+	//			end1 = true
+	//		}
+	//	case err, ok = <-errChan:
+	//		if ok {
+	//			if !isNil(err) {
+	//				break L1
+	//			}
+	//		} else {
+	//			end2 = true
+	//		}
+	//	}
+	//	if end1 && end2 {
+	//		fmt.Println("break!!!!!!!!!!")
+	//		break
+	//	}
+	//}
+	//return
 
 }
 
