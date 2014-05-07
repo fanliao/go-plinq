@@ -1961,50 +1961,6 @@ func getChanResult(out chan interface{}, errChan chan error) (rs []interface{}, 
 	return
 }
 
-func getChanResult1(out chan interface{}, errChan chan error) (rs []interface{}, err error) {
-	//var (
-	//	r interface{}
-	//)
-	rs = make([]interface{}, 0, 1)
-	for v := range out {
-		rs = append(rs, v)
-	}
-
-	//ok := false
-	if e, ok := <-errChan; ok {
-		//if !isNil(e) {
-		err = e
-		//}
-	}
-	return
-
-	//L1:
-	//L1:
-	//	select {
-	//	case r, ok = <-out:
-	//		if ok {
-	//			rs = append(rs, r)
-	//		} else {
-	//			end1 = true
-	//		}
-	//	case err, ok = <-errChan:
-	//		if ok {
-	//			if !isNil(err) {
-	//				break L1
-	//			}
-	//		} else {
-	//			end2 = true
-	//		}
-	//	}
-	//	if end1 && end2 {
-	//		fmt.Println("break!!!!!!!!!!")
-	//		break
-	//	}
-	//}
-	//return
-
-}
-
 func shouldSlicesResemble(actual interface{}, expected ...interface{}) string {
 	actualSlice, expectedSlice := reflect.ValueOf(actual), reflect.ValueOf(expected[0])
 	if actualSlice.Kind() != expectedSlice.Kind() {

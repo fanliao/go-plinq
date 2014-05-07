@@ -53,9 +53,6 @@
 
 ## 尚未实现的linq查询运算符:
 
-* 选择：
-SeleteMany
-
 * 量词/Quantifiers：
 Contains
 All, Any, AnyWith, 
@@ -65,6 +62,15 @@ SequenceEqual
 Range， Repeat
 
 * 元素运算符/Element Operators
-First, FirstBy, Last, LastBy, Single, 
+Single, 
+
+## TODO list:
+1. Add default func for OrderBy, DistinctBy...
+2. Add keySelector func for Max, Min
+3. Merge same operations if be before
+4. Add channel mode for concat
+5. Cancel other futures when error appears
+6. Add trace for all futures?
+7. 
 
 
