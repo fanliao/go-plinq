@@ -51,14 +51,15 @@ type TwoArgsFunc func(interface{}, interface{}) interface{}
 type CompareFunc func(interface{}, interface{}) int
 
 // the struct and interface about data DataSource---------------------------------------------------
-// A Chunk presents a data chunk, the paralleliam algorithm always handle a chunk in a paralleliam tasks.
+
+// A Chunk presents a data chunk, it is the minimal data unit for a task.
 type Chunk struct {
 	Data       Slicer //[]interface{}
 	Order      int    //a index presents the order of chunk
 	StartIndex int    //a index presents the start index in whole data
 }
 
-// The DataSource presents the data of linq operation
+// The DataSource presents the data of linq operation，
 // Most linq operations usually convert a DataSource to another DataSource
 type DataSource interface {
 	Typ() int                 //list or chan?
@@ -74,11 +75,13 @@ type KeyValue struct {
 
 //Aggregate operation structs and functions-------------------------------
 
+//An AggregateOperation presents the customized aggregate operation.
+//It enables intermediate aggregation over a chunk, with a final aggregation function to combine the results of all chunks.
 //TODO: let user can set the size of chunk for Aggregate operation
 type AggregateOperation struct {
-	Seed         interface{}
-	AggAction    TwoArgsFunc
-	ReduceAction TwoArgsFunc
+	Seed         interface{} //initial seed
+	AggAction    TwoArgsFunc //intermediate aggregation over a chunk
+	ReduceAction TwoArgsFunc //final aggregation function to combine the results of all chunks
 }
 
 // Standard Sum, Count, Min and Max Aggregation operation
@@ -98,9 +101,9 @@ type ParallelOption struct {
 	KeepOrder bool //whether need keep order of original data
 }
 
-// A Queryable presents an object includes the data and query operations
+// A Queryable presents an object includes the data and query operations.
 // All query functions will return Queryable.
-// For getting the result slice of the query, use Results().
+// For getting the result slice of the query, use Results(). use ToChan() can get a chan presents the result.
 type Queryable struct {
 	data  DataSource
 	steps []step
@@ -110,7 +113,7 @@ type Queryable struct {
 }
 
 // From initializes a linq query with passed slice, map or channel as the data source.
-// input parameter must be a slice, map or channel. Otherwise panics ErrUnsupportSource
+// input parameter must be a slice, map or channel. Otherwise panics ErrUnsupportSource.
 //
 // Example:
 //     i1 := []int{1,2,3,4,5,6}
@@ -177,7 +180,7 @@ func (this *Queryable) ToChan() (out chan interface{}, errChan chan error, err e
 
 // ElementAt returns the element at the specified index i.
 // If i is a negative number or if no element exists at i-th index, found will
-// be returned false.
+// be false.
 //
 // Example:
 // i, found, err := From([]int{0,1,2}).ElementAt(2)
@@ -277,7 +280,7 @@ func (this *Queryable) LastBy(predicate PredicateFunc, chunkSizes ...int) (resul
 	})
 }
 
-// Aggregate returns the results of aggregation operation
+// Aggregate returns the results of aggregation operation.
 // Aggregation operation aggregates the result in the data source base on the AggregateOperation.
 //
 // Aggregate can return a slice includes multiple results if passes multiple aggregation operation once.
@@ -337,7 +340,7 @@ func (this *Queryable) Count() (result interface{}, err error) {
 	}
 }
 
-// Count returns number of elements in the data source.
+// CountBy returns number of elements matched the predicate in the data source.
 // Example:
 //	arr = []interface{}{0, 3, 6, 9}
 //	count, err := From(arr).Countby(func(i interface{}) bool {return i < 9}) // count is 3
@@ -372,8 +375,8 @@ func (this *Queryable) Average() (result interface{}, err error) {
 }
 
 // Max returns the maximum value in the data source.
-// Max operation supports the numeric types, string and time.Time
-// TODO: need more testing for string and time.Time
+// Max operation supports the numeric types, string and time.Time.
+// TODO: need more testing for string and time.Time.
 // Example:
 //	arr = []interface{}{0, 3, 6, 9}
 //	max, err := From(arr).Max() // max is 9
@@ -395,8 +398,8 @@ func (this *Queryable) Max(lesses ...func(interface{}, interface{}) bool) (resul
 }
 
 // Min returns the minimum value in the data source.
-// Min operation supports the numeric types, string and time.Time
-// TODO: need more testing for string and time.Time
+// Min operation supports the numeric types, string and time.Time.
+// TODO: need more testing for string and time.Time.
 // Example:
 //	arr = []interface{}{0, 3, 6, 9}
 //	min, err := From(arr).Max() // min is 0
@@ -431,9 +434,8 @@ func (this *Queryable) Where(predicate PredicateFunc, chunkSizes ...int) *Querya
 	return this
 }
 
-// Select returns a query includes the Select operation
-// Select operation projects each element of the data source into a new data source.
-// with invoking the transform function on each element of original source.
+// Select returns a query includes the Select operation.
+// Select operation projects values that are based on the transform function.
 //
 // Example:
 // 	q := From(users).Select(func (v interface{}) interface{}{
@@ -446,6 +448,14 @@ func (this *Queryable) Select(selectFunc OneArgsFunc, chunkSizes ...int) *Querya
 	return this
 }
 
+// Select returns a query includes the SelectMany operation.
+// SelectMany operation projects values that are based on a transform function and
+// then flattens them into one slice.
+//
+// Example:
+// 	q := From(users).Select(func (v interface{}) interface{}{
+//		return v.(*User).Name
+// 	})
 func (this *Queryable) SelectMany(selectManyFunc func(interface{}) []interface{}, chunkSizes ...int) *Queryable {
 	mustNotNil(selectManyFunc, ErrNilAction)
 
@@ -453,7 +463,7 @@ func (this *Queryable) SelectMany(selectManyFunc func(interface{}) []interface{}
 	return this
 }
 
-// Distinct returns a query includes the Distinct operation
+// Distinct returns a query includes the Distinct operation.
 // Distinct operation distinct elements from the data source.
 //
 // Example:
@@ -462,7 +472,7 @@ func (this *Queryable) Distinct(chunkSizes ...int) *Queryable {
 	return this.DistinctBy(self)
 }
 
-// DistinctBy returns a query includes the DistinctBy operation
+// DistinctBy returns a query includes the DistinctBy operation.
 // DistinctBy operation returns distinct elements from the data source using the
 // provided key selector function.
 //
@@ -478,7 +488,7 @@ func (this *Queryable) DistinctBy(distinctFunc OneArgsFunc, chunkSizes ...int) *
 	return this
 }
 
-// OrderBy returns a query includes the OrderBy operation
+// OrderBy returns a query includes the OrderBy operation.
 // OrderBy operation sorts elements with provided compare function
 // in ascending order.
 // The comparer function should return -1 if the parameter "this" is less
@@ -496,7 +506,7 @@ func (this *Queryable) OrderBy(compare CompareFunc) *Queryable {
 	return this
 }
 
-// GroupBy returns a query includes the GroupBy operation
+// GroupBy returns a query includes the GroupBy operation.
 // GroupBy operation groups elements with provided key selector function.
 // it returns a slice inlcudes Pointer of KeyValue
 //
@@ -511,7 +521,7 @@ func (this *Queryable) GroupBy(keySelector OneArgsFunc, chunkSizes ...int) *Quer
 	return this
 }
 
-// Union returns a query includes the Union operation
+// Union returns a query includes the Union operation.
 // Union operation returns set union of the source and the provided
 // secondary source using hash function comparer, hash(i)==hash(o). the secondary source must
 // be a valid linq data source
@@ -528,7 +538,7 @@ func (this *Queryable) Union(source2 interface{}, chunkSizes ...int) *Queryable 
 	return this
 }
 
-// Concat returns a query includes the Concat operation
+// Concat returns a query includes the Concat operation.
 // Concat operation returns set union all of the source and the provided
 // secondary source. the secondary source must be a valid linq data source
 //
@@ -542,7 +552,7 @@ func (this *Queryable) Concat(source2 interface{}) *Queryable {
 	return this
 }
 
-// Intersect returns a query includes the Intersect operation
+// Intersect returns a query includes the Intersect operation.
 // Intersect operation returns set intersection of the source and the
 // provided secondary using hash function comparer, hash(i)==hash(o). the secondary source must
 // be a valid linq data source.
@@ -557,7 +567,7 @@ func (this *Queryable) Intersect(source2 interface{}, chunkSizes ...int) *Querya
 	return this
 }
 
-// Except returns a query includes the Except operation
+// Except returns a query includes the Except operation.
 // Except operation returns set except of the source and the
 // provided secondary source using hash function comparer, hash(i)==hash(o). the secondary source must
 // be a valid linq data source.
@@ -572,7 +582,7 @@ func (this *Queryable) Except(source2 interface{}, chunkSizes ...int) *Queryable
 	return this
 }
 
-// Join returns a query includes the Join operation
+// Join returns a query includes the Join operation.
 // Join operation correlates the elements of two source based on the equality of keys.
 // Inner and outer keys are matched using hash function comparer, hash(i)==hash(o).
 //
@@ -597,7 +607,7 @@ func (this *Queryable) Join(inner interface{},
 	return this
 }
 
-// LeftJoin returns a query includes the LeftJoin operation
+// LeftJoin returns a query includes the LeftJoin operation.
 // LeftJoin operation is similar with Join operation,
 // but LeftJoin returns all elements in outer source,
 // the inner elements will be null if there is not matching element in inner source
@@ -614,7 +624,7 @@ func (this *Queryable) LeftJoin(inner interface{},
 	return this
 }
 
-// GroupJoin returns a query includes the GroupJoin operation
+// GroupJoin returns a query includes the GroupJoin operation.
 // GroupJoin operation is similar with Join operation,
 // but GroupJoin will correlates the element of the outer source and
 // the matching elements slice of the inner source.
@@ -631,7 +641,7 @@ func (this *Queryable) GroupJoin(inner interface{},
 	return this
 }
 
-// LeftGroupJoin returns a query includes the LeftGroupJoin operation
+// LeftGroupJoin returns a query includes the LeftGroupJoin operation.
 // LeftGroupJoin operation is similar with GroupJoin operation,
 // but LeftGroupJoin returns all elements in outer source,
 // the inner elements will be [] if there is not matching element in inner source
@@ -648,8 +658,8 @@ func (this *Queryable) LeftGroupJoin(inner interface{},
 	return this
 }
 
-// Reverse returns a query includes the Reverse operation
-// Reverse operation returns a data source with a inverted order of the original source
+// Reverse returns a query includes the Reverse operation.
+// Reverse operation returns a data source with a inverted order of the original source.
 //
 // Example:
 // 	q := From([]int{1,2,3,4,5}).Reverse()
@@ -659,9 +669,9 @@ func (this *Queryable) Reverse(chunkSizes ...int) *Queryable {
 	return this
 }
 
-// Skip returns a query includes the Skip operation
+// Skip returns a query includes the Skip operation.
 // Skip operation bypasses a specified number of elements in a sequence
-// and then returns the remaining elements..
+// and then returns the remaining elements.
 //
 // Example:
 // 	arr, err := From([]int{1,2,3,4,5,6}).Skip(3).Results()
@@ -672,7 +682,7 @@ func (this *Queryable) Skip(count int) *Queryable {
 	return this
 }
 
-// SkipWhile returns a query includes the SkipWhile operation
+// SkipWhile returns a query includes the SkipWhile operation.
 // SkipWhile operation bypasses elements in a sequence as long as a specified condition
 // is true and then returns the remaining elements.
 //
@@ -687,7 +697,7 @@ func (this *Queryable) SkipWhile(predicate func(interface{}) bool, chunkSizes ..
 	return this
 }
 
-// Take returns a query includes the Take operation
+// Take returns a query includes the Take operation.
 // Take operation Returns a specified number of contiguous elements
 // from the start of a sequence.
 //
@@ -700,7 +710,7 @@ func (this *Queryable) Take(count int) *Queryable {
 	return this
 }
 
-// TakeWhile returns a query includes the TakeWhile operation
+// TakeWhile returns a query includes the TakeWhile operation.
 // TakeWhile operation returns elements from a sequence as long as a specified condition
 // is true, and then skips the remaining elements.
 //
@@ -717,7 +727,7 @@ func (this *Queryable) TakeWhile(predicate func(interface{}) bool, chunkSizes ..
 
 // KeepOrder returns a query from the original query,
 // the result slice will keep the order of origin query as much as possible
-// Noted: Order operation will change the original order
+// Noted: Order operation will change the original order.
 // TODO: Distinct, Union, Join, Interest, Except operations need more testing
 func (this *Queryable) SetKeepOrder(keep bool) *Queryable {
 	this.KeepOrder = keep
@@ -877,6 +887,7 @@ func newQueryable(ds DataSource) (q *Queryable) {
 }
 
 //The listsource and chanSource structs----------------------------------
+
 // listSource presents the slice or map source
 type listSource struct {
 	//data interface{}
@@ -1093,7 +1104,8 @@ type hKeyValue struct {
 	value   interface{}
 }
 
-//the struct and functions of each operation-------------------------------------------------------------------------
+//the struct and functions of each operation-------------------------------------------------------------------------\
+
 const (
 	ACT_SELECT int = iota
 	ACT_SELECTMANY

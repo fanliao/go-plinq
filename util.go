@@ -574,7 +574,7 @@ func NewAggregateError(text string, err interface{}) *AggregateError {
 	}
 }
 
-// AggregateError is a trivial implementation of error.
+// Represents one or more errors that occur during query execution.
 type AggregateError struct {
 	s         string
 	innerErrs []error
