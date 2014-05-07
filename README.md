@@ -47,4 +47,10 @@ Wiki:
 6. Remarks & Notes (outstanding)
 7. FAQ (outstanding)
 
+## LICENSE
+
+go-plinq is licensed under the MIT Licence,
+(http://www.apache.org/licenses/LICENSE-2.0.html).
+
+
 
