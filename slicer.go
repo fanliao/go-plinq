@@ -7,6 +7,10 @@ import (
 	"time"
 )
 
+func init() {
+	_ = fmt.Errorf
+}
+
 //The Slicer interface and structs----------------------------------
 type Slicer interface {
 	Len() int
@@ -68,8 +72,8 @@ func (this *valueSlicer) ToInterfaces() []interface{} {
 	for i := 0; i < size; i++ {
 		rs[i] = this.data.Index(i).Interface()
 	}
-	fmt.Println("WARNING: convert valueSlicer to interfaces")
-	fmt.Println(newErrorWithStacks("aa").Error())
+	//fmt.Println("WARNING: convert valueSlicer to interfaces")
+	//fmt.Println(newErrorWithStacks("aa").Error())
 	return rs
 }
 

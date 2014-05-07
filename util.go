@@ -741,6 +741,9 @@ func isNil(v interface{}) bool {
 
 //aggregate functions---------------------------------------------------------------
 func sumOpr(v interface{}, t interface{}) interface{} {
+	if isNil(t) {
+		return v
+	}
 	switch val := v.(type) {
 	case int:
 		return val + t.(int)
@@ -778,7 +781,7 @@ func countOpr(v interface{}, t interface{}) interface{} {
 }
 
 func minOpr(v interface{}, t interface{}, less func(interface{}, interface{}) bool) interface{} {
-	if t == nil {
+	if isNil(t) {
 		return v
 	}
 	if less(v, t) {
@@ -789,7 +792,7 @@ func minOpr(v interface{}, t interface{}, less func(interface{}, interface{}) bo
 }
 
 func maxOpr(v interface{}, t interface{}, less func(interface{}, interface{}) bool) interface{} {
-	if t == nil {
+	if isNil(t) {
 		return v
 	}
 	if less(v, t) {
@@ -803,14 +806,14 @@ func getMinOpr(less func(interface{}, interface{}) bool) *AggregateOperation {
 	fun := func(a interface{}, b interface{}) interface{} {
 		return minOpr(a, b, less)
 	}
-	return &AggregateOperation{0, fun, fun}
+	return &AggregateOperation{nil, fun, fun}
 }
 
 func getMaxOpr(less func(interface{}, interface{}) bool) *AggregateOperation {
 	fun := func(a interface{}, b interface{}) interface{} {
 		return maxOpr(a, b, less)
 	}
-	return &AggregateOperation{0, fun, fun}
+	return &AggregateOperation{nil, fun, fun}
 }
 
 func getCountByOpr(predicate predicateFunc) *AggregateOperation {
