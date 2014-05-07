@@ -12,6 +12,8 @@ func init() {
 }
 
 //The Slicer interface and structs----------------------------------
+
+//Slicer is the interface that wraps the basic slice method.
 type Slicer interface {
 	Len() int
 	Slice(i, j int) Slicer
