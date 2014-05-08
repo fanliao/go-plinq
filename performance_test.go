@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	countForB      int  = 10000
-	rptCountForB   int  = 11000
+	countForB      int  = 100
+	rptCountForB   int  = 110
 	testGoLinq     bool = true
 	largeChunkSize int  = 1000
 )
@@ -507,7 +507,7 @@ func sum(v interface{}, summary interface{}) interface{} {
 ////test reverse--------------------------------------------------------------------
 func BenchmarkGoPLinq_Sum(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		if _, err := From(bInts).Aggregate(Sum); err != nil {
+		if _, err := From(bInts).Sum(); err != nil {
 			b.Fail()
 			b.Error(err)
 		}
@@ -722,7 +722,7 @@ func TestAvl(t *testing.T) {
 	}
 
 	avlValid := func(src []interface{}, validFunc func(sorted []interface{})) {
-		avlRef := NewAvlTree(compareUser)
+		avlRef := newAvlTree(compareUser)
 		for _, v := range src {
 			avlRef.Insert(v)
 		}

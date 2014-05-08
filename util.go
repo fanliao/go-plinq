@@ -77,12 +77,41 @@ func dataPtr(data interface{}) (ptr unsafe.Pointer, typ *rtype) {
 			//如果是非指针类型并且数据size大于一个字，则interface的word是数据的地址
 			ptr = unsafe.Pointer(headerPtr.word)
 		} else {
-			//如果是非指针类型并且数据size小于等于一个字，则interface的word是数据本身
+			//如果是指针类型或者数据size小于等于一个字，则interface的word是数据本身
 			ptr = unsafe.Pointer(&(headerPtr.word))
 		}
 	}
 	return
 }
+
+func isNil(data interface{}) bool {
+	if data == nil {
+		return true
+	}
+
+	ptr := *((*interfaceHeader)(unsafe.Pointer(&data)))
+	typ := ptr.typ
+	size := typ.size
+
+	switch typ.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Map, reflect.Ptr:
+		//ptr := unsafe.Pointer(ptr.word)
+		if size > ptrSize {
+			//如果size大于1个字，word是一个指向数据地址的指针
+			*(*unsafe.Pointer)(unsafe.Pointer(ptr.word)) == nil
+		} else {
+			//如果size不大于1个字，word保存的是数据本身，如果是引用，则就是被引用的数据地址
+			return ptr.word = 0
+		}
+		//return ptr == nil
+	case reflect.Interface, reflect.Slice:
+		return ptr.word == 0
+	default:
+		return false
+	}
+}
+
+//hash functions-------------------------------------------------------
 
 func hashByPtr(dataPtr unsafe.Pointer, typ *rtype, hashObj *sHash) {
 	t := typ
@@ -725,35 +754,35 @@ func mustNotNil(v interface{}, err error) {
 	}
 }
 
-func isNil(v interface{}) bool {
-	if v == nil {
-		return true
-	}
-	if val := reflect.ValueOf(v); val.Kind() == reflect.Chan ||
-		val.Kind() == reflect.Ptr || val.Kind() == reflect.Slice ||
-		val.Kind() == reflect.Func || val.Kind() == reflect.Interface {
-		if val.IsNil() {
-			return true
-		}
-	}
-	return false
-}
+//func isNil(v interface{}) bool {
+//	if v == nil {
+//		return true
+//	}
+//	if val := reflect.ValueOf(v); val.Kind() == reflect.Chan ||
+//		val.Kind() == reflect.Ptr || val.Kind() == reflect.Slice ||
+//		val.Kind() == reflect.Func || val.Kind() == reflect.Interface {
+//		if val.IsNil() {
+//			return true
+//		}
+//	}
+//	return false
+//}
 
 //aggregate functions---------------------------------------------------------------
 func sumIntOpr(v interface{}, t interface{}) interface{} {
-	if isNil(t) {
-		return v
-	}
+	//if isNil(t) {
+	//	return v
+	//}
 
 	return v.(int) + t.(int)
 }
 
 func sumOpr(v interface{}, t interface{}) interface{} {
-	if isNil(t) {
-		return toFloat64(v)
-	}
+	//if isNil(t) {
+	//	return toFloat64(v)
+	//}
 
-	return toFloat64(v) + toFloat64(t)
+	return toFloat64(v) + t.(float64) //toFloat64(t)
 }
 
 func countOpr(v interface{}, t interface{}) interface{} {
@@ -965,10 +994,16 @@ func divide(a interface{}, count float64) (r float64) {
 	return toFloat64(a) / count
 }
 
-func toFloat64(a interface{}) (r float64) {
-	switch val := a.(type) {
+func toFloat64(v interface{}) (r float64) {
+	switch val := v.(type) {
 	case int:
 		r = float64(val)
+	case uint:
+		r = float64(val)
+	case float32:
+		r = float64(val)
+	case float64:
+		r = val
 	case int8:
 		r = float64(val)
 	case int16:
@@ -976,8 +1011,6 @@ func toFloat64(a interface{}) (r float64) {
 	case int32:
 		r = float64(val)
 	case int64:
-		r = float64(val)
-	case uint:
 		r = float64(val)
 	case uint8:
 		r = float64(val)
@@ -987,12 +1020,8 @@ func toFloat64(a interface{}) (r float64) {
 		r = float64(val)
 	case uint64:
 		r = float64(val)
-	case float32:
-		r = float64(val)
-	case float64:
-		r = float64(val)
 	default:
-		panic(errors.New(fmt.Sprintf("Cannot convert %v to float64", a))) //reflect.NewAt(t, ptr).Elem().Interface()
+		panic(errors.New(fmt.Sprintf("Cannot convert %v to float64", v))) //reflect.NewAt(t, ptr).Elem().Interface()
 	}
 	return
 }

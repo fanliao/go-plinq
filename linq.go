@@ -39,7 +39,7 @@ func init() {
 	_ = fmt.Println
 	//fmt.Println("numCPU is", numCPU)
 
-	Sum = &AggregateOperation{nil, sumOpr, sumOpr}
+	Sum = &AggregateOperation{float64(0), sumOpr, sumOpr}
 	Count = &AggregateOperation{0, countOpr, sumIntOpr}
 	Min = getMinOpr(defLess)
 	Max = getMaxOpr(defLess)
@@ -325,6 +325,45 @@ func (this *Queryable) Sum() (result interface{}, err error) {
 	} else {
 		return nil, err
 	}
+
+	//src := this.data.ToSlice(false)
+	//size := src.Len()
+	//if size == 0 {
+	//	panic(errors.New("Cannot aggregate empty slice"))
+	//}
+
+	//result = Sum.Seed
+	//for i := 0; i < size; i++ {
+	//	result = Sum.AggAction(src.Index(i), result)
+	//}
+	//return
+
+	//src := this.data.ToSlice(false).(*intSlicer).data
+	//size := len(src)
+	//if size == 0 {
+	//	panic(errors.New("Cannot aggregate empty slice"))
+	//}
+
+	//var r float64 = 0
+	//for i := 0; i < size; i++ {
+	//	r = float64(src[i]) + r //toFloat64(t)
+	//}
+	//result = r
+	//return
+
+	//src := this.data.ToSlice(false).(*intSlicer).data
+	//size := len(src)
+	//if size == 0 {
+	//	panic(errors.New("Cannot aggregate empty slice"))
+	//}
+
+	//var r interface{} = float64(0)
+	//for i := 0; i < size; i++ {
+	//	r = Sum.AggAction(src[i], r) //toFloat64(t)
+	//}
+	//result = r
+	//return
+
 }
 
 // Count returns number of elements in the data source.
@@ -764,14 +803,21 @@ func (this *Queryable) hGroupBy(keySelector OneArgsFunc, chunkSizes ...int) *Que
 // get will executes all linq operations included in Queryable
 // and return the result
 func (this *Queryable) execute() (data DataSource, err error) {
+	if len(this.steps) == 0 {
+		this.errChan = nil
+		return this.data, nil
+	} else {
+		this.errChan = make(chan []error)
+	}
+
 	//create a goroutines to collect the errors for the pipeline mode step
 	stepErrsChan := make(chan error)
 	go func() {
 		stepFutures := make([]error, 0, len(this.steps))
-		if len(this.steps) == 0 {
-			this.errChan <- stepFutures
-			return
-		}
+		//if len(this.steps) == 0 {
+		//	this.errChan <- stepFutures
+		//	return
+		//}
 
 		i := 0
 		for e := range stepErrsChan {
@@ -840,12 +886,14 @@ func (this *Queryable) execute() (data DataSource, err error) {
 }
 
 func (this *Queryable) stepErrs() (err *AggregateError) {
-	if errs := <-this.errChan; len(errs) > 0 {
-		err = NewAggregateError("Aggregate errors", errs)
-	}
 	if this.errChan != nil {
+		if errs := <-this.errChan; len(errs) > 0 {
+			err = NewAggregateError("Aggregate errors", errs)
+		}
 		close(this.errChan)
-		this.errChan = make(chan []error)
+		//this.errChan = make(chan []error)
+	} else {
+		return nil
 	}
 	return
 }
@@ -882,7 +930,7 @@ func newQueryable(ds DataSource) (q *Queryable) {
 	q.steps = make([]step, 0, 4)
 	q.Degree = numCPU
 	q.ChunkSize = DEFAULTCHUNKSIZE
-	q.errChan = make(chan []error)
+	//q.errChan = make(chan []error)
 	q.data = ds
 	return
 }
@@ -1618,9 +1666,9 @@ func getReverse() stepAction {
 		mapChunk := func(c *Chunk) *Chunk {
 			forEachSlicer(c.Data, func(i int, v interface{}) {
 				j := c.StartIndex + i
-				t := slicer.Index(size - 1 - j)
-				wholeSlice[size-1-j] = c.Data.Index(i)
-				wholeSlice[j] = t
+				//t := slicer.Index(size - 1 - j)
+				wholeSlice[size-1-j], wholeSlice[j] = c.Data.Index(i), slicer.Index(size-1-j)
+				//wholeSlice[j] = t
 			})
 			return c
 		}
@@ -1700,6 +1748,7 @@ func getAggregate(src DataSource, aggregateFuncs []*AggregateOperation, option *
 
 	//try to use sequentail if the size of the data is less than size of chunk
 	if rs, err, handled := trySequentialAggregate(src, option, aggregateFuncs); handled {
+		//fmt.Println("trySequentialAggregate")
 		return rs, err
 	}
 
@@ -1713,27 +1762,27 @@ func getAggregate(src DataSource, aggregateFuncs []*AggregateOperation, option *
 	//reduce the keyValue map to get grouped slice
 	//get key with group values values
 	first := true
-	agg := func(c *Chunk) {
+	reduce := func(c *Chunk) {
 		if first {
 			for i := 0; i < len(rs); i++ {
-				if aggregateFuncs[i].ReduceAction != nil {
-					rs[i] = aggregateFuncs[i].Seed
-				}
+				//if aggregateFuncs[i].ReduceAction != nil {
+				rs[i] = aggregateFuncs[i].Seed
+				//}
 			}
 		}
 		first = false
 
 		for i := 0; i < len(rs); i++ {
-			if aggregateFuncs[i].ReduceAction != nil {
-				rs[i] = aggregateFuncs[i].ReduceAction(c.Data.Index(i), rs[i])
-			}
+			//if aggregateFuncs[i].ReduceAction != nil {
+			rs[i] = aggregateFuncs[i].ReduceAction(c.Data.Index(i), rs[i])
+			//}
 		}
 	}
 
 	avl := newChunkAvlTree()
 	if errs := reduceChan(f, reduceSrc, func(c *Chunk) (r *Chunk) {
 		if !keep {
-			agg(c)
+			reduce(c)
 		} else {
 			avl.Insert(c)
 		}
@@ -1746,7 +1795,7 @@ func getAggregate(src DataSource, aggregateFuncs []*AggregateOperation, option *
 		cs := avl.ToSlice()
 		for _, v := range cs {
 			c := v.(*Chunk)
-			agg(c)
+			reduce(c)
 		}
 	}
 
@@ -2897,16 +2946,16 @@ func aggregateSlice(src Slicer, fs []*AggregateOperation, asSequential bool, asP
 
 	rs := make([]interface{}, len(fs))
 	for j := 0; j < len(fs); j++ {
-		if (asSequential && fs[j].ReduceAction == nil) || (asParallel && fs[j].ReduceAction != nil) {
-			rs[j] = fs[j].Seed
-		}
+		//if (asSequential && fs[j].ReduceAction == nil) || (asParallel && fs[j].ReduceAction != nil) {
+		rs[j] = fs[j].Seed
+		//}
 	}
 
 	for i := 0; i < size; i++ {
 		for j := 0; j < len(fs); j++ {
-			if (asSequential && fs[j].ReduceAction == nil) || (asParallel && fs[j].ReduceAction != nil) {
-				rs[j] = fs[j].AggAction(src.Index(i), rs[j])
-			}
+			//if (asSequential && fs[j].ReduceAction == nil) || (asParallel && fs[j].ReduceAction != nil) {
+			rs[j] = fs[j].AggAction(src.Index(i), rs[j])
+			//}
 		}
 	}
 	return NewSlicer(rs)
