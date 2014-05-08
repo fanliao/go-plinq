@@ -45,10 +45,10 @@ func init() {
 	Max = getMaxOpr(defLess)
 }
 
-type predicateFunc func(interface{}) bool
-type oneArgsFunc func(interface{}) interface{}
-type twoArgsFunc func(interface{}, interface{}) interface{}
-type compareFunc func(interface{}, interface{}) int
+type PredicateFunc func(interface{}) bool
+type OneArgsFunc func(interface{}) interface{}
+type TwoArgsFunc func(interface{}, interface{}) interface{}
+type CompareFunc func(interface{}, interface{}) int
 
 // the struct and interface about data DataSource---------------------------------------------------
 // A Chunk presents a data chunk, the paralleliam algorithm always handle a chunk in a paralleliam tasks.
@@ -77,8 +77,8 @@ type KeyValue struct {
 //TODO: let user can set the size of chunk for Aggregate operation
 type AggregateOperation struct {
 	Seed         interface{}
-	AggAction    twoArgsFunc
-	ReduceAction twoArgsFunc
+	AggAction    TwoArgsFunc
+	ReduceAction TwoArgsFunc
 }
 
 // Standard Sum, Count, Min and Max Aggregation operation
@@ -220,7 +220,7 @@ func (this *Queryable) singleValue(getVal func(DataSource, *ParallelOption) (res
 //		// r is 1
 // 	}
 func (this *Queryable) First(val interface{}, chunkSizes ...int) (result interface{}, found bool, err error) {
-	return this.FirstBy(func(item interface{}) bool { return Equals(item, val) }, chunkSizes...)
+	return this.FirstBy(func(item interface{}) bool { return equals(item, val) }, chunkSizes...)
 }
 
 // FirstBy returns the first element in the data source that matchs the
@@ -233,7 +233,7 @@ func (this *Queryable) First(val interface{}, chunkSizes ...int) (result interfa
 // 	if err == nil && found {
 //		// r is 1
 // 	}
-func (this *Queryable) FirstBy(predicate predicateFunc, chunkSizes ...int) (result interface{}, found bool, err error) {
+func (this *Queryable) FirstBy(predicate PredicateFunc, chunkSizes ...int) (result interface{}, found bool, err error) {
 	return this.singleValue(func(ds DataSource, pOption *ParallelOption) (result interface{}, found bool, err error) {
 		option, chunkSize := this.ParallelOption, getChunkSizeArg(chunkSizes...)
 		if chunkSize != 0 {
@@ -254,7 +254,7 @@ func (this *Queryable) FirstBy(predicate predicateFunc, chunkSizes ...int) (resu
 //		// r is 3
 // 	}
 func (this *Queryable) Last(val interface{}, chunkSizes ...int) (result interface{}, found bool, err error) {
-	return this.LastBy(func(item interface{}) bool { return Equals(item, val) }, chunkSizes...)
+	return this.LastBy(func(item interface{}) bool { return equals(item, val) }, chunkSizes...)
 }
 
 // LastBy returns the last element in the data source that matchs the
@@ -267,7 +267,7 @@ func (this *Queryable) Last(val interface{}, chunkSizes ...int) (result interfac
 // 	if err == nil && found {
 //		// r is 3
 // 	}
-func (this *Queryable) LastBy(predicate predicateFunc, chunkSizes ...int) (result interface{}, found bool, err error) {
+func (this *Queryable) LastBy(predicate PredicateFunc, chunkSizes ...int) (result interface{}, found bool, err error) {
 	return this.singleValue(func(ds DataSource, pOption *ParallelOption) (result interface{}, found bool, err error) {
 		option, chunkSize := this.ParallelOption, getChunkSizeArg(chunkSizes...)
 		if chunkSize != 0 {
@@ -341,9 +341,9 @@ func (this *Queryable) Count() (result interface{}, err error) {
 // Example:
 //	arr = []interface{}{0, 3, 6, 9}
 //	count, err := From(arr).Countby(func(i interface{}) bool {return i < 9}) // count is 3
-func (this *Queryable) CountBy(predicate predicateFunc) (result interface{}, err error) {
+func (this *Queryable) CountBy(predicate PredicateFunc) (result interface{}, err error) {
 	if predicate == nil {
-		predicate = predicateFunc(func(interface{}) bool { return true })
+		predicate = PredicateFunc(func(interface{}) bool { return true })
 	}
 	aggregateOprs := []*AggregateOperation{getCountByOpr(predicate)}
 
@@ -424,7 +424,7 @@ func (this *Queryable) Min(lesses ...func(interface{}, interface{}) bool) (resul
 // 	q := From(users).Where(func (v interface{}) bool{
 //		return v.(*User).Age > 18
 // 	})
-func (this *Queryable) Where(predicate predicateFunc, chunkSizes ...int) *Queryable {
+func (this *Queryable) Where(predicate PredicateFunc, chunkSizes ...int) *Queryable {
 	mustNotNil(predicate, ErrNilAction)
 
 	this.steps = append(this.steps, commonStep{ACT_WHERE, predicate, getChunkSizeArg(chunkSizes...)})
@@ -439,7 +439,7 @@ func (this *Queryable) Where(predicate predicateFunc, chunkSizes ...int) *Querya
 // 	q := From(users).Select(func (v interface{}) interface{}{
 //		return v.(*User).Name
 // 	})
-func (this *Queryable) Select(selectFunc oneArgsFunc, chunkSizes ...int) *Queryable {
+func (this *Queryable) Select(selectFunc OneArgsFunc, chunkSizes ...int) *Queryable {
 	mustNotNil(selectFunc, ErrNilAction)
 
 	this.steps = append(this.steps, commonStep{ACT_SELECT, selectFunc, getChunkSizeArg(chunkSizes...)})
@@ -472,7 +472,7 @@ func (this *Queryable) Distinct(chunkSizes ...int) *Queryable {
 // 	q := From(user).DistinctBy(func (p interface{}) interface{}{
 //		return p.(*Person).FirstName
 // 	})
-func (this *Queryable) DistinctBy(distinctFunc oneArgsFunc, chunkSizes ...int) *Queryable {
+func (this *Queryable) DistinctBy(distinctFunc OneArgsFunc, chunkSizes ...int) *Queryable {
 	mustNotNil(distinctFunc, ErrNilAction)
 	this.steps = append(this.steps, commonStep{ACT_DISTINCT, distinctFunc, getChunkSizeArg(chunkSizes...)})
 	return this
@@ -488,7 +488,7 @@ func (this *Queryable) DistinctBy(distinctFunc oneArgsFunc, chunkSizes ...int) *
 //	q := From(user).OrderBy(func (this interface{}, that interface{}) bool {
 //		return this.(*User).Age < that.(*User).Age
 // 	})
-func (this *Queryable) OrderBy(compare compareFunc) *Queryable {
+func (this *Queryable) OrderBy(compare CompareFunc) *Queryable {
 	if compare == nil {
 		compare = defCompare
 	}
@@ -504,7 +504,7 @@ func (this *Queryable) OrderBy(compare compareFunc) *Queryable {
 //	q := From(user).GroupBy(func (v interface{}) interface{} {
 //		return this.(*User).Age
 // 	})
-func (this *Queryable) GroupBy(keySelector oneArgsFunc, chunkSizes ...int) *Queryable {
+func (this *Queryable) GroupBy(keySelector OneArgsFunc, chunkSizes ...int) *Queryable {
 	mustNotNil(keySelector, ErrNilAction)
 
 	this.steps = append(this.steps, commonStep{ACT_GROUPBY, keySelector, getChunkSizeArg(chunkSizes...)})
@@ -585,9 +585,9 @@ func (this *Queryable) Except(source2 interface{}, chunkSizes ...int) *Queryable
 // resultSelector takes outer element and inner element as inputs
 // and returns a value which will be an element in the resulting source.
 func (this *Queryable) Join(inner interface{},
-	outerKeySelector oneArgsFunc,
-	innerKeySelector oneArgsFunc,
-	resultSelector twoArgsFunc, chunkSizes ...int) *Queryable {
+	outerKeySelector OneArgsFunc,
+	innerKeySelector OneArgsFunc,
+	resultSelector TwoArgsFunc, chunkSizes ...int) *Queryable {
 	mustNotNil(inner, ErrJoinNilSource)
 	mustNotNil(outerKeySelector, ErrOuterKeySelector)
 	mustNotNil(innerKeySelector, ErrInnerKeySelector)
@@ -602,9 +602,9 @@ func (this *Queryable) Join(inner interface{},
 // but LeftJoin returns all elements in outer source,
 // the inner elements will be null if there is not matching element in inner source
 func (this *Queryable) LeftJoin(inner interface{},
-	outerKeySelector oneArgsFunc,
-	innerKeySelector oneArgsFunc,
-	resultSelector twoArgsFunc, chunkSizes ...int) *Queryable {
+	outerKeySelector OneArgsFunc,
+	innerKeySelector OneArgsFunc,
+	resultSelector TwoArgsFunc, chunkSizes ...int) *Queryable {
 	mustNotNil(inner, ErrJoinNilSource)
 	mustNotNil(outerKeySelector, ErrOuterKeySelector)
 	mustNotNil(innerKeySelector, ErrInnerKeySelector)
@@ -619,8 +619,8 @@ func (this *Queryable) LeftJoin(inner interface{},
 // but GroupJoin will correlates the element of the outer source and
 // the matching elements slice of the inner source.
 func (this *Queryable) GroupJoin(inner interface{},
-	outerKeySelector oneArgsFunc,
-	innerKeySelector oneArgsFunc,
+	outerKeySelector OneArgsFunc,
+	innerKeySelector OneArgsFunc,
 	resultSelector func(interface{}, []interface{}) interface{}, chunkSizes ...int) *Queryable {
 	mustNotNil(inner, ErrJoinNilSource)
 	mustNotNil(outerKeySelector, ErrOuterKeySelector)
@@ -636,8 +636,8 @@ func (this *Queryable) GroupJoin(inner interface{},
 // but LeftGroupJoin returns all elements in outer source,
 // the inner elements will be [] if there is not matching element in inner source
 func (this *Queryable) LeftGroupJoin(inner interface{},
-	outerKeySelector oneArgsFunc,
-	innerKeySelector oneArgsFunc,
+	outerKeySelector OneArgsFunc,
+	innerKeySelector OneArgsFunc,
 	resultSelector func(interface{}, []interface{}) interface{}, chunkSizes ...int) *Queryable {
 	mustNotNil(inner, ErrJoinNilSource)
 	mustNotNil(outerKeySelector, ErrOuterKeySelector)
@@ -683,7 +683,7 @@ func (this *Queryable) Skip(count int) *Queryable {
 func (this *Queryable) SkipWhile(predicate func(interface{}) bool, chunkSizes ...int) *Queryable {
 	mustNotNil(predicate, ErrNilAction)
 	//this.act.(predicate predicateFunc)
-	this.steps = append(this.steps, commonStep{ACT_SKIPWHILE, predicateFunc(predicate), getChunkSizeArg(chunkSizes...)})
+	this.steps = append(this.steps, commonStep{ACT_SKIPWHILE, PredicateFunc(predicate), getChunkSizeArg(chunkSizes...)})
 	return this
 }
 
@@ -711,7 +711,7 @@ func (this *Queryable) Take(count int) *Queryable {
 func (this *Queryable) TakeWhile(predicate func(interface{}) bool, chunkSizes ...int) *Queryable {
 	mustNotNil(predicate, ErrNilAction)
 	//this.act.(predicate predicateFunc)
-	this.steps = append(this.steps, commonStep{ACT_TAKEWHILE, predicateFunc(predicate), getChunkSizeArg(chunkSizes...)})
+	this.steps = append(this.steps, commonStep{ACT_TAKEWHILE, PredicateFunc(predicate), getChunkSizeArg(chunkSizes...)})
 	return this
 }
 
@@ -739,12 +739,12 @@ func (this *Queryable) SetSizeOfChunk(size int) *Queryable {
 	return this
 }
 
-func (this *Queryable) aggregate(aggregateFuncs ...twoArgsFunc) *Queryable {
+func (this *Queryable) aggregate(aggregateFuncs ...TwoArgsFunc) *Queryable {
 	this.steps = append(this.steps, commonStep{ACT_AGGREGATE, aggregateFuncs, 0})
 	return this
 }
 
-func (this *Queryable) hGroupBy(keySelector oneArgsFunc, chunkSizes ...int) *Queryable {
+func (this *Queryable) hGroupBy(keySelector OneArgsFunc, chunkSizes ...int) *Queryable {
 	this.steps = append(this.steps, commonStep{ACT_HGROUPBY, keySelector, 0})
 	return this
 }
@@ -1147,8 +1147,8 @@ type commonStep struct {
 
 type joinStep struct {
 	commonStep
-	outerKeySelector oneArgsFunc
-	innerKeySelector oneArgsFunc
+	outerKeySelector OneArgsFunc
+	innerKeySelector OneArgsFunc
 	resultSelector   interface{}
 	isLeftJoin       bool
 }
@@ -1171,19 +1171,19 @@ func (this commonStep) POption(option ParallelOption) *ParallelOption {
 func (this commonStep) Action() (act stepAction) {
 	switch this.typ {
 	case ACT_SELECT:
-		act = getSelect(this.act.(oneArgsFunc))
+		act = getSelect(this.act.(OneArgsFunc))
 	case ACT_WHERE:
-		act = getWhere(this.act.(predicateFunc))
+		act = getWhere(this.act.(PredicateFunc))
 	case ACT_SELECTMANY:
 		act = getSelectMany(this.act.(func(interface{}) []interface{}))
 	case ACT_DISTINCT:
-		act = getDistinct(this.act.(oneArgsFunc))
+		act = getDistinct(this.act.(OneArgsFunc))
 	case ACT_ORDERBY:
-		act = getOrder(this.act.(compareFunc))
+		act = getOrder(this.act.(CompareFunc))
 	case ACT_GROUPBY:
-		act = getGroupBy(this.act.(oneArgsFunc), false)
+		act = getGroupBy(this.act.(OneArgsFunc), false)
 	case ACT_HGROUPBY:
-		act = getGroupBy(this.act.(oneArgsFunc), true)
+		act = getGroupBy(this.act.(OneArgsFunc), true)
 	case ACT_UNION:
 		act = getUnion(this.act)
 	case ACT_CONCAT:
@@ -1197,11 +1197,11 @@ func (this commonStep) Action() (act stepAction) {
 	case ACT_SKIP:
 		act = getSkipTakeCount(this.act.(int), false)
 	case ACT_SKIPWHILE:
-		act = getSkipTakeWhile(this.act.(predicateFunc), false)
+		act = getSkipTakeWhile(this.act.(PredicateFunc), false)
 	case ACT_TAKE:
 		act = getSkipTakeCount(this.act.(int), true)
 	case ACT_TAKEWHILE:
-		act = getSkipTakeWhile(this.act.(predicateFunc), true)
+		act = getSkipTakeWhile(this.act.(PredicateFunc), true)
 	}
 	return
 }
@@ -1210,7 +1210,7 @@ func (this joinStep) Action() (act stepAction) {
 	switch this.typ {
 	case ACT_JOIN:
 		act = getJoin(this.act, this.outerKeySelector, this.innerKeySelector,
-			this.resultSelector.(twoArgsFunc), this.isLeftJoin)
+			this.resultSelector.(TwoArgsFunc), this.isLeftJoin)
 	case ACT_GROUPJOIN:
 		act = getGroupJoin(this.act, this.outerKeySelector, this.innerKeySelector,
 			this.resultSelector.(func(interface{}, []interface{}) interface{}), this.isLeftJoin)
@@ -1221,7 +1221,7 @@ func (this joinStep) Action() (act stepAction) {
 // The functions get linq operation------------------------------------
 
 // Get the action function for select operation
-func getSelect(selectFunc oneArgsFunc) stepAction {
+func getSelect(selectFunc OneArgsFunc) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption, first bool) (dst DataSource, sf *promise.Future, keep bool, e error) {
 		keep = option.KeepOrder
 		mapChunk := getChunkOprFunc(mapSliceToSelf, selectFunc)
@@ -1273,7 +1273,7 @@ func getSelectMany(selectManyFunc func(interface{}) []interface{}) stepAction {
 }
 
 // Get the action function for where operation
-func getWhere(predicate predicateFunc) stepAction {
+func getWhere(predicate PredicateFunc) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption, first bool) (dst DataSource, sf *promise.Future, keep bool, e error) {
 		mapChunk := getChunkOprFunc(filterSlice, predicate)
 		//try to use sequentail if the size of the data is less than size of chunk
@@ -1289,7 +1289,7 @@ func getWhere(predicate predicateFunc) stepAction {
 }
 
 // Get the action function for OrderBy operation
-func getOrder(compare compareFunc) stepAction {
+func getOrder(compare CompareFunc) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption, first bool) (dst DataSource, sf *promise.Future, keep bool, e error) {
 		defer func() {
 			if err := recover(); err != nil {
@@ -1309,7 +1309,7 @@ func getOrder(compare compareFunc) stepAction {
 			return newDataSource(sorteds), nil, true, nil
 		case *chanSource:
 			//AVL tree sort
-			avl := NewAvlTree(compare)
+			avl := newAvlTree(compare)
 			f, _ := parallelMapChanToChan(s, nil,
 				getChunkOprFunc(forEachSlicer, func(i int, v interface{}) {
 					avl.Insert(v)
@@ -1326,7 +1326,7 @@ func getOrder(compare compareFunc) stepAction {
 }
 
 // Get the action function for DistinctBy operation
-func getDistinct(distinctFunc oneArgsFunc) stepAction {
+func getDistinct(distinctFunc OneArgsFunc) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption, first bool) (DataSource, *promise.Future, bool, error) {
 		var useDefHash uint32 = 0
 		mapChunk := getMapChunkToKVChunkFunc(&useDefHash, distinctFunc)
@@ -1349,7 +1349,7 @@ func getDistinct(distinctFunc oneArgsFunc) stepAction {
 
 // Get the action function for GroupBy operation
 // note the groupby cannot keep order because the map cannot keep order
-func getGroupBy(groupFunc oneArgsFunc, hashAsKey bool) stepAction {
+func getGroupBy(groupFunc OneArgsFunc, hashAsKey bool) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption, first bool) (DataSource, *promise.Future, bool, error) {
 
 		var useDefHash uint32 = 0
@@ -1391,9 +1391,9 @@ func getGroupBy(groupFunc oneArgsFunc, hashAsKey bool) stepAction {
 // Get the action function for Join operation
 // note the Join cannot keep order because the map cannot keep order
 func getJoin(inner interface{},
-	outerKeySelector oneArgsFunc,
-	innerKeySelector oneArgsFunc,
-	resultSelector twoArgsFunc, isLeftJoin bool) stepAction {
+	outerKeySelector OneArgsFunc,
+	innerKeySelector OneArgsFunc,
+	resultSelector TwoArgsFunc, isLeftJoin bool) stepAction {
 	return getJoinImpl(inner, outerKeySelector, innerKeySelector,
 		func(outerkv *hKeyValue, innerList []interface{}, results *[]interface{}) {
 			for _, iv := range innerList {
@@ -1406,8 +1406,8 @@ func getJoin(inner interface{},
 
 // Get the action function for GroupJoin operation
 func getGroupJoin(inner interface{},
-	outerKeySelector oneArgsFunc,
-	innerKeySelector oneArgsFunc,
+	outerKeySelector OneArgsFunc,
+	innerKeySelector OneArgsFunc,
 	resultSelector func(interface{}, []interface{}) interface{}, isLeftJoin bool) stepAction {
 
 	return getJoinImpl(inner, outerKeySelector, innerKeySelector,
@@ -1420,8 +1420,8 @@ func getGroupJoin(inner interface{},
 
 // The common Join function
 func getJoinImpl(inner interface{},
-	outerKeySelector oneArgsFunc,
-	innerKeySelector oneArgsFunc,
+	outerKeySelector OneArgsFunc,
+	innerKeySelector OneArgsFunc,
 	matchSelector func(*hKeyValue, []interface{}, *[]interface{}),
 	unmatchSelector func(*hKeyValue, *[]interface{}), isLeftJoin bool) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption, first bool) (dst DataSource, sf *promise.Future, keep bool, e error) {
@@ -1649,7 +1649,7 @@ func getSkipTakeCount(count int, isTake bool) stepAction {
 }
 
 // Get the action function for SkipWhile/TakeWhile operation
-func getSkipTakeWhile(predicate predicateFunc, isTake bool) stepAction {
+func getSkipTakeWhile(predicate PredicateFunc, isTake bool) stepAction {
 	return getSkipTake(foundMatchFunc(invFunc(predicate), true), isTake, false)
 }
 
@@ -1668,13 +1668,13 @@ func getElementAt(src DataSource, i int, option *ParallelOption) (element interf
 
 // Get the action function for FirstBy operation
 // 根据条件查找第一个符合的元素
-func getFirstBy(src DataSource, predicate predicateFunc, option *ParallelOption) (element interface{}, found bool, err error) {
+func getFirstBy(src DataSource, predicate PredicateFunc, option *ParallelOption) (element interface{}, found bool, err error) {
 	return getFirstElement(src, foundMatchFunc(predicate, true), false, option)
 }
 
 // Get the action function for LastBy operation
 // 根据条件查找最后一个符合的元素
-func getLastBy(src DataSource, predicate predicateFunc, option *ParallelOption) (element interface{}, found bool, err error) {
+func getLastBy(src DataSource, predicate PredicateFunc, option *ParallelOption) (element interface{}, found bool, err error) {
 	return getLastElement(src, foundMatchFunc(predicate, false), option)
 }
 
@@ -2250,7 +2250,7 @@ func getFirstOrLastIndex(src *listSource, predicate func(c *Chunk, canceller pro
 	}
 }
 
-func foundMatchFunc(predicate predicateFunc, findFirst bool) func(c *Chunk, canceller promise.Canceller) (r int, found bool) {
+func foundMatchFunc(predicate PredicateFunc, findFirst bool) func(c *Chunk, canceller promise.Canceller) (r int, found bool) {
 	return func(c *Chunk, canceller promise.Canceller) (r int, found bool) {
 		r = -1
 		size := c.Data.Len()
@@ -2716,14 +2716,14 @@ func getChunkOprFunc(sliceOpr func(Slicer, interface{}) Slicer, opr interface{})
 	}
 }
 
-func getMapChunkFunc(f oneArgsFunc) func(*Chunk) *Chunk {
+func getMapChunkFunc(f OneArgsFunc) func(*Chunk) *Chunk {
 	return func(c *Chunk) *Chunk {
 		result := mapSlice(c.Data, f)
 		return &Chunk{result, c.Order, c.StartIndex}
 	}
 }
 
-func getMapChunkToSelfFunc(f oneArgsFunc) func(*Chunk) *Chunk {
+func getMapChunkToSelfFunc(f OneArgsFunc) func(*Chunk) *Chunk {
 	return func(c *Chunk) *Chunk {
 		result := mapSliceToSelf(c.Data, f)
 		return &Chunk{result, c.Order, c.StartIndex}
@@ -2732,11 +2732,11 @@ func getMapChunkToSelfFunc(f oneArgsFunc) func(*Chunk) *Chunk {
 
 func filterSlice(data Slicer, f interface{}) Slicer {
 	var (
-		predicate predicateFunc
+		predicate PredicateFunc
 		ok        bool
 	)
-	if predicate, ok = f.(predicateFunc); !ok {
-		predicate = predicateFunc(f.(func(interface{}) bool))
+	if predicate, ok = f.(PredicateFunc); !ok {
+		predicate = PredicateFunc(f.(func(interface{}) bool))
 	}
 
 	size := data.Len()
@@ -2774,11 +2774,11 @@ func mapSliceToMany(src Slicer, f func(interface{}) []interface{}) Slicer {
 
 func mapSlice(src Slicer, f interface{}) Slicer {
 	var (
-		mapFunc oneArgsFunc
+		mapFunc OneArgsFunc
 		ok      bool
 	)
-	if mapFunc, ok = f.(oneArgsFunc); !ok {
-		mapFunc = oneArgsFunc(f.(func(interface{}) interface{}))
+	if mapFunc, ok = f.(OneArgsFunc); !ok {
+		mapFunc = OneArgsFunc(f.(func(interface{}) interface{}))
 	}
 
 	size := src.Len()
@@ -2792,11 +2792,11 @@ func mapSlice(src Slicer, f interface{}) Slicer {
 
 func mapSliceToSelf(src Slicer, f interface{}) Slicer {
 	var (
-		mapFunc oneArgsFunc
+		mapFunc OneArgsFunc
 		ok      bool
 	)
-	if mapFunc, ok = f.(oneArgsFunc); !ok {
-		mapFunc = oneArgsFunc(f.(func(interface{}) interface{}))
+	if mapFunc, ok = f.(OneArgsFunc); !ok {
+		mapFunc = OneArgsFunc(f.(func(interface{}) interface{}))
 	}
 	//var dst []interface{}
 	if s, ok := src.(*interfaceSlicer); ok {
@@ -2811,7 +2811,7 @@ func mapSliceToSelf(src Slicer, f interface{}) Slicer {
 	}
 }
 
-func getMapChunkToKeyList(useDefHash *uint32, converter oneArgsFunc, getResult func(*Chunk, bool) Slicer) func(c *Chunk) Slicer {
+func getMapChunkToKeyList(useDefHash *uint32, converter OneArgsFunc, getResult func(*Chunk, bool) Slicer) func(c *Chunk) Slicer {
 	return func(c *Chunk) (rs Slicer) {
 		useValAsKey := false
 		valCanAsKey := atomic.LoadUint32(useDefHash)
@@ -2851,13 +2851,13 @@ func getMapChunkToKeyList(useDefHash *uint32, converter oneArgsFunc, getResult f
 	}
 }
 
-func getMapChunkToKVs(useDefHash *uint32, converter oneArgsFunc) func(c *Chunk) Slicer {
+func getMapChunkToKVs(useDefHash *uint32, converter OneArgsFunc) func(c *Chunk) Slicer {
 	return getMapChunkToKeyList(useDefHash, converter, func(c *Chunk, useValAsKey bool) Slicer {
 		return chunkToKeyValues(c, !useValAsKey, converter, nil)
 	})
 }
 
-func getMapChunkToKVChunkFunc(useDefHash *uint32, converter oneArgsFunc) func(c *Chunk) (r *Chunk) {
+func getMapChunkToKVChunkFunc(useDefHash *uint32, converter OneArgsFunc) func(c *Chunk) (r *Chunk) {
 	return func(c *Chunk) (r *Chunk) {
 		slicer := getMapChunkToKVs(useDefHash, converter)(c)
 		//fmt.Println("\ngetMapChunkToKVChunk", c, slicer)
@@ -2865,7 +2865,7 @@ func getMapChunkToKVChunkFunc(useDefHash *uint32, converter oneArgsFunc) func(c 
 	}
 }
 
-func getMapChunkToKVChunk2(useDefHash *uint32, maxOrder *int, converter oneArgsFunc) func(c *Chunk) (r *Chunk) {
+func getMapChunkToKVChunk2(useDefHash *uint32, maxOrder *int, converter OneArgsFunc) func(c *Chunk) (r *Chunk) {
 	return func(c *Chunk) (r *Chunk) {
 		slicer := getMapChunkToKVs(useDefHash, converter)(c)
 		if c.Order > *maxOrder {
@@ -3017,7 +3017,7 @@ func iif(predicate bool, trueVal interface{}, falseVal interface{}) interface{} 
 	}
 }
 
-func invFunc(predicate predicateFunc) predicateFunc {
+func invFunc(predicate PredicateFunc) PredicateFunc {
 	return func(v interface{}) bool {
 		return !predicate(v)
 	}

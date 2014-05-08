@@ -166,7 +166,7 @@ func hashValue(dataPtr unsafe.Pointer, size uintptr, hashObj *sHash) {
 
 func hash64(data interface{}) interface{} {
 	dataPtr, size := dataPtr(data)
-	sh := NewSHash()
+	sh := newSHash()
 	hashByPtr(dataPtr, size, sh)
 	//fmt.Println("hash", data, bkdr.Sum32(), djb.Sum32(), uint64(bkdr.Sum32())<<32|uint64(djb.Sum32()), "\n")
 	return sh.Sum64()
@@ -178,13 +178,13 @@ const (
 )
 
 // NewBKDR32 returns a new 32-bit BKDR hash
-func NewBKDR32() shash32 {
+func newBKDR32() shash32 {
 	var s bkdr32 = 0
 	return &s
 }
 
 // NewBKDR32 returns a new 32-bit BKDR hash
-func NewDJB32() shash32 {
+func newDJB32() shash32 {
 	var s djb32 = dJB32prime32
 	return &s
 }
@@ -270,8 +270,8 @@ func (this *sHash) WriteUInt32(data uint32) {
 	this.hash2.WriteUInt32(data)
 }
 
-func NewSHash() *sHash {
-	return &sHash{NewBKDR32(), NewDJB32()}
+func newSHash() *sHash {
+	return &sHash{newBKDR32(), newDJB32()}
 }
 
 //sort util func-------------------------------------------------------------------------------------------
@@ -479,12 +479,12 @@ func avlToSlice(root *avlNode, result *[]interface{}) []interface{} {
 	return *result
 }
 
-func NewAvlTree(compare func(a interface{}, b interface{}) int) *avlTree {
+func newAvlTree(compare func(a interface{}, b interface{}) int) *avlTree {
 	return &avlTree{nil, 0, compare}
 }
 
 func newChunkAvlTree() *avlTree {
-	return NewAvlTree(func(a interface{}, b interface{}) int {
+	return newAvlTree(func(a interface{}, b interface{}) int {
 		c1, c2 := a.(*Chunk), b.(*Chunk)
 		if c1.Order < c2.Order {
 			return -1
@@ -816,7 +816,7 @@ func getMaxOpr(less func(interface{}, interface{}) bool) *AggregateOperation {
 	return &AggregateOperation{nil, fun, fun}
 }
 
-func getCountByOpr(predicate predicateFunc) *AggregateOperation {
+func getCountByOpr(predicate PredicateFunc) *AggregateOperation {
 	fun := func(v interface{}, t interface{}) interface{} {
 		if predicate(v) {
 			t = t.(int) + 1
@@ -1101,6 +1101,6 @@ func bytesEquals(addr1 uintptr, addr2 uintptr, size uintptr) bool {
 	return true
 }
 
-func Equals(a, b interface{}) bool {
-	return equals(a, b)
-}
+//func Equals(a, b interface{}) bool {
+//	return equals(a, b)
+//}
