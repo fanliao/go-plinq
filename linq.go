@@ -76,7 +76,8 @@ type KeyValue struct {
 //Aggregate operation structs and functions-------------------------------
 
 //An AggregateOperation presents the customized aggregate operation.
-//It enables intermediate aggregation over a chunk, with a final aggregation function to combine the results of all chunks.
+//It enables intermediate aggregation over a chunk,
+//with a final aggregation function to combine the results of all chunks.
 //TODO: let user can set the size of chunk for Aggregate operation
 type AggregateOperation struct {
 	Seed         interface{} //initial seed

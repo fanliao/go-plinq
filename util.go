@@ -746,33 +746,85 @@ func sumOpr(v interface{}, t interface{}) interface{} {
 	}
 	switch val := v.(type) {
 	case int:
-		return val + t.(int)
+		if isNil(t) {
+			return float64(val)
+		} else {
+			return float64(val) + t.(float64)
+		}
 	case int8:
-		return val + t.(int8)
+		if isNil(t) {
+			return float64(val)
+		} else {
+			return float64(val) + t.(float64)
+		}
 	case int16:
-		return val + t.(int16)
+		if isNil(t) {
+			return float64(val)
+		} else {
+			return float64(val) + t.(float64)
+		}
 	case int32:
-		return val + t.(int32)
+		if isNil(t) {
+			return float64(val)
+		} else {
+			return float64(val) + t.(float64)
+		}
 	case int64:
-		return val + t.(int64)
+		if isNil(t) {
+			return float64(val)
+		} else {
+			return float64(val) + t.(float64)
+		}
 	case uint:
-		return val + t.(uint)
+		if isNil(t) {
+			return float64(val)
+		} else {
+			return float64(val) + t.(float64)
+		}
 	case uint8:
-		return val + t.(uint8)
+		if isNil(t) {
+			return float64(val)
+		} else {
+			return float64(val) + t.(float64)
+		}
 	case uint16:
-		return val + t.(uint16)
+		if isNil(t) {
+			return float64(val)
+		} else {
+			return float64(val) + t.(float64)
+		}
 	case uint32:
-		return val + t.(uint32)
+		if isNil(t) {
+			return float64(val)
+		} else {
+			return float64(val) + t.(float64)
+		}
 	case uint64:
-		return val + t.(uint64)
+		if isNil(t) {
+			return float64(val)
+		} else {
+			return float64(val) + t.(float64)
+		}
 	case float32:
-		return val + t.(float32)
+		if isNil(t) {
+			return float64(val)
+		} else {
+			return float64(val) + t.(float64)
+		}
 	case float64:
-		return val + t.(float64)
-	case string:
-		return val + t.(string)
+		if isNil(t) {
+			return val
+		} else {
+			return val + t.(float64)
+		}
+	//case string:
+	//	if isNil(t) {
+	//		return val
+	//	} else {
+	//		return val + t.(string)
+	//	}
 	default:
-		panic(errors.New("unsupport aggregate type")) //reflect.NewAt(t, ptr).Elem().Interface()
+		panic(errors.New(fmt.Sprintf("type %v unsupport Sum operation", reflect.TypeOf(v).String()))) //reflect.NewAt(t, ptr).Elem().Interface()
 	}
 }
 
