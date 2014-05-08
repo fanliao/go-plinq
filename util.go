@@ -754,84 +754,6 @@ func sumOpr(v interface{}, t interface{}) interface{} {
 	}
 
 	return toFloat64(v) + toFloat64(t)
-	//switch val := v.(type) {
-	//case int:
-	//		return float64(val) + t.(float64)
-	//case int8:
-	//	if isNil(t) {
-	//		return float64(val)
-	//	} else {
-	//		return float64(val) + t.(float64)
-	//	}
-	//case int16:
-	//	if isNil(t) {
-	//		return float64(val)
-	//	} else {
-	//		return float64(val) + t.(float64)
-	//	}
-	//case int32:
-	//	if isNil(t) {
-	//		return float64(val)
-	//	} else {
-	//		return float64(val) + t.(float64)
-	//	}
-	//case int64:
-	//	if isNil(t) {
-	//		return float64(val)
-	//	} else {
-	//		return float64(val) + t.(float64)
-	//	}
-	//case uint:
-	//	if isNil(t) {
-	//		return float64(val)
-	//	} else {
-	//		return float64(val) + t.(float64)
-	//	}
-	//case uint8:
-	//	if isNil(t) {
-	//		return float64(val)
-	//	} else {
-	//		return float64(val) + t.(float64)
-	//	}
-	//case uint16:
-	//	if isNil(t) {
-	//		return float64(val)
-	//	} else {
-	//		return float64(val) + t.(float64)
-	//	}
-	//case uint32:
-	//	if isNil(t) {
-	//		return float64(val)
-	//	} else {
-	//		return float64(val) + t.(float64)
-	//	}
-	//case uint64:
-	//	if isNil(t) {
-	//		return float64(val)
-	//	} else {
-	//		return float64(val) + t.(float64)
-	//	}
-	//case float32:
-	//	if isNil(t) {
-	//		return float64(val)
-	//	} else {
-	//		return float64(val) + t.(float64)
-	//	}
-	//case float64:
-	//	if isNil(t) {
-	//		return val
-	//	} else {
-	//		return val + t.(float64)
-	//	}
-	////case string:
-	////	if isNil(t) {
-	////		return val
-	////	} else {
-	////		return val + t.(string)
-	////	}
-	//default:
-	//	panic(errors.New(fmt.Sprintf("type %v unsupport Sum operation", reflect.TypeOf(v).String()))) //reflect.NewAt(t, ptr).Elem().Interface()
-	//}
 }
 
 func countOpr(v interface{}, t interface{}) interface{} {
@@ -885,38 +807,39 @@ func getCountByOpr(predicate PredicateFunc) *AggregateOperation {
 }
 
 func defLess(a interface{}, b interface{}) bool {
-	switch val := a.(type) {
-	case int:
-		return val < b.(int)
-	case int8:
-		return val < b.(int8)
-	case int16:
-		return val < b.(int16)
-	case int32:
-		return val < b.(int32)
-	case int64:
-		return val < b.(int64)
-	case uint:
-		return val < b.(uint)
-	case uint8:
-		return val < b.(uint8)
-	case uint16:
-		return val < b.(uint16)
-	case uint32:
-		return val < b.(uint32)
-	case uint64:
-		return val < b.(uint64)
-	case float32:
-		return val < b.(float32)
-	case float64:
-		return val < b.(float64)
-	case string:
-		return val < b.(string)
-	case time.Time:
-		return val.Before(b.(time.Time))
-	default:
-		panic(errors.New(fmt.Sprintf("Cannot compare %v %v", a, b))) //reflect.NewAt(t, ptr).Elem().Interface()
-	}
+	return defCompare(a, b) == -1
+	//switch val := a.(type) {
+	//case int:
+	//	return val < b.(int)
+	//case int8:
+	//	return val < b.(int8)
+	//case int16:
+	//	return val < b.(int16)
+	//case int32:
+	//	return val < b.(int32)
+	//case int64:
+	//	return val < b.(int64)
+	//case uint:
+	//	return val < b.(uint)
+	//case uint8:
+	//	return val < b.(uint8)
+	//case uint16:
+	//	return val < b.(uint16)
+	//case uint32:
+	//	return val < b.(uint32)
+	//case uint64:
+	//	return val < b.(uint64)
+	//case float32:
+	//	return val < b.(float32)
+	//case float64:
+	//	return val < b.(float64)
+	//case string:
+	//	return val < b.(string)
+	//case time.Time:
+	//	return val.Before(b.(time.Time))
+	//default:
+	//	panic(errors.New(fmt.Sprintf("Cannot compare %v %v", a, b))) //reflect.NewAt(t, ptr).Elem().Interface()
+	//}
 }
 
 func defCompare(a interface{}, b interface{}) int {
