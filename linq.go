@@ -39,8 +39,8 @@ func init() {
 	_ = fmt.Println
 	//fmt.Println("numCPU is", numCPU)
 
-	Sum = &AggregateOperation{0, sumOpr, sumOpr}
-	Count = &AggregateOperation{0, countOpr, sumOpr}
+	Sum = &AggregateOperation{nil, sumOpr, sumOpr}
+	Count = &AggregateOperation{0, countOpr, sumIntOpr}
 	Min = getMinOpr(defLess)
 	Max = getMaxOpr(defLess)
 }

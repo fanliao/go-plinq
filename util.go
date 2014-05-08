@@ -740,92 +740,98 @@ func isNil(v interface{}) bool {
 }
 
 //aggregate functions---------------------------------------------------------------
-func sumOpr(v interface{}, t interface{}) interface{} {
+func sumIntOpr(v interface{}, t interface{}) interface{} {
 	if isNil(t) {
 		return v
 	}
-	switch val := v.(type) {
-	case int:
-		if isNil(t) {
-			return float64(val)
-		} else {
-			return float64(val) + t.(float64)
-		}
-	case int8:
-		if isNil(t) {
-			return float64(val)
-		} else {
-			return float64(val) + t.(float64)
-		}
-	case int16:
-		if isNil(t) {
-			return float64(val)
-		} else {
-			return float64(val) + t.(float64)
-		}
-	case int32:
-		if isNil(t) {
-			return float64(val)
-		} else {
-			return float64(val) + t.(float64)
-		}
-	case int64:
-		if isNil(t) {
-			return float64(val)
-		} else {
-			return float64(val) + t.(float64)
-		}
-	case uint:
-		if isNil(t) {
-			return float64(val)
-		} else {
-			return float64(val) + t.(float64)
-		}
-	case uint8:
-		if isNil(t) {
-			return float64(val)
-		} else {
-			return float64(val) + t.(float64)
-		}
-	case uint16:
-		if isNil(t) {
-			return float64(val)
-		} else {
-			return float64(val) + t.(float64)
-		}
-	case uint32:
-		if isNil(t) {
-			return float64(val)
-		} else {
-			return float64(val) + t.(float64)
-		}
-	case uint64:
-		if isNil(t) {
-			return float64(val)
-		} else {
-			return float64(val) + t.(float64)
-		}
-	case float32:
-		if isNil(t) {
-			return float64(val)
-		} else {
-			return float64(val) + t.(float64)
-		}
-	case float64:
-		if isNil(t) {
-			return val
-		} else {
-			return val + t.(float64)
-		}
-	//case string:
+
+	return v.(int) + t.(int)
+}
+
+func sumOpr(v interface{}, t interface{}) interface{} {
+	if isNil(t) {
+		return toFloat64(v)
+	}
+
+	return toFloat64(v) + toFloat64(t)
+	//switch val := v.(type) {
+	//case int:
+	//		return float64(val) + t.(float64)
+	//case int8:
+	//	if isNil(t) {
+	//		return float64(val)
+	//	} else {
+	//		return float64(val) + t.(float64)
+	//	}
+	//case int16:
+	//	if isNil(t) {
+	//		return float64(val)
+	//	} else {
+	//		return float64(val) + t.(float64)
+	//	}
+	//case int32:
+	//	if isNil(t) {
+	//		return float64(val)
+	//	} else {
+	//		return float64(val) + t.(float64)
+	//	}
+	//case int64:
+	//	if isNil(t) {
+	//		return float64(val)
+	//	} else {
+	//		return float64(val) + t.(float64)
+	//	}
+	//case uint:
+	//	if isNil(t) {
+	//		return float64(val)
+	//	} else {
+	//		return float64(val) + t.(float64)
+	//	}
+	//case uint8:
+	//	if isNil(t) {
+	//		return float64(val)
+	//	} else {
+	//		return float64(val) + t.(float64)
+	//	}
+	//case uint16:
+	//	if isNil(t) {
+	//		return float64(val)
+	//	} else {
+	//		return float64(val) + t.(float64)
+	//	}
+	//case uint32:
+	//	if isNil(t) {
+	//		return float64(val)
+	//	} else {
+	//		return float64(val) + t.(float64)
+	//	}
+	//case uint64:
+	//	if isNil(t) {
+	//		return float64(val)
+	//	} else {
+	//		return float64(val) + t.(float64)
+	//	}
+	//case float32:
+	//	if isNil(t) {
+	//		return float64(val)
+	//	} else {
+	//		return float64(val) + t.(float64)
+	//	}
+	//case float64:
 	//	if isNil(t) {
 	//		return val
 	//	} else {
-	//		return val + t.(string)
+	//		return val + t.(float64)
 	//	}
-	default:
-		panic(errors.New(fmt.Sprintf("type %v unsupport Sum operation", reflect.TypeOf(v).String()))) //reflect.NewAt(t, ptr).Elem().Interface()
-	}
+	////case string:
+	////	if isNil(t) {
+	////		return val
+	////	} else {
+	////		return val + t.(string)
+	////	}
+	//default:
+	//	panic(errors.New(fmt.Sprintf("type %v unsupport Sum operation", reflect.TypeOf(v).String()))) //reflect.NewAt(t, ptr).Elem().Interface()
+	//}
 }
 
 func countOpr(v interface{}, t interface{}) interface{} {
@@ -875,7 +881,7 @@ func getCountByOpr(predicate PredicateFunc) *AggregateOperation {
 		}
 		return t
 	}
-	return &AggregateOperation{0, fun, sumOpr}
+	return &AggregateOperation{0, fun, sumIntOpr}
 }
 
 func defLess(a interface{}, b interface{}) bool {
@@ -909,7 +915,7 @@ func defLess(a interface{}, b interface{}) bool {
 	case time.Time:
 		return val.Before(b.(time.Time))
 	default:
-		panic(errors.New("unsupport aggregate type")) //reflect.NewAt(t, ptr).Elem().Interface()
+		panic(errors.New(fmt.Sprintf("Cannot compare %v %v", a, b))) //reflect.NewAt(t, ptr).Elem().Interface()
 	}
 }
 
@@ -1028,38 +1034,42 @@ func defCompare(a interface{}, b interface{}) int {
 			return 0
 		}
 	default:
-		panic(errors.New("unsupport aggregate type")) //reflect.NewAt(t, ptr).Elem().Interface()
+		panic(errors.New(fmt.Sprintf("Cannot compare %v %v", a, b))) //reflect.NewAt(t, ptr).Elem().Interface()
 	}
 }
 
 func divide(a interface{}, count float64) (r float64) {
+	return toFloat64(a) / count
+}
+
+func toFloat64(a interface{}) (r float64) {
 	switch val := a.(type) {
 	case int:
-		r = float64(val) / count
+		r = float64(val)
 	case int8:
-		r = float64(val) / count
+		r = float64(val)
 	case int16:
-		r = float64(val) / count
+		r = float64(val)
 	case int32:
-		r = float64(val) / count
+		r = float64(val)
 	case int64:
-		r = float64(val) / count
+		r = float64(val)
 	case uint:
-		r = float64(val) / count
+		r = float64(val)
 	case uint8:
-		r = float64(val) / count
+		r = float64(val)
 	case uint16:
-		r = float64(val) / count
+		r = float64(val)
 	case uint32:
-		r = float64(val) / count
+		r = float64(val)
 	case uint64:
-		r = float64(val) / count
+		r = float64(val)
 	case float32:
-		r = float64(val) / count
+		r = float64(val)
 	case float64:
-		r = float64(val) / count
+		r = float64(val)
 	default:
-		panic(errors.New("unsupport aggregate type")) //reflect.NewAt(t, ptr).Elem().Interface()
+		panic(errors.New(fmt.Sprintf("Cannot convert %v to float64", a))) //reflect.NewAt(t, ptr).Elem().Interface()
 	}
 	return
 }
