@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unsafe"
 )
@@ -25,7 +26,311 @@ func self(v interface{}) interface{} {
 	return v
 }
 
-//hash an object-----------------------------------------------
+//the Utils functions for Slice and Chunk----------------------
+func distinctChunkValues(c *Chunk, distKVs map[interface{}]int, pResults *[]interface{}) *Chunk {
+	if pResults == nil {
+		size := c.Data.Len()
+		result := make([]interface{}, 0, size)
+		pResults = &result
+	}
+
+	forEachSlicer(c.Data, func(i int, v interface{}) {
+		if kv, ok := v.(*hKeyValue); ok {
+			//fmt.Println("distinctChunkValues get==", i, v, kv)
+			if _, ok := distKVs[kv.keyHash]; !ok {
+				distKVs[kv.keyHash] = 1
+				*pResults = append(*pResults, kv.value)
+			}
+		} else {
+			if _, ok := distKVs[v]; !ok {
+				distKVs[v] = 1
+				*pResults = append(*pResults, v)
+			}
+		}
+	})
+	c.Data = NewSlicer(*pResults)
+	return c
+}
+
+func getChunkOprFunc(sliceOpr func(Slicer, interface{}) Slicer, opr interface{}) func(*Chunk) *Chunk {
+	return func(c *Chunk) *Chunk {
+		result := sliceOpr(c.Data, opr)
+		if result != nil {
+			return &Chunk{result, c.Order, c.StartIndex}
+		} else {
+			return nil
+		}
+	}
+}
+
+func getMapChunkFunc(f OneArgsFunc) func(*Chunk) *Chunk {
+	return func(c *Chunk) *Chunk {
+		result := mapSlice(c.Data, f)
+		return &Chunk{result, c.Order, c.StartIndex}
+	}
+}
+
+func getMapChunkToSelfFunc(f OneArgsFunc) func(*Chunk) *Chunk {
+	return func(c *Chunk) *Chunk {
+		result := mapSliceToSelf(c.Data, f)
+		return &Chunk{result, c.Order, c.StartIndex}
+	}
+}
+
+func filterSlice(data Slicer, f interface{}) Slicer {
+	var (
+		predicate PredicateFunc
+		ok        bool
+	)
+	if predicate, ok = f.(PredicateFunc); !ok {
+		predicate = PredicateFunc(f.(func(interface{}) bool))
+	}
+
+	size := data.Len()
+	count, dst := 0, make([]interface{}, size)
+	for i := 0; i < size; i++ {
+		v := data.Index(i)
+		if predicate(v) {
+			dst[count] = v
+			count++
+		}
+	}
+	return NewSlicer(dst[0:count])
+}
+
+func forEachSlicer(src Slicer, f interface{}) Slicer {
+	act := f.(func(int, interface{}))
+	size := src.Len()
+	for i := 0; i < size; i++ {
+		act(i, src.Index(i))
+	}
+	return nil
+}
+
+func mapSliceToMany(src Slicer, f func(interface{}) []interface{}) Slicer {
+	size := src.Len()
+	dst := make([]interface{}, 0, size)
+
+	for i := 0; i < size; i++ {
+		rs := f(src.Index(i))
+		dst = appendToSlice(dst, rs...)
+	}
+	return NewSlicer(dst)
+}
+
+func mapSlice(src Slicer, f interface{}) Slicer {
+	var (
+		mapFunc OneArgsFunc
+		ok      bool
+	)
+	if mapFunc, ok = f.(OneArgsFunc); !ok {
+		mapFunc = OneArgsFunc(f.(func(interface{}) interface{}))
+	}
+
+	size := src.Len()
+	dst := make([]interface{}, size)
+	//fmt.Println("mapSlice,", src.ToInterfaces())
+	for i := 0; i < size; i++ {
+		dst[i] = mapFunc(src.Index(i))
+	}
+	return NewSlicer(dst)
+}
+
+func mapSliceToSelf(src Slicer, f interface{}) Slicer {
+	var (
+		mapFunc OneArgsFunc
+		ok      bool
+	)
+	if mapFunc, ok = f.(OneArgsFunc); !ok {
+		mapFunc = OneArgsFunc(f.(func(interface{}) interface{}))
+	}
+
+	if s, ok := src.(*interfaceSlicer); ok {
+		size := src.Len()
+		for i := 0; i < size; i++ {
+			s.data[i] = mapFunc(s.data[i])
+		}
+		return NewSlicer(s.data)
+	} else {
+		panic(errors.New(fmt.Sprint("mapSliceToSelf, Unsupport type",
+			reflect.Indirect(reflect.ValueOf(src)).Type())))
+	}
+}
+
+func getMapChunkToKeyList(useDefHash *uint32, converter OneArgsFunc, getResult func(*Chunk, bool) Slicer) func(c *Chunk) Slicer {
+	return func(c *Chunk) (rs Slicer) {
+		useValAsKey := false
+		valCanAsKey := atomic.LoadUint32(useDefHash)
+		useSelf := isNil(converter)
+
+		if converter == nil {
+			converter = self
+		}
+
+		if valCanAsKey == 1 {
+			useValAsKey = true
+		} else if valCanAsKey == 0 {
+			if c.Data.Len() > 0 && testCanAsKey(converter(c.Data.Index(0))) {
+				atomic.StoreUint32(useDefHash, 1)
+				useValAsKey = true
+			} else if c.Data.Len() == 0 {
+				useValAsKey = false
+			} else {
+				atomic.StoreUint32(useDefHash, 1000)
+				useValAsKey = false
+			}
+		} else {
+			useValAsKey = false
+		}
+
+		if !useValAsKey {
+			if c.Data.Len() > 0 {
+				//fmt.Println("WARNING:use hash")
+			}
+		}
+		if useValAsKey && useSelf {
+			rs = c.Data
+		} else {
+			rs = getResult(c, useValAsKey)
+		}
+		return
+	}
+}
+
+func getMapChunkToKVs(useDefHash *uint32, converter OneArgsFunc) func(c *Chunk) Slicer {
+	return getMapChunkToKeyList(useDefHash, converter, func(c *Chunk, useValAsKey bool) Slicer {
+		return chunkToKeyValues(c, !useValAsKey, converter, nil)
+	})
+}
+
+func getMapChunkToKVChunkFunc(useDefHash *uint32, converter OneArgsFunc) func(c *Chunk) (r *Chunk) {
+	return func(c *Chunk) (r *Chunk) {
+		slicer := getMapChunkToKVs(useDefHash, converter)(c)
+		//fmt.Println("\ngetMapChunkToKVChunk", c, slicer)
+		return &Chunk{slicer, c.Order, c.StartIndex}
+	}
+}
+
+func getMapChunkToKVChunk2(useDefHash *uint32, maxOrder *int, converter OneArgsFunc) func(c *Chunk) (r *Chunk) {
+	return func(c *Chunk) (r *Chunk) {
+		slicer := getMapChunkToKVs(useDefHash, converter)(c)
+		if c.Order > *maxOrder {
+			*maxOrder = c.Order
+		}
+		return &Chunk{slicer, c.Order, c.StartIndex}
+	}
+}
+
+//TODO: the code need be restructured
+func aggregateSlice(src Slicer, fs []*AggregateOperation, asSequential bool, asParallel bool) Slicer {
+	size := src.Len()
+	if size == 0 {
+		panic(errors.New("Cannot aggregate empty slice"))
+	}
+
+	rs := make([]interface{}, len(fs))
+	for j := 0; j < len(fs); j++ {
+		//if (asSequential && fs[j].ReduceAction == nil) || (asParallel && fs[j].ReduceAction != nil) {
+		rs[j] = fs[j].Seed
+		//}
+	}
+
+	for i := 0; i < size; i++ {
+		for j := 0; j < len(fs); j++ {
+			//if (asSequential && fs[j].ReduceAction == nil) || (asParallel && fs[j].ReduceAction != nil) {
+			rs[j] = fs[j].AggAction(src.Index(i), rs[j])
+			//}
+		}
+	}
+	return NewSlicer(rs)
+}
+
+func expandChunks(src []interface{}, keepOrder bool) []interface{} {
+	if src == nil {
+		return nil
+	}
+
+	if keepOrder {
+		//根据需要排序
+		src = sortSlice(src, func(a interface{}, b interface{}) bool {
+			var (
+				a1, b1 *Chunk
+			)
+
+			if isNil(a) {
+				return true
+			} else if isNil(b) {
+				return false
+			}
+
+			switch v := a.(type) {
+			case []interface{}:
+				a1, b1 = v[0].(*Chunk), b.([]interface{})[0].(*Chunk)
+			case *Chunk:
+				a1, b1 = v, b.(*Chunk)
+			}
+			return a1.Order < b1.Order
+		})
+	}
+
+	//得到块列表
+	count := 0
+	chunks := make([]*Chunk, len(src))
+	for i, c := range src {
+		if isNil(c) {
+			continue
+		}
+		switch v := c.(type) {
+		case []interface{}:
+			chunks[i] = v[0].(*Chunk)
+		case *Chunk:
+			chunks[i] = v
+		}
+		count += chunks[i].Data.Len()
+	}
+
+	//得到interface{} slice
+	result := make([]interface{}, count)
+	start := 0
+	for _, c := range chunks {
+		if c == nil {
+			continue
+		}
+		size := c.Data.Len()
+		copy(result[start:start+size], c.Data.ToInterfaces())
+		start += size
+	}
+	return result
+}
+
+func max(i, j int) int {
+	if i > j {
+		return i
+	} else {
+		return j
+	}
+}
+
+func appendToSlice(src []interface{}, vs ...interface{}) []interface{} {
+	c, l := cap(src), len(src)
+	if c <= l+len(vs) {
+		newSlice := make([]interface{}, l, max(2*c, l+len(vs)))
+		_ = copy(newSlice[0:l], src)
+		for _, v := range vs {
+			//reslice
+			newSlice = append(newSlice, v)
+		}
+		return newSlice
+	} else {
+		for _, v := range vs {
+			src = append(src, v)
+		}
+		return src
+	}
+}
+
+//reflect functions------------------------------------------------
+
 // interfaceHeader is the header for an interface{} value. it is copied from unsafe.emptyInterface
 type interfaceHeader struct {
 	typ  *rtype
@@ -77,12 +382,41 @@ func dataPtr(data interface{}) (ptr unsafe.Pointer, typ *rtype) {
 			//如果是非指针类型并且数据size大于一个字，则interface的word是数据的地址
 			ptr = unsafe.Pointer(headerPtr.word)
 		} else {
-			//如果是非指针类型并且数据size小于等于一个字，则interface的word是数据本身
+			//如果是指针类型或者数据size小于等于一个字，则interface的word是数据本身
 			ptr = unsafe.Pointer(&(headerPtr.word))
 		}
 	}
 	return
 }
+
+func isNil(data interface{}) bool {
+	if data == nil {
+		return true
+	}
+
+	ptr := *((*interfaceHeader)(unsafe.Pointer(&data)))
+	typ := ptr.typ
+	size := typ.size
+
+	switch typ.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Map, reflect.Ptr:
+		//ptr := unsafe.Pointer(ptr.word)
+		if size > ptrSize {
+			//如果size大于1个字，word是一个指向数据地址的指针
+			return *(*unsafe.Pointer)(unsafe.Pointer(ptr.word)) == nil
+		} else {
+			//如果size不大于1个字，word保存的是数据本身，如果是引用，则就是被引用的数据地址
+			return ptr.word == 0
+		}
+		//return ptr == nil
+	case reflect.Interface, reflect.Slice:
+		return ptr.word == 0
+	default:
+		return false
+	}
+}
+
+//hash functions-------------------------------------------------------
 
 func hashByPtr(dataPtr unsafe.Pointer, typ *rtype, hashObj *sHash) {
 	t := typ
@@ -725,139 +1059,140 @@ func mustNotNil(v interface{}, err error) {
 	}
 }
 
-func isNil(v interface{}) bool {
-	if v == nil {
-		return true
-	}
-	if val := reflect.ValueOf(v); val.Kind() == reflect.Chan ||
-		val.Kind() == reflect.Ptr || val.Kind() == reflect.Slice ||
-		val.Kind() == reflect.Func || val.Kind() == reflect.Interface {
-		if val.IsNil() {
-			return true
-		}
-	}
-	return false
-}
+//func isNil(v interface{}) bool {
+//	if v == nil {
+//		return true
+//	}
+//	if val := reflect.ValueOf(v); val.Kind() == reflect.Chan ||
+//		val.Kind() == reflect.Ptr || val.Kind() == reflect.Slice ||
+//		val.Kind() == reflect.Func || val.Kind() == reflect.Interface {
+//		if val.IsNil() {
+//			return true
+//		}
+//	}
+//	return false
+//}
 
 //aggregate functions---------------------------------------------------------------
+func sumIntOpr(v interface{}, t interface{}) interface{} {
+	return v.(int) + t.(int)
+}
+
 func sumOpr(v interface{}, t interface{}) interface{} {
-	if isNil(t) {
-		return v
-	}
-	switch val := v.(type) {
-	case int:
-		return val + t.(int)
-	case int8:
-		return val + t.(int8)
-	case int16:
-		return val + t.(int16)
-	case int32:
-		return val + t.(int32)
-	case int64:
-		return val + t.(int64)
-	case uint:
-		return val + t.(uint)
-	case uint8:
-		return val + t.(uint8)
-	case uint16:
-		return val + t.(uint16)
-	case uint32:
-		return val + t.(uint32)
-	case uint64:
-		return val + t.(uint64)
-	case float32:
-		return val + t.(float32)
-	case float64:
-		return val + t.(float64)
-	case string:
-		return val + t.(string)
-	default:
-		panic(errors.New("unsupport aggregate type")) //reflect.NewAt(t, ptr).Elem().Interface()
-	}
+	return toFloat64(v) + t.(float64) //toFloat64(t)
 }
 
 func countOpr(v interface{}, t interface{}) interface{} {
 	return t.(int) + 1
 }
 
-func minOpr(v interface{}, t interface{}, less func(interface{}, interface{}) bool) interface{} {
+func minMaxOpr(v interface{}, t interface{}, isMin bool) interface{} {
 	if isNil(t) {
 		return v
 	}
-	if less(v, t) {
+
+	//if v less than t and isMin or v greater than t and !isMin, then return v
+	if defLess(v, t) == isMin {
 		return v
 	} else {
 		return t
 	}
 }
 
-func maxOpr(v interface{}, t interface{}, less func(interface{}, interface{}) bool) interface{} {
-	if isNil(t) {
-		return v
+//func minOpr(v interface{}, t interface{}) interface{} {
+//	if isNil(t) {
+//		return v
+//	}
+//	fun := defLess
+//	if comparable, ok := v.(Comparable); ok {
+//		fun = Comparable.CompareTo
+//	}
+//	if fun(v, t) {
+//		return v
+//	} else {
+//		return t
+//	}
+
+//	if comparable, ok := v.(Comparable); ok {
+//		if comparable.CompareTo(t) == -1 {
+//			return v
+//		} else {
+//			return t
+//		}
+//	} else {
+//		if defLess(v, t) {
+//			return v
+//		} else {
+//			return t
+//		}
+//	}
+//}
+
+//func maxOpr(v interface{}, t interface{}) interface{} {
+//	if isNil(t) {
+//		return v
+//	}
+//	if comparable, ok := v.(Comparable); ok {
+//		if comparable.CompareTo(t) == -1 {
+//			return t
+//		} else {
+//			return v
+//		}
+//	} else {
+//		if defLess(v, t) {
+//			return t
+//		} else {
+//			return v
+//		}
+//	}
+//}
+
+func getAggByFunc(oriaAggFunc TwoArgsFunc, convert OneArgsFunc) TwoArgsFunc {
+	fun := oriaAggFunc
+	if convert != nil {
+		fun = func(a interface{}, b interface{}) interface{} {
+			return oriaAggFunc(convert(a), b)
+		}
 	}
-	if less(v, t) {
-		return t
-	} else {
-		return v
-	}
+	return fun
 }
 
-func getMinOpr(less func(interface{}, interface{}) bool) *AggregateOperation {
-	fun := func(a interface{}, b interface{}) interface{} {
-		return minOpr(a, b, less)
-	}
-	return &AggregateOperation{nil, fun, fun}
+func getSumOpr(convert OneArgsFunc) *AggregateOperation {
+	return &AggregateOperation{float64(0), getAggByFunc(sumOpr, convert), sumOpr}
 }
 
-func getMaxOpr(less func(interface{}, interface{}) bool) *AggregateOperation {
+func getMinOpr(convert OneArgsFunc) *AggregateOperation {
 	fun := func(a interface{}, b interface{}) interface{} {
-		return maxOpr(a, b, less)
+		return minMaxOpr(a, b, true)
 	}
-	return &AggregateOperation{nil, fun, fun}
+	return &AggregateOperation{nil, getAggByFunc(fun, convert), fun}
+}
+
+func getMaxOpr(convert OneArgsFunc) *AggregateOperation {
+	fun := func(a interface{}, b interface{}) interface{} {
+		return minMaxOpr(a, b, false)
+	}
+	return &AggregateOperation{nil, getAggByFunc(fun, convert), fun}
 }
 
 func getCountByOpr(predicate PredicateFunc) *AggregateOperation {
-	fun := func(v interface{}, t interface{}) interface{} {
-		if predicate(v) {
-			t = t.(int) + 1
+	fun := countOpr
+	if predicate != nil {
+		fun = func(v interface{}, t interface{}) interface{} {
+			if predicate(v) {
+				t = countOpr(v, t)
+			}
+			return t
 		}
-		return t
 	}
-	return &AggregateOperation{0, fun, sumOpr}
+	return &AggregateOperation{0, fun, sumIntOpr}
 }
 
 func defLess(a interface{}, b interface{}) bool {
-	switch val := a.(type) {
-	case int:
-		return val < b.(int)
-	case int8:
-		return val < b.(int8)
-	case int16:
-		return val < b.(int16)
-	case int32:
-		return val < b.(int32)
-	case int64:
-		return val < b.(int64)
-	case uint:
-		return val < b.(uint)
-	case uint8:
-		return val < b.(uint8)
-	case uint16:
-		return val < b.(uint16)
-	case uint32:
-		return val < b.(uint32)
-	case uint64:
-		return val < b.(uint64)
-	case float32:
-		return val < b.(float32)
-	case float64:
-		return val < b.(float64)
-	case string:
-		return val < b.(string)
-	case time.Time:
-		return val.Before(b.(time.Time))
-	default:
-		panic(errors.New("unsupport aggregate type")) //reflect.NewAt(t, ptr).Elem().Interface()
+	if comparable, ok := a.(Comparable); ok {
+		return comparable.CompareTo(b) == -1
+	} else {
+		return defCompare(a, b) == -1
 	}
 }
 
@@ -976,38 +1311,42 @@ func defCompare(a interface{}, b interface{}) int {
 			return 0
 		}
 	default:
-		panic(errors.New("unsupport aggregate type")) //reflect.NewAt(t, ptr).Elem().Interface()
+		panic(errors.New(fmt.Sprintf("Cannot compare %v %v", a, b))) //reflect.NewAt(t, ptr).Elem().Interface()
 	}
 }
 
 func divide(a interface{}, count float64) (r float64) {
-	switch val := a.(type) {
+	return toFloat64(a) / count
+}
+
+func toFloat64(v interface{}) (r float64) {
+	switch val := v.(type) {
 	case int:
-		r = float64(val) / count
-	case int8:
-		r = float64(val) / count
-	case int16:
-		r = float64(val) / count
-	case int32:
-		r = float64(val) / count
-	case int64:
-		r = float64(val) / count
+		r = float64(val)
 	case uint:
-		r = float64(val) / count
-	case uint8:
-		r = float64(val) / count
-	case uint16:
-		r = float64(val) / count
-	case uint32:
-		r = float64(val) / count
-	case uint64:
-		r = float64(val) / count
+		r = float64(val)
 	case float32:
-		r = float64(val) / count
+		r = float64(val)
 	case float64:
-		r = float64(val) / count
+		r = val
+	case int8:
+		r = float64(val)
+	case int16:
+		r = float64(val)
+	case int32:
+		r = float64(val)
+	case int64:
+		r = float64(val)
+	case uint8:
+		r = float64(val)
+	case uint16:
+		r = float64(val)
+	case uint32:
+		r = float64(val)
+	case uint64:
+		r = float64(val)
 	default:
-		panic(errors.New("unsupport aggregate type")) //reflect.NewAt(t, ptr).Elem().Interface()
+		panic(errors.New(fmt.Sprintf("Cannot convert %v to float64", v))) //reflect.NewAt(t, ptr).Elem().Interface()
 	}
 	return
 }
