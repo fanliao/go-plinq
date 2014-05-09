@@ -1293,7 +1293,7 @@ func TestSumCountAvgMaxMin(t *testing.T) {
 			c.So(r, c.ShouldEqual, count-1)
 		})
 		c.Convey("MaxBy an int slice", func() {
-			r, err := From(tUsers).SetSizeOfChunk(size).Aggregate(MaxBy(func(v interface{}) interface{} {
+			r, err := From(tUsers).SetSizeOfChunk(size).Aggregate(Max(func(v interface{}) interface{} {
 				return v.(user).id
 			}))
 			//TODO: need test keep order
@@ -1308,7 +1308,7 @@ func TestSumCountAvgMaxMin(t *testing.T) {
 			c.So(r, c.ShouldEqual, 0)
 		})
 		c.Convey("MinBy an int slice", func() {
-			r, err := From(tUsers).SetSizeOfChunk(size).Aggregate(MinBy(func(v interface{}) interface{} {
+			r, err := From(tUsers).SetSizeOfChunk(size).Aggregate(Min(func(v interface{}) interface{} {
 				return v.(user).id
 			}))
 			//TODO: need test keep order
@@ -1323,7 +1323,7 @@ func TestSumCountAvgMaxMin(t *testing.T) {
 			c.So(r, c.ShouldEqual, (count-1)*(count/2))
 		})
 		c.Convey("SumBy an int slice", func() {
-			r, err := From(tUsers).SetSizeOfChunk(size).Aggregate(SumBy(func(v interface{}) interface{} {
+			r, err := From(tUsers).SetSizeOfChunk(size).Aggregate(Sum(func(v interface{}) interface{} {
 				return v.(user).id
 			}))
 			//TODO: need test keep order

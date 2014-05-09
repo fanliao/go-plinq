@@ -1075,18 +1075,10 @@ func mustNotNil(v interface{}, err error) {
 
 //aggregate functions---------------------------------------------------------------
 func sumIntOpr(v interface{}, t interface{}) interface{} {
-	//if isNil(t) {
-	//	return v
-	//}
-
 	return v.(int) + t.(int)
 }
 
 func sumOpr(v interface{}, t interface{}) interface{} {
-	//if isNil(t) {
-	//	return toFloat64(v)
-	//}
-
 	return toFloat64(v) + t.(float64) //toFloat64(t)
 }
 
@@ -1094,27 +1086,66 @@ func countOpr(v interface{}, t interface{}) interface{} {
 	return t.(int) + 1
 }
 
-func minOpr(v interface{}, t interface{}, less func(interface{}, interface{}) bool) interface{} {
+func minMaxOpr(v interface{}, t interface{}, isMin bool) interface{} {
 	if isNil(t) {
 		return v
 	}
-	if less(v, t) {
+
+	//if v less than t and isMin or v greater than t and !isMin, then return v
+	if defLess(v, t) == isMin {
 		return v
 	} else {
 		return t
 	}
 }
 
-func maxOpr(v interface{}, t interface{}, less func(interface{}, interface{}) bool) interface{} {
-	if isNil(t) {
-		return v
-	}
-	if less(v, t) {
-		return t
-	} else {
-		return v
-	}
-}
+//func minOpr(v interface{}, t interface{}) interface{} {
+//	if isNil(t) {
+//		return v
+//	}
+//	fun := defLess
+//	if comparable, ok := v.(Comparable); ok {
+//		fun = Comparable.CompareTo
+//	}
+//	if fun(v, t) {
+//		return v
+//	} else {
+//		return t
+//	}
+
+//	if comparable, ok := v.(Comparable); ok {
+//		if comparable.CompareTo(t) == -1 {
+//			return v
+//		} else {
+//			return t
+//		}
+//	} else {
+//		if defLess(v, t) {
+//			return v
+//		} else {
+//			return t
+//		}
+//	}
+//}
+
+//func maxOpr(v interface{}, t interface{}) interface{} {
+//	if isNil(t) {
+//		return v
+//	}
+//	if comparable, ok := v.(Comparable); ok {
+//		if comparable.CompareTo(t) == -1 {
+//			return t
+//		} else {
+//			return v
+//		}
+//	} else {
+//		if defLess(v, t) {
+//			return t
+//		} else {
+//			return v
+//		}
+//	}
+//}
 
 func getAggByFunc(oriaAggFunc TwoArgsFunc, convert OneArgsFunc) TwoArgsFunc {
 	fun := oriaAggFunc
@@ -1130,16 +1161,16 @@ func getSumOpr(convert OneArgsFunc) *AggregateOperation {
 	return &AggregateOperation{float64(0), getAggByFunc(sumOpr, convert), sumOpr}
 }
 
-func getMinOpr(less func(interface{}, interface{}) bool, convert OneArgsFunc) *AggregateOperation {
+func getMinOpr(convert OneArgsFunc) *AggregateOperation {
 	fun := func(a interface{}, b interface{}) interface{} {
-		return minOpr(a, b, less)
+		return minMaxOpr(a, b, true)
 	}
 	return &AggregateOperation{nil, getAggByFunc(fun, convert), fun}
 }
 
-func getMaxOpr(less func(interface{}, interface{}) bool, convert OneArgsFunc) *AggregateOperation {
+func getMaxOpr(convert OneArgsFunc) *AggregateOperation {
 	fun := func(a interface{}, b interface{}) interface{} {
-		return maxOpr(a, b, less)
+		return minMaxOpr(a, b, false)
 	}
 	return &AggregateOperation{nil, getAggByFunc(fun, convert), fun}
 }
@@ -1158,7 +1189,11 @@ func getCountByOpr(predicate PredicateFunc) *AggregateOperation {
 }
 
 func defLess(a interface{}, b interface{}) bool {
-	return defCompare(a, b) == -1
+	if comparable, ok := a.(Comparable); ok {
+		return comparable.CompareTo(b) == -1
+	} else {
+		return defCompare(a, b) == -1
+	}
 }
 
 func defCompare(a interface{}, b interface{}) int {

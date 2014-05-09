@@ -47,6 +47,11 @@ type OneArgsFunc func(interface{}) interface{}
 type TwoArgsFunc func(interface{}, interface{}) interface{}
 type CompareFunc func(interface{}, interface{}) int
 
+//The Comparable presents the type can support the compare operation
+type Comparable interface {
+	CompareTo(interface{}) int
+}
+
 // the struct and interface about data DataSource---------------------------------------------------
 
 // A Chunk presents a data chunk, it is the minimal data unit for a task.
@@ -82,48 +87,38 @@ type AggregateOperation struct {
 	ReduceAction TwoArgsFunc //final aggregation function to combine the results of all chunks
 }
 
-// Standard Sum, Count, Min and Max Aggregation operation
+// The functions for getting Standard Sum, Count, Min and Max Aggregation operation
 
-func Max(lesses ...func(interface{}, interface{}) bool) *AggregateOperation {
-	if lesses != nil && len(lesses) > 0 {
-		return getMaxOpr(lesses[0], nil)
+//Returns Max operation that returns the maximum value. optionally, user can invokes a transform function on each element
+func Max(converts ...OneArgsFunc) *AggregateOperation {
+	if converts != nil && len(converts) > 0 {
+		return getMaxOpr(converts[0])
 	}
-	return getMaxOpr(defLess, nil)
+	return getMaxOpr(nil)
 }
 
-func MaxBy(convert OneArgsFunc, lesses ...func(interface{}, interface{}) bool) *AggregateOperation {
-	if lesses != nil && len(lesses) > 0 {
-		return getMaxOpr(lesses[0], convert)
-	}
-	return getMaxOpr(defLess, convert)
-}
-
+//Returns Min operation that returns the minimum value. optionally, user can invokes a transform function on each element
 func Min(converts ...OneArgsFunc) *AggregateOperation {
 	if converts != nil && len(converts) > 0 {
-		return getMinOpr(defLess, converts[0])
+		return getMinOpr(converts[0])
 	}
-	return getMinOpr(defLess, nil)
+	return getMinOpr(nil)
 }
 
-func MinBy(convert OneArgsFunc, lesses ...func(interface{}, interface{}) bool) *AggregateOperation {
-	if lesses != nil && len(lesses) > 0 {
-		return getMinOpr(lesses[0], convert)
+//Returns Sum operation that computes the sum of all elements. optionally, the value can be obtained by invoking a transform function on each element of the input sequence.
+func Sum(converts ...OneArgsFunc) *AggregateOperation {
+	if converts != nil && len(converts) > 0 {
+		return getSumOpr(converts[0])
 	}
-	return getMinOpr(defLess, convert)
-}
-
-func Sum() *AggregateOperation {
 	return getSumOpr(nil)
 }
 
-func SumBy(convert OneArgsFunc) *AggregateOperation {
-	return getSumOpr(convert)
-}
-
+//Returns Count operation that returns number of elements in the data source.
 func Count() *AggregateOperation {
 	return getCountByOpr(nil)
 }
 
+//Returns CountBy operation that returns number of elements matched the predicate in the data source.
 func CountBy(predicate PredicateFunc) *AggregateOperation {
 	return getCountByOpr(predicate)
 }
@@ -347,13 +342,18 @@ func (this *Queryable) Aggregate(aggregateFuncs ...*AggregateOperation) (result 
 	return
 }
 
-// Sum computes sum of numeric values in the data source.
+// Sum computes sum of numeric values in the data source. 
+// Optionally, the value can be obtained by invoking a transform function on each element of the input sequence.
 // TODO: If sequence has non-numeric types or nil, should returns an error.
 // Example:
 //	arr = []interface{}{0, 3, 6, 9}
 //	sum, err := From(arr).Sum() // sum is 18
-func (this *Queryable) Sum() (result interface{}, err error) {
-	aggregateOprs := []*AggregateOperation{Sum()}
+func (this *Queryable) Sum(converts ...OneArgsFunc) (result interface{}, err error) {
+	opr := getSumOpr(nil)
+	if converts != nil && len(converts) > 0 {
+		opr = getMinOpr(converts[0])
+	}
+	aggregateOprs := []*AggregateOperation{opr}
 
 	if result, err = this.Aggregate(aggregateOprs...); err == nil {
 		return result, nil
@@ -394,12 +394,17 @@ func (this *Queryable) CountBy(predicate PredicateFunc) (result interface{}, err
 	}
 }
 
-// Average computes average of numeric values in the data source.
+// Average computes the average of numeric values in the data source.
+// Optionally, the value can be obtained by invoking a transform function on each element of the input sequence.
 // Example:
 //	arr = []interface{}{0, 3, 6, 9}
 //	arg, err := From(arr).Average() // sum is 4.5
-func (this *Queryable) Average() (result interface{}, err error) {
-	aggregateOprs := []*AggregateOperation{Sum(), Count()}
+func (this *Queryable) Average(converts ...OneArgsFunc) (result interface{}, err error) {
+	sumOpr := getSumOpr(nil)
+	if converts != nil && len(converts) > 0 {
+		sumOpr = getMinOpr(converts[0])
+	}
+	aggregateOprs := []*AggregateOperation{sumOpr, Count()}
 
 	if results, err := this.Aggregate(aggregateOprs...); err == nil {
 		count := float64(results.([]interface{})[1].(int))
@@ -413,19 +418,18 @@ func (this *Queryable) Average() (result interface{}, err error) {
 
 // Max returns the maximum value in the data source.
 // Max operation supports the numeric types, string and time.Time.
+// Optionally, the value can be obtained by invoking a transform function on each element of the input sequence.
 // TODO: need more testing for string and time.Time.
 // Example:
 //	arr = []interface{}{0, 3, 6, 9}
 //	max, err := From(arr).Max() // max is 9
-func (this *Queryable) Max(lesses ...func(interface{}, interface{}) bool) (result interface{}, err error) {
-	var less func(interface{}, interface{}) bool
-	if lesses == nil || len(lesses) == 0 {
-		less = defLess
-	} else {
-		less = lesses[0]
+func (this *Queryable) Max(converts ...OneArgsFunc) (result interface{}, err error) {
+	opr := getMaxOpr(nil)
+	if converts != nil && len(converts) > 0 {
+		opr = getMaxOpr(converts[0])
 	}
 
-	aggregateOprs := []*AggregateOperation{getMaxOpr(less, nil)}
+	aggregateOprs := []*AggregateOperation{opr}
 
 	if results, err := this.Aggregate(aggregateOprs...); err == nil {
 		return results, nil
@@ -436,20 +440,18 @@ func (this *Queryable) Max(lesses ...func(interface{}, interface{}) bool) (resul
 
 // Min returns the minimum value in the data source.
 // Min operation supports the numeric types, string and time.Time.
+// Optionally, the value can be obtained by invoking a transform function on each element of the input sequence.
 // TODO: need more testing for string and time.Time.
 // Example:
 //	arr = []interface{}{0, 3, 6, 9}
-//	min, err := From(arr).Max() // min is 0
-func (this *Queryable) Min(lesses ...func(interface{}, interface{}) bool) (result interface{}, err error) {
-	var less func(interface{}, interface{}) bool
-	if lesses == nil || len(lesses) == 0 {
-		less = defLess
-	} else {
-		less = lesses[0]
+//	min, err := From(arr).Max(converts ...OneArgsFunc) // min is 0
+func (this *Queryable) Min(converts ...OneArgsFunc) (result interface{}, err error) {
+	opr := getMinOpr(nil)
+	if converts != nil && len(converts) > 0 {
+		opr = getMinOpr(converts[0])
 	}
 
-	aggregateOprs := []*AggregateOperation{getMinOpr(less, nil)}
-
+	aggregateOprs := []*AggregateOperation{opr}
 	if results, err := this.Aggregate(aggregateOprs...); err == nil {
 		return results, nil
 	} else {
