@@ -37,8 +37,6 @@ func init() {
 	numCPU = runtime.NumCPU()
 	_ = fmt.Println
 	//fmt.Println("numCPU is", numCPU)
-	f := countOpr
-	fmt.Println(equals(f, countOpr))
 
 }
 
