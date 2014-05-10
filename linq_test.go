@@ -81,6 +81,7 @@ func confusedOrder() {
 	_ = sum
 }
 
+//
 func filterWithPanic(v interface{}) bool {
 	var s []interface{}
 	_ = s[2]
@@ -166,12 +167,6 @@ func selectIntWithPanic(v interface{}) interface{} {
 	return v
 }
 
-func selectIntForConfusedOrder(v interface{}) interface{} {
-	rand.Seed(10)
-	confusedOrder()
-	return v.(int) * 10
-}
-
 func selectManyWithPanic(v interface{}) []interface{} {
 	if v.(int) == count-1 {
 		var s []interface{}
@@ -196,100 +191,6 @@ func selectIntManyForConfusedOrder(v interface{}) []interface{} {
 	return rs
 }
 
-func distinctUser(v interface{}) interface{} {
-	u := v.(user)
-	return u.id
-}
-
-func distinctUserPanic(v interface{}) interface{} {
-	var s []interface{}
-	_ = s[2]
-	u := v.(user)
-	return u.id
-}
-
-func userSelector(v interface{}) interface{} {
-	return v.(user).id
-}
-
-func roleSelector(v interface{}) interface{} {
-	r := v.(role)
-	return r.uid
-}
-
-func resultSelector(u interface{}, v interface{}) interface{} {
-	return strconv.Itoa(u.(user).id) + "-" + v.(role).role
-}
-
-func resultSelectorForConfusedOrder(u interface{}, v interface{}) interface{} {
-	confusedOrder()
-	return strconv.Itoa(u.(user).id) + "-" + v.(role).role
-}
-
-func leftResultSelector(u interface{}, v interface{}) interface{} {
-	if v != nil {
-		return strconv.Itoa(u.(user).id) + "-" + v.(role).role
-	} else {
-		return strconv.Itoa(u.(user).id)
-	}
-}
-
-var countOfSkipTestData int = 5
-
-func getChunkByi(i int, ints []interface{}) *Chunk {
-	size := count / countOfSkipTestData
-	return &Chunk{NewSlicer(ints[i*size : (i+1)*size]), i, 0}
-}
-
-func getCChunkSrc(indexs []int, ints []interface{}) chan *Chunk {
-	chunkSrc := make(chan *Chunk)
-	go func() {
-		//indexs := []int{3, 0, 1, 4, 2}
-		defer func() {
-			if e := recover(); e != nil {
-				_ = e
-			}
-		}()
-		//fmt.Println("\nsend----------------")
-		for _, i := range indexs {
-			//fmt.Println("\nsend", getChunkByi(i))
-			chunkSrc <- getChunkByi(i, ints)
-		}
-		close(chunkSrc)
-	}()
-	return chunkSrc
-}
-
-//获取0到4所有的组合
-func getIndexses(countOfSkipTestData int) (indexses [][]int) {
-	for i := 0; i < countOfSkipTestData; i++ {
-		//开始创建一个随机组合
-		for j := 0; j < countOfSkipTestData; j++ {
-			if j == i {
-				continue
-			}
-			for k := 0; k < countOfSkipTestData; k++ {
-				if k == j || k == i {
-					continue
-				}
-				for m := 0; m < countOfSkipTestData; m++ {
-					if m == k || m == j || m == i {
-						continue
-					}
-					for n := 0; n < countOfSkipTestData; n++ {
-						if n == k || n == j || n == i || n == m {
-							continue
-						}
-						indexs := []int{i, j, k, m, n}
-						indexses = append(indexses, indexs)
-					}
-				}
-			}
-		}
-	}
-	return
-}
-
 // Testing functions----------------------------------------------------------
 func TestFrom(t *testing.T) {
 	c.Convey("Nil as data source", t, func() {
@@ -310,6 +211,32 @@ func TestFrom(t *testing.T) {
 		rs, err := q.Results()
 		c.So(err, c.ShouldBeNil)
 		c.So(len(rs), c.ShouldEqual, count+10)
+	})
+}
+
+func TestBasicOperations(t *testing.T) {
+	expectedInts := make([]interface{}, count/2)
+	for i := 0; i < count/2; i++ {
+		expectedInts[i] = i * 2 * 10
+	}
+	c.Convey("Test where then select the int slice", t, func() {
+		rs, err := From(tInts).Where(filterInt).Select(selectInt).Results()
+		c.So(err, c.ShouldBeNil)
+		c.So(rs, shouldSlicesResemble, expectedInts)
+	})
+
+	c.Convey("Test where then select the int channel", t, func() {
+		rs, err := From(getIntChan(tInts)).Where(filterInt).Select(selectInt).Results()
+		c.So(err, c.ShouldBeNil)
+		c.So(rs, shouldSlicesResemble, expectedInts)
+	})
+
+	c.Convey("Test where then select, and use channel as output", t, func() {
+		rsChan, errChan, err := From(getIntChan(tInts)).Where(filterInt).Select(selectInt).ToChan()
+		c.So(err, c.ShouldBeNil)
+		rs, stepErr := getChanResult(rsChan, errChan)
+		c.So(stepErr, c.ShouldBeNil)
+		c.So(rs, shouldSlicesResemble, expectedInts)
 	})
 }
 
@@ -398,6 +325,13 @@ func TestWhere(t *testing.T) {
 }
 
 func TestSelect(t *testing.T) {
+	//插入随机的计算来打乱原始的顺序，测试结果是否可以保持顺序
+	selectIntForConfusedOrder := func(v interface{}) interface{} {
+		rand.Seed(10)
+		confusedOrder()
+		return v.(int) * 10
+	}
+
 	test := func(size int) {
 		c.Convey("When passed nil function, error be returned", func() {
 			c.So(func() { From(tInts).SetSizeOfChunk(size).Select(nil) }, c.ShouldPanicWith, ErrNilAction)
@@ -519,6 +453,18 @@ func TestSelectMany(t *testing.T) {
 
 	c.Convey("Test selectMany Sequential", t, func() { test(sequentialChunkSize) })
 	c.Convey("Test selectMany parallel", t, func() { test(parallelChunkSize) })
+}
+
+func distinctUser(v interface{}) interface{} {
+	u := v.(user)
+	return u.id
+}
+
+func distinctUserPanic(v interface{}) interface{} {
+	var s []interface{}
+	_ = s[2]
+	u := v.(user)
+	return u.id
 }
 
 func TestDistinct(t *testing.T) {
@@ -646,6 +592,33 @@ func TestGroupBy(t *testing.T) {
 
 	c.Convey("Test groupBy Sequential", t, func() { test(sequentialChunkSize) })
 	c.Convey("Test groupBy parallel", t, func() { test(parallelChunkSize) })
+}
+
+//test functions for Join operation-------------------------------
+func userSelector(v interface{}) interface{} {
+	return v.(user).id
+}
+
+func roleSelector(v interface{}) interface{} {
+	r := v.(role)
+	return r.uid
+}
+
+func resultSelector(u interface{}, v interface{}) interface{} {
+	return strconv.Itoa(u.(user).id) + "-" + v.(role).role
+}
+
+func resultSelectorForConfusedOrder(u interface{}, v interface{}) interface{} {
+	confusedOrder()
+	return strconv.Itoa(u.(user).id) + "-" + v.(role).role
+}
+
+func leftResultSelector(u interface{}, v interface{}) interface{} {
+	if v != nil {
+		return strconv.Itoa(u.(user).id) + "-" + v.(role).role
+	} else {
+		return strconv.Itoa(u.(user).id)
+	}
 }
 
 func TestJoin(t *testing.T) {
@@ -1364,6 +1337,63 @@ func TestSumCountAvgMaxMin(t *testing.T) {
 	}
 	c.Convey("Test Sum/Count/Avg/Max/Min Sequential", t, func() { test(sequentialChunkSize) })
 	c.Convey("Test Sum/Count/Avg/Max/Min parallel", t, func() { test(parallelChunkSize) })
+}
+
+//获取0到4所有的组合, 用于测试随机顺序下Skip/Take/ElementAt/FirstBy等操作是否正确
+func getIndexses(countOfSkipTestData int) (indexses [][]int) {
+	for i := 0; i < countOfSkipTestData; i++ {
+		//开始创建一个随机组合
+		for j := 0; j < countOfSkipTestData; j++ {
+			if j == i {
+				continue
+			}
+			for k := 0; k < countOfSkipTestData; k++ {
+				if k == j || k == i {
+					continue
+				}
+				for m := 0; m < countOfSkipTestData; m++ {
+					if m == k || m == j || m == i {
+						continue
+					}
+					for n := 0; n < countOfSkipTestData; n++ {
+						if n == k || n == j || n == i || n == m {
+							continue
+						}
+						indexs := []int{i, j, k, m, n}
+						indexses = append(indexses, indexs)
+					}
+				}
+			}
+		}
+	}
+	return
+}
+
+var countOfSkipTestData int = 5
+
+func getChunkByi(i int, ints []interface{}) *Chunk {
+	size := count / countOfSkipTestData
+	return &Chunk{NewSlicer(ints[i*size : (i+1)*size]), i, 0}
+}
+
+//根据指定的顺序发送chunk到channel
+func getCChunkSrc(indexs []int, ints []interface{}) chan *Chunk {
+	chunkSrc := make(chan *Chunk)
+	go func() {
+		//indexs := []int{3, 0, 1, 4, 2}
+		defer func() {
+			if e := recover(); e != nil {
+				_ = e
+			}
+		}()
+		//fmt.Println("\nsend----------------")
+		for _, i := range indexs {
+			//fmt.Println("\nsend", getChunkByi(i))
+			chunkSrc <- getChunkByi(i, ints)
+		}
+		close(chunkSrc)
+	}()
+	return chunkSrc
 }
 
 ///TODO: outstanding testing item:
