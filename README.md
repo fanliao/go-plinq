@@ -15,7 +15,7 @@ PLINQ library for go, support the lazy evaluated and can use channel as source
 
 * 排序运算符：OrderBy, Reverse
 
-* Set运算符：Distinct, Except, Intersect, Union
+* 集合运算符：Distinct, Except, Intersect, Union
 
 * 筛选运算符：Where
 
