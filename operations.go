@@ -2,6 +2,7 @@ package plinq
 
 import (
 	"errors"
+	"fmt"
 	"github.com/fanliao/go-promise"
 )
 
@@ -30,6 +31,11 @@ const (
 	ACT_ELEMENTAT
 	ACT_SINGLEVALUE
 )
+
+func init() {
+	_ = fmt.Println
+
+}
 
 // stepAction presents a action related to a linq operation
 // Arguments:
@@ -70,9 +76,7 @@ func (this commonStep) Typ() int       { return this.typ }
 func (this commonStep) ChunkSize() int { return this.chunkSize }
 
 func (this commonStep) POption(option ParallelOption) *ParallelOption {
-	if this.typ == ACT_DISTINCT || this.typ == ACT_JOIN {
-		option.ChunkSize = DEFAULTMINCUNKSIZE
-	} else if this.typ == ACT_REVERSE || this.Typ() == ACT_UNION || this.Typ() == ACT_INTERSECT || this.Typ() == ACT_EXCEPT {
+	if this.typ == ACT_REVERSE || this.Typ() == ACT_UNION || this.Typ() == ACT_INTERSECT || this.Typ() == ACT_EXCEPT {
 		option.ChunkSize = LARGECHUNKSIZE
 	}
 	if this.chunkSize != 0 {
@@ -1495,7 +1499,7 @@ func trySequentialAggregate(src DataSource, option *ParallelOption, aggregateFun
 		}
 	}()
 	if useSingle := singleDegree(src, option); useSingle || ifMustSequential(aggregateFuncs) {
-		if len(aggregateFuncs) == 1 && aggregateFuncs[0] == Count() {
+		if len(aggregateFuncs) == 1 && aggregateFuncs[0] == countAggOpr {
 			//for count operation, do not need to range the slice
 			rs = []interface{}{src.ToSlice(false).Len()}
 			return rs, nil, true

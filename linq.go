@@ -10,11 +10,10 @@ import (
 )
 
 const (
-	DEFAULTCHUNKSIZE       = 200
-	DEFAULTMINCUNKSIZE     = 40
-	LARGECHUNKSIZE         = 2000
-	SOURCE_LIST        int = iota //presents the list source
-	SOURCE_CHANNEL                //presents the channel source
+	DEFAULTCHUNKSIZE     = 200
+	LARGECHUNKSIZE       = 2000
+	SOURCE_LIST      int = iota //presents the list source
+	SOURCE_CHANNEL              //presents the channel source
 )
 
 var (
@@ -31,6 +30,7 @@ var (
 	ErrInnerKeySelector  = errors.New("innerKeySelector cannot be nil")
 	ErrResultSelector    = errors.New("resultSelector cannot be nil")
 	ErrTaskFailure       = errors.New("ErrTaskFailure")
+	countAggOpr          = getCountByOpr(nil)
 )
 
 func init() {
@@ -114,14 +114,18 @@ func Sum(converts ...OneArgsFunc) *AggregateOperation {
 }
 
 //Returns Count operation that returns number of elements in the data source.
-func Count() *AggregateOperation {
-	return getCountByOpr(nil)
+func Count(predicates ...PredicateFunc) *AggregateOperation {
+	if predicates == nil || len(predicates) == 0 {
+		return countAggOpr
+	} else {
+		return getCountByOpr(predicates[0])
+	}
 }
 
-//Returns CountBy operation that returns number of elements matched the predicate in the data source.
-func CountBy(predicate PredicateFunc) *AggregateOperation {
-	return getCountByOpr(predicate)
-}
+////Returns CountBy operation that returns number of elements matched the predicate in the data source.
+//func CountBy(predicate PredicateFunc) *AggregateOperation {
+//	return getCountByOpr(predicate)
+//}
 
 //the queryable struct-------------------------------------------------------------------------
 
@@ -633,11 +637,12 @@ func (this *Queryable) Sum(converts ...OneArgsFunc) (result interface{}, err err
 }
 
 // Count returns number of elements in the data source.
+// Optionally, can use a preficate func to filter the element.
 // Example:
 //	arr = []interface{}{0, 3, 6, 9}
 //	count, err := From(arr).Count() // count is 4
-func (this *Queryable) Count() (result interface{}, err error) {
-	aggregateOprs := []*AggregateOperation{Count()}
+func (this *Queryable) Count(predicates ...PredicateFunc) (result interface{}, err error) {
+	aggregateOprs := []*AggregateOperation{Count(predicates...)}
 
 	if result, err = this.Aggregate(aggregateOprs...); err == nil {
 		return result, nil
@@ -646,22 +651,22 @@ func (this *Queryable) Count() (result interface{}, err error) {
 	}
 }
 
-// CountBy returns number of elements matched the predicate in the data source.
-// Example:
-//	arr = []interface{}{0, 3, 6, 9}
-//	count, err := From(arr).Countby(func(i interface{}) bool {return i < 9}) // count is 3
-func (this *Queryable) CountBy(predicate PredicateFunc) (result interface{}, err error) {
-	if predicate == nil {
-		predicate = PredicateFunc(func(interface{}) bool { return true })
-	}
-	aggregateOprs := []*AggregateOperation{CountBy(predicate)}
+//// CountBy returns number of elements matched the predicate in the data source.
+//// Example:
+////	arr = []interface{}{0, 3, 6, 9}
+////	count, err := From(arr).Countby(func(i interface{}) bool {return i < 9}) // count is 3
+//func (this *Queryable) CountBy(predicate PredicateFunc) (result interface{}, err error) {
+//	if predicate == nil {
+//		predicate = PredicateFunc(func(interface{}) bool { return true })
+//	}
+//	aggregateOprs := []*AggregateOperation{Count(predicate)}
 
-	if result, err = this.Aggregate(aggregateOprs...); err == nil {
-		return result, nil
-	} else {
-		return nil, err
-	}
-}
+//	if result, err = this.Aggregate(aggregateOprs...); err == nil {
+//		return result, nil
+//	} else {
+//		return nil, err
+//	}
+//}
 
 // Average computes the average of numeric values in the data source.
 // Optionally, the value can be obtained by invoking a transform function on each element of the input sequence.
@@ -673,7 +678,7 @@ func (this *Queryable) Average(converts ...OneArgsFunc) (result interface{}, err
 	if converts != nil && len(converts) > 0 {
 		sumOpr = getMinOpr(converts[0])
 	}
-	aggregateOprs := []*AggregateOperation{sumOpr, Count()}
+	aggregateOprs := []*AggregateOperation{sumOpr, countAggOpr}
 
 	if results, err := this.Aggregate(aggregateOprs...); err == nil {
 		count := float64(results.([]interface{})[1].(int))
