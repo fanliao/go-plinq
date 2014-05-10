@@ -108,19 +108,33 @@ var (
 		return chanSrc
 	}
 
-	//将抛出错误的过滤函数，用于测试错误处理
+	//将在最后一个数据抛出错误的过滤函数，用于测试错误处理
 	filterWithPanic = func(v interface{}) bool {
-		if v.(int) == count-1 {
-			var s []interface{}
-			_ = s[2]
+		switch val := v.(type) {
+		case int:
+			if val == count-1 {
+				var s []interface{}
+				_ = s[2]
+			}
+		case user:
+			if val.id == count-1 {
+				var s []interface{}
+				_ = s[2]
+			}
 		}
 		return true
 	}
 
 	//过滤int类型的slice
 	filterInt = func(v interface{}) bool {
-		i := v.(int)
-		return i%2 == 0
+		computerTask()
+		switch val := v.(type) {
+		case int:
+			return val%2 == 0
+		case user:
+			return strconv.Itoa(val.id%2) == "0"
+		}
+		return false
 	}
 
 	//过滤interface{}类型的slice，并加入随机运算来打乱返回的顺序
