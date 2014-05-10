@@ -51,87 +51,9 @@ func init() {
 	}
 }
 
-//func BenchmarkCopy1(b *testing.B) {
-//	var rs []interface{}
-//	for i := 0; i < b.N; i++ {
-//		v := reflect.ValueOf(bUsers2)
-//		size := len(bUsers2)
-//		rs = make([]interface{}, size)
-//		for i := 0; i < size; i++ {
-//			rs[i] = v.Index(i).Interface()
-//		}
-
-//		if len(rs) != len(bUsers2) {
-//			b.Fail()
-//			b.Error("size is ", len(bUsers2))
-//		}
-//	}
-//	b.StopTimer()
-//	b.Log(rs[0])
-//}
-
-//func BenchmarkCopy2(b *testing.B) {
-//	var rs []interface{}
-//	for i := 0; i < b.N; i++ {
-//		var i interface{}
-//		i = bUsers2
-//		v := reflect.ValueOf(i)
-//		size := v.Len()
-//		rs = make([]interface{}, size)
-//		for i := 0; i < size; i++ {
-//			rs[i] = v.Index(i).Interface()
-//		}
-
-//		if len(rs) != len(bUsers2) {
-//			b.Fail()
-//			b.Error("size is ", len(bUsers2))
-//		}
-//	}
-//	b.StopTimer()
-//	b.Log(rs[0])
-//}
-
-//func BenchmarkCopy3(b *testing.B) {
-//	var rs reflect.Value
-//	for i := 0; i < b.N; i++ {
-//		var i interface{}
-//		i = bUsers2
-//		v := reflect.ValueOf(i)
-//		size := v.Len()
-//		rs = reflect.MakeSlice(reflect.SliceOf(v.Type().Elem()), size, size)
-//		reflect.Copy(rs, v)
-//		if rs.Len() != len(bUsers2) {
-//			b.Fail()
-//			b.Error("size is ", len(bUsers2))
-//		}
-//	}
-//	b.StopTimer()
-//	b.Log(rs.Index(0).Interface())
-//}
-
-//func BenchmarkFor1(b *testing.B) {
-//	for i := 0; i < b.N; i++ {
-//		for _, v := range bUsers {
-//			_ = v
-//		}
-//	}
-//}
-
-//func BenchmarkFor2(b *testing.B) {
-//	for i := 0; i < b.N; i++ {
-//		var i interface{}
-//		i = bUsers
-//		v := reflect.ValueOf(i)
-//		size := v.Len()
-//		for i := 0; i < size; i++ {
-//			_ = v.Index(i).Interface()
-//		}
-//	}
-//}
-
 func BenchmarkGoPLinq_Where(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		dst, _ := From(bUsers).Where(filterUser).Results()
+		dst, _ := From(bUsers).Where(filterFunc).Results()
 		if len(dst) != countForB/2 {
 			b.Fail()
 			b.Error("size is ", len(dst))
@@ -160,7 +82,7 @@ func BenchmarkGoLinq_Where(b *testing.B) {
 
 func BenchmarkGoPLinq_Select(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		dst, _ := From(bUsers).Select(selectUser).Results()
+		dst, _ := From(bUsers).Select(projectFunc).Results()
 		if len(dst) != countForB {
 			b.Fail()
 			//b.Log("arr=", arr)
@@ -188,66 +110,17 @@ func BenchmarkGoLinq_Select(b *testing.B) {
 	}
 }
 
-//func BenchmarkFor_Select(b *testing.B) {
+//func BenchmarkGoPLinq_GroupBy(b *testing.B) {
 //	for i := 0; i < b.N; i++ {
-//		rs := make([]interface{}, len(bUsers))
-//		for i, v := range bUsers {
-//			rs[i] = selectUser(v)
-//		}
-
-//		if len(rs) != countForB {
-//			b.Fail()
-//			//b.Log("arr=", arr)
-//			b.Error("size is ", len(rs))
-//			b.Log("dst=", rs)
-//		}
-//	}
-//}
-
-//func BenchmarkGoPLinq_SelectWhere(b *testing.B) {
-//	for i := 0; i < b.N; i++ {
-//		dst, _ := From(bUsers).Where(filterUser).Select(selectUser).Results()
-//		if len(dst) != countForB/2 {
-//			b.Fail()
-//			b.Error("size is ", len(dst))
-//			b.Log("dst=", dst)
-//		}
-//	}
-//}
-
-//func BenchmarkGoLinq_SelectWhere(b *testing.B) {
-//	if !testGoLinq {
-//		b.SkipNow()
-//		return
-//	}
-//	for i := 0; i < b.N; i++ {
-//		dst, _ := linq.From(bUsers).Where(func(i linq.T) (bool, error) {
-//			v := i.(user)
-//			computerTask()
-//			return strconv.Itoa(v.id%2) == "0", nil
-//		}).Select(func(v linq.T) (linq.T, error) {
-//			u := v.(user)
-//			computerTask()
-//			return strconv.Itoa(u.id) + "/" + u.name, nil
+//		dst, _ := From(bUsers).GroupBy(func(v interface{}) interface{} {
+//			return v.(user).id / 10
 //		}).Results()
-//		if len(dst) != countForB/2 {
+//		if len(dst) != countForB/10 {
 //			b.Fail()
 //			b.Error("size is ", len(dst))
 //		}
 //	}
 //}
-
-////func BenchmarkGoPLinq_GroupBy(b *testing.B) {
-////	for i := 0; i < b.N; i++ {
-////		dst, _ := From(bUsers).GroupBy(func(v interface{}) interface{} {
-////			return v.(user).id / 10
-////		}).Results()
-////		if len(dst) != countForB/10 {
-////			b.Fail()
-////			b.Error("size is ", len(dst))
-////		}
-////	}
-////}
 
 //test distinct-----------------------------------------------------------------------------
 func BenchmarkGoPLinq_Distinct(b *testing.B) {
@@ -268,6 +141,7 @@ func BenchmarkGoLinq_Distinct(b *testing.B) {
 		return
 	}
 	if countForB > 1000 {
+		b.Log("N is too large")
 		b.Fatal()
 		return
 	}
@@ -332,6 +206,7 @@ func BenchmarkGoLinq_Join(b *testing.B) {
 		return
 	}
 	if countForB > 1000 {
+		b.Log("N is too large")
 		b.Fatal()
 		return
 	}
@@ -381,7 +256,7 @@ func BenchmarkGoLinq_Union(b *testing.B) {
 ////test union--------------------------------------------------------------------
 func BenchmarkGoPLinq_UnionSelect(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		dst, _ := From(bUsers).Union(bUsers2, largeChunkSize).Select(selectUser).Results()
+		dst, _ := From(bUsers).Union(bUsers2, largeChunkSize).Select(projectFunc).Results()
 		if len(dst) != countForB+countForB/2 {
 			b.Fail()
 			//b.Log("arr=", arr)
@@ -701,49 +576,49 @@ func BenchmarkGoLinq_FirstBy(b *testing.B) {
 //	}
 //}
 
-func TestAvl(t *testing.T) {
-	compareUser := func(a interface{}, b interface{}) int {
-		if a == nil && b == nil {
-			return 0
-		} else if a == nil {
-			return -1
-		} else if b == nil {
-			return 1
-		}
+//func TestAvl(t *testing.T) {
+//	compareUser := func(a interface{}, b interface{}) int {
+//		if a == nil && b == nil {
+//			return 0
+//		} else if a == nil {
+//			return -1
+//		} else if b == nil {
+//			return 1
+//		}
 
-		a1, b1 := a.(*user), b.(*user)
-		if a1.id < b1.id {
-			return -1
-		} else if a1.id == b1.id {
-			return 0
-		} else {
-			return 1
-		}
-	}
+//		a1, b1 := a.(*user), b.(*user)
+//		if a1.id < b1.id {
+//			return -1
+//		} else if a1.id == b1.id {
+//			return 0
+//		} else {
+//			return 1
+//		}
+//	}
 
-	avlValid := func(src []interface{}, validFunc func(sorted []interface{})) {
-		avlRef := newAvlTree(compareUser)
-		for _, v := range src {
-			avlRef.Insert(v)
-		}
+//	avlValid := func(src []interface{}, validFunc func(sorted []interface{})) {
+//		avlRef := newAvlTree(compareUser)
+//		for _, v := range src {
+//			avlRef.Insert(v)
+//		}
 
-		sorted := avlRef.ToSlice()
-		validFunc(sorted)
-	}
+//		sorted := avlRef.ToSlice()
+//		validFunc(sorted)
+//	}
 
-	avlValid([]interface{}{nil, nil, &user{1, "user1"}, nil,
-		&user{4, "user4"}, &user{1, "user1"}, &user{6, "user6"},
-		&user{5, "user5"}, &user{2, "user2"}},
-		func(sorted []interface{}) {
-			if len(sorted) != 6 || sorted[0] != nil || sorted[5].(*user).id != 6 {
-				t.Log("failed, sort result=", sorted)
-			}
-		})
-	avlValid([]interface{}{},
-		func(sorted []interface{}) {
-			if len(sorted) != 0 {
-				t.Log("failed, sort result=", sorted)
-			}
-		})
+//	avlValid([]interface{}{nil, nil, &user{1, "user1"}, nil,
+//		&user{4, "user4"}, &user{1, "user1"}, &user{6, "user6"},
+//		&user{5, "user5"}, &user{2, "user2"}},
+//		func(sorted []interface{}) {
+//			if len(sorted) != 6 || sorted[0] != nil || sorted[5].(*user).id != 6 {
+//				t.Log("failed, sort result=", sorted)
+//			}
+//		})
+//	avlValid([]interface{}{},
+//		func(sorted []interface{}) {
+//			if len(sorted) != 0 {
+//				t.Log("failed, sort result=", sorted)
+//			}
+//		})
 
-}
+//}
