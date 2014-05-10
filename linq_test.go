@@ -1344,13 +1344,13 @@ func TestSumCountAvgMaxMin(t *testing.T) {
 			c.So(r, c.ShouldEqual, count)
 		})
 		c.Convey("CountBy an interface{} slice", func() {
-			r, err := From(tUsers).SetSizeOfChunk(size).CountBy(filterUser)
+			r, err := From(tUsers).SetSizeOfChunk(size).Count(filterUser)
 			//TODO: need test keep order
 			c.So(err, c.ShouldBeNil)
 			c.So(r, c.ShouldEqual, count/2)
 		})
 		c.Convey("send a nil predicate to CountBy", func() {
-			r, err := From(tUsers).SetSizeOfChunk(size).CountBy(nil)
+			r, err := From(tUsers).SetSizeOfChunk(size).Count(nil)
 			//TODO: need test keep order
 			c.So(err, c.ShouldBeNil)
 			c.So(r, c.ShouldEqual, count)
