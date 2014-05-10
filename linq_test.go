@@ -65,131 +65,110 @@ type userRoles struct {
 }
 
 // The functions used in testing----------------------------------------------
-func computerTask() {
-	for i := 0; i < 2; i++ {
-		_ = strconv.Itoa(i)
-	}
-}
-
-func confusedOrder() {
-	rand.Seed(10)
-	j := rand.Intn(1000000)
-	var sum float64 = 0
-	for k := 0; k < j; k++ {
-		sum += math.Cos(float64(k)) * math.Pi
-	}
-	_ = sum
-}
-
-//
-func filterWithPanic(v interface{}) bool {
-	var s []interface{}
-	_ = s[2]
-	return true
-}
-
-func filterWithPanic2(v interface{}) bool {
-	if v.(int) == count-1 {
-		var s []interface{}
-		_ = s[2]
-	}
-	return true
-}
-func getChan(src []interface{}) chan interface{} {
-	chanSrc := make(chan interface{})
-	go func() {
-		for _, v := range src {
-			chanSrc <- v
+var (
+	//用来给测试的操作增加计算量
+	computerTask = func() {
+		for i := 0; i < 2; i++ {
+			_ = strconv.Itoa(i)
 		}
-		close(chanSrc)
-	}()
-	return chanSrc
-}
+	}
 
-func getIntChan(src []int) chan int {
-	chanSrc := make(chan int)
-	go func() {
-		for _, v := range src {
-			chanSrc <- v
+	//随机运算，用于打乱次序
+	confusedOrder = func() {
+		rand.Seed(10)
+		j := rand.Intn(1000000)
+		var sum float64 = 0
+		for k := 0; k < j; k++ {
+			sum += math.Cos(float64(k)) * math.Pi
 		}
-		close(chanSrc)
-	}()
-	return chanSrc
-}
-
-func filterInt(v interface{}) bool {
-	i := v.(int)
-	return i%2 == 0
-}
-
-func filterIntForConfusedOrder(v interface{}) bool {
-	i := v.(int)
-	confusedOrder()
-	return i%2 == 0
-}
-
-func filterUser(v interface{}) bool {
-	u := v.(user)
-	//return u.id%2 == 0
-	computerTask()
-	return strconv.Itoa(u.id%2) == "0"
-}
-
-func filterMap(v interface{}) bool {
-	u := v.(*KeyValue)
-	return u.Key.(int)%2 == 0
-}
-
-func selectUserWithPanic(v interface{}) interface{} {
-	u := v.(user)
-	if u.id == count-1 {
-		var s []interface{}
-		_ = s[2]
+		_ = sum
 	}
-	return strconv.Itoa(u.id) + "/" + u.name
-}
 
-func selectUser(v interface{}) interface{} {
-	u := v.(user)
-	computerTask()
-	return strconv.Itoa(u.id) + "/" + u.name
-}
-
-func selectInt(v interface{}) interface{} {
-	return v.(int) * 10
-}
-
-func selectIntWithPanic(v interface{}) interface{} {
-	if v.(int) == count-1 {
-		var s []interface{}
-		_ = s[2]
+	//转化slice of interface{} 为chan of interface{}
+	getChan = func(src []interface{}) chan interface{} {
+		chanSrc := make(chan interface{})
+		go func() {
+			for _, v := range src {
+				chanSrc <- v
+			}
+			close(chanSrc)
+		}()
+		return chanSrc
 	}
-	return v
-}
 
-func selectManyWithPanic(v interface{}) []interface{} {
-	if v.(int) == count-1 {
-		var s []interface{}
-		_ = s[2]
+	//转化slice of int 为chan of int
+	getIntChan = func(src []int) chan int {
+		chanSrc := make(chan int)
+		go func() {
+			for _, v := range src {
+				chanSrc <- v
+			}
+			close(chanSrc)
+		}()
+		return chanSrc
 	}
-	return []interface{}{}
-}
 
-func selectIntMany(v interface{}) []interface{} {
-	rs := make([]interface{}, 2)
-	rs[0] = v.(int) * 10
-	rs[1] = v.(int) + count
-	return rs
-}
+	//将抛出错误的过滤函数，用于测试错误处理
+	filterWithPanic = func(v interface{}) bool {
+		if v.(int) == count-1 {
+			var s []interface{}
+			_ = s[2]
+		}
+		return true
+	}
 
-func selectIntManyForConfusedOrder(v interface{}) []interface{} {
-	rand.Seed(10)
-	confusedOrder()
-	rs := make([]interface{}, 2)
-	rs[0] = v.(int) * 10
-	rs[1] = v.(int) + count
-	return rs
-}
+	//过滤int类型的slice
+	filterInt = func(v interface{}) bool {
+		i := v.(int)
+		return i%2 == 0
+	}
+
+	//过滤interface{}类型的slice，并加入随机运算来打乱返回的顺序
+	filterIntForConfusedOrder = func(v interface{}) bool {
+		i := v.(int)
+		confusedOrder()
+		return i%2 == 0
+	}
+
+	//过滤User slice
+	filterUser = func(v interface{}) bool {
+		u := v.(user)
+		//return u.id%2 == 0
+		computerTask()
+		return strconv.Itoa(u.id%2) == "0"
+	}
+
+	//将抛出错误的转换函数，用于测试错误处理
+	selectUserWithPanic = func(v interface{}) interface{} {
+		u := v.(user)
+		if u.id == count-1 {
+			var s []interface{}
+			_ = s[2]
+		}
+		return strconv.Itoa(u.id) + "/" + u.name
+	}
+
+	//对user进行转换
+	selectUser = func(v interface{}) interface{} {
+		u := v.(user)
+		computerTask()
+		return strconv.Itoa(u.id) + "/" + u.name
+	}
+
+	//对Int进行转换
+	selectInt = func(v interface{}) interface{} {
+		return v.(int) * 10
+	}
+
+	//将抛出错误的转换函数，用于测试错误处理
+	selectIntWithPanic = func(v interface{}) interface{} {
+		if v.(int) == count-1 {
+			var s []interface{}
+			_ = s[2]
+		}
+		return v
+	}
+)
 
 // Testing functions----------------------------------------------------------
 func TestFrom(t *testing.T) {
@@ -343,7 +322,7 @@ func TestSelect(t *testing.T) {
 		})
 
 		c.Convey("If the error appears in before operations", func() {
-			_, err := From(getIntChan(tInts)).SetSizeOfChunk(size).Where(filterWithPanic2).Select(selectInt).Results()
+			_, err := From(getIntChan(tInts)).SetSizeOfChunk(size).Where(filterWithPanic).Select(selectInt).Results()
 			c.So(err, c.ShouldNotBeNil)
 		})
 
@@ -404,6 +383,30 @@ func TestSelect(t *testing.T) {
 }
 
 func TestSelectMany(t *testing.T) {
+	selectManyWithPanic := func(v interface{}) []interface{} {
+		if v.(int) == count-1 {
+			var s []interface{}
+			_ = s[2]
+		}
+		return []interface{}{}
+	}
+
+	selectIntMany := func(v interface{}) []interface{} {
+		rs := make([]interface{}, 2)
+		rs[0] = v.(int) * 10
+		rs[1] = v.(int) + count
+		return rs
+	}
+
+	selectIntManyForConfusedOrder := func(v interface{}) []interface{} {
+		rand.Seed(10)
+		confusedOrder()
+		rs := make([]interface{}, 2)
+		rs[0] = v.(int) * 10
+		rs[1] = v.(int) + count
+		return rs
+	}
+
 	test := func(size int) {
 		c.Convey("When passed nil function, error be returned", func() {
 			c.So(func() { From(tInts).SetSizeOfChunk(size).SelectMany(nil) }, c.ShouldPanicWith, ErrNilAction)
@@ -1672,7 +1675,7 @@ func TestSkipAndTake(t *testing.T) {
 			})
 
 			c.Convey("TakeWhile using a predicate func with panic error after a where operation with panic error", func() {
-				_, err := From(getChan(ints)).SetSizeOfChunk(size).Where(filterWithPanic2).TakeWhile(filterWithPanic).Results()
+				_, err := From(getChan(ints)).SetSizeOfChunk(size).Where(filterWithPanic).TakeWhile(filterWithPanic).Results()
 				c.So(err, c.ShouldNotBeNil)
 			})
 
@@ -1876,14 +1879,14 @@ func TestFirstBy(t *testing.T) {
 
 	c.Convey("Test FirstBy after where", t, func() {
 		c.Convey("FirstBy with panic an error in both two operations", func() {
-			_, found, err := From(tInts).Where(filterWithPanic2, parallelChunkSize).FirstBy(func(v interface{}) bool {
+			_, found, err := From(tInts).Where(filterWithPanic, parallelChunkSize).FirstBy(func(v interface{}) bool {
 				panic(errors.New("!error"))
 			})
 			c.So(err, c.ShouldNotBeNil)
 			c.So(found, c.ShouldEqual, false)
 		})
 		c.Convey("FirstBy nothing with panic an error in where operations", func() {
-			_, found, err := From(tInts).Where(filterWithPanic2, parallelChunkSize).FirstBy(func(v interface{}) bool {
+			_, found, err := From(tInts).Where(filterWithPanic, parallelChunkSize).FirstBy(func(v interface{}) bool {
 				return v.(int) == -1
 			})
 			c.So(err, c.ShouldNotBeNil)
@@ -1978,7 +1981,7 @@ func TestToChannel(t *testing.T) {
 		})
 
 		c.Convey("When error appears in last chunk from list source", func() {
-			out, errChan, err := From(tInts).Where(filterWithPanic2, parallelChunkSize).Select(selectInt, parallelChunkSize).ToChan()
+			out, errChan, err := From(tInts).Where(filterWithPanic, parallelChunkSize).Select(selectInt, parallelChunkSize).ToChan()
 			c.So(err, c.ShouldBeNil)
 			_, stepErr := getChanResult(out, errChan)
 			c.So(stepErr, c.ShouldNotBeNil)
@@ -1996,7 +1999,7 @@ func TestToChannel(t *testing.T) {
 		})
 
 		c.Convey("When error appears in last chunk from chan source", func() {
-			out, errChan, err := From(getIntChan(tInts)).Where(filterWithPanic2, parallelChunkSize).Select(selectInt, parallelChunkSize).ToChan()
+			out, errChan, err := From(getIntChan(tInts)).Where(filterWithPanic, parallelChunkSize).Select(selectInt, parallelChunkSize).ToChan()
 			c.So(err, c.ShouldBeNil)
 			_, stepErr := getChanResult(out, errChan)
 			c.So(stepErr, c.ShouldNotBeNil)
