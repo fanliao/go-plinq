@@ -230,16 +230,12 @@ func aggregateSlice(src Slicer, fs []*AggregateOperation, asSequential bool, asP
 
 	rs := make([]interface{}, len(fs))
 	for j := 0; j < len(fs); j++ {
-		//if (asSequential && fs[j].ReduceAction == nil) || (asParallel && fs[j].ReduceAction != nil) {
 		rs[j] = fs[j].Seed
-		//}
 	}
 
 	for i := 0; i < size; i++ {
 		for j := 0; j < len(fs); j++ {
-			//if (asSequential && fs[j].ReduceAction == nil) || (asParallel && fs[j].ReduceAction != nil) {
 			rs[j] = fs[j].AggAction(src.Index(i), rs[j])
-			//}
 		}
 	}
 	return NewSlicer(rs)
@@ -788,8 +784,6 @@ func (this *avlTree) ToSlice() []interface{} {
 func avlToSlice(root *avlNode, result *[]interface{}) []interface{} {
 	if result == nil {
 		panic(errors.New("avlToSlice, result must be not nil"))
-		//r := make([]interface{}, 0, 10)
-		//result = &r
 	}
 
 	if root == nil {
@@ -1059,20 +1053,6 @@ func mustNotNil(v interface{}, err error) {
 	}
 }
 
-//func isNil(v interface{}) bool {
-//	if v == nil {
-//		return true
-//	}
-//	if val := reflect.ValueOf(v); val.Kind() == reflect.Chan ||
-//		val.Kind() == reflect.Ptr || val.Kind() == reflect.Slice ||
-//		val.Kind() == reflect.Func || val.Kind() == reflect.Interface {
-//		if val.IsNil() {
-//			return true
-//		}
-//	}
-//	return false
-//}
-
 //aggregate functions---------------------------------------------------------------
 func sumIntOpr(v interface{}, t interface{}) interface{} {
 	return v.(int) + t.(int)
@@ -1098,54 +1078,6 @@ func minMaxOpr(v interface{}, t interface{}, isMin bool) interface{} {
 		return t
 	}
 }
-
-//func minOpr(v interface{}, t interface{}) interface{} {
-//	if isNil(t) {
-//		return v
-//	}
-//	fun := defLess
-//	if comparable, ok := v.(Comparable); ok {
-//		fun = Comparable.CompareTo
-//	}
-//	if fun(v, t) {
-//		return v
-//	} else {
-//		return t
-//	}
-
-//	if comparable, ok := v.(Comparable); ok {
-//		if comparable.CompareTo(t) == -1 {
-//			return v
-//		} else {
-//			return t
-//		}
-//	} else {
-//		if defLess(v, t) {
-//			return v
-//		} else {
-//			return t
-//		}
-//	}
-//}
-
-//func maxOpr(v interface{}, t interface{}) interface{} {
-//	if isNil(t) {
-//		return v
-//	}
-//	if comparable, ok := v.(Comparable); ok {
-//		if comparable.CompareTo(t) == -1 {
-//			return t
-//		} else {
-//			return v
-//		}
-//	} else {
-//		if defLess(v, t) {
-//			return t
-//		} else {
-//			return v
-//		}
-//	}
-//}
 
 func getAggByFunc(oriaAggFunc TwoArgsFunc, convert OneArgsFunc) TwoArgsFunc {
 	fun := oriaAggFunc

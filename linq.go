@@ -120,11 +120,6 @@ func Count(predicates ...PredicateFunc) *AggregateOperation {
 	}
 }
 
-////Returns CountBy operation that returns number of elements matched the predicate in the data source.
-//func CountBy(predicate PredicateFunc) *AggregateOperation {
-//	return getCountByOpr(predicate)
-//}
-
 //the queryable struct-------------------------------------------------------------------------
 
 // A ParallelOption presents the options of the paralleliam algorithm.
@@ -138,9 +133,8 @@ type ParallelOption struct {
 // All query functions will return Queryable.
 // For getting the result slice of the query, use Results(). use ToChan() can get a chan presents the result.
 type Queryable struct {
-	data  DataSource
-	steps []step
-	//stepErrs []interface{}
+	data    DataSource
+	steps   []step
 	errChan chan []error
 	ParallelOption
 }
@@ -239,7 +233,7 @@ func (this *Queryable) Select(selectFunc OneArgsFunc, chunkSizes ...int) *Querya
 	return this
 }
 
-// Select returns a query includes the SelectMany operation.
+// SelectMany returns a query includes the SelectMany operation.
 // SelectMany operation projects values that are based on a transform function and
 // then flattens them into one slice.
 //
@@ -780,9 +774,7 @@ func (this *Queryable) hGroupBy(keySelector OneArgsFunc, chunkSizes ...int) *Que
 	return this
 }
 
-// get be used in queryable internal.
-// get will executes all linq operations included in Queryable
-// and return the result
+// Executes the query and get latest data source
 func (this *Queryable) execute() (data DataSource, err error) {
 	if len(this.steps) == 0 {
 		this.errChan = nil
@@ -795,10 +787,6 @@ func (this *Queryable) execute() (data DataSource, err error) {
 	stepErrsChan := make(chan error)
 	go func() {
 		stepFutures := make([]error, 0, len(this.steps))
-		//if len(this.steps) == 0 {
-		//	this.errChan <- stepFutures
-		//	return
-		//}
 
 		i := 0
 		for e := range stepErrsChan {
@@ -872,7 +860,6 @@ func (this *Queryable) stepErrs() (err *AggregateError) {
 			err = NewAggregateError("Aggregate errors", errs)
 		}
 		close(this.errChan)
-		//this.errChan = make(chan []error)
 	} else {
 		return nil
 	}
@@ -911,7 +898,6 @@ func newQueryable(ds DataSource) (q *Queryable) {
 	q.steps = make([]step, 0, 4)
 	q.Degree = numCPU
 	q.ChunkSize = DEFAULTCHUNKSIZE
-	//q.errChan = make(chan []error)
 	q.data = ds
 	return
 }

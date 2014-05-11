@@ -353,7 +353,6 @@ func getJoinImpl(inner interface{},
 		})
 
 		var useDefHash uint32 = 0
-		//mapChunk := getMapChunkToKVChunkFunc(&useDefHash, outerKeySelector)
 		mapChunk := func(c *Chunk) (r *Chunk) {
 			outerKVs := getMapChunkToKVs(&useDefHash, outerKeySelector)(c).ToInterfaces()
 			results := make([]interface{}, 0, 10)
@@ -612,17 +611,13 @@ func getAggregate(src DataSource, aggregateFuncs []*AggregateOperation, option *
 	reduce := func(c *Chunk) {
 		if first {
 			for i := 0; i < len(rs); i++ {
-				//if aggregateFuncs[i].ReduceAction != nil {
 				rs[i] = aggregateFuncs[i].Seed
-				//}
 			}
 		}
 		first = false
 
 		for i := 0; i < len(rs); i++ {
-			//if aggregateFuncs[i].ReduceAction != nil {
 			rs[i] = aggregateFuncs[i].ReduceAction(c.Data.Index(i), rs[i])
-			//}
 		}
 	}
 
@@ -658,7 +653,6 @@ func getSkipTake(findMatch func(*Chunk, promise.Canceller) (int, bool), isTake b
 	return stepAction(func(src DataSource, option *ParallelOption, first bool) (dst DataSource, sf *promise.Future, keep bool, e error) {
 		switch s := src.(type) {
 		case *listSource:
-			//rs := s.ToSlice(false)
 			var (
 				i     int
 				found bool
@@ -1215,11 +1209,6 @@ func parallelMapToChan(src DataSource, reduceSrcChan chan *Chunk, mapChunk func(
 }
 
 func parallelMapChanToChan(src *chanSource, out chan *Chunk, task func(*Chunk) *Chunk, option *ParallelOption) (*promise.Future, chan *Chunk) {
-	//startOrder := 0
-	//if startOrders != nil && len(startOrders) > 0 {
-	//	startOrder = startOrders[0]
-	//}
-
 	var createOutChan bool
 	if out == nil {
 		out = make(chan *Chunk, option.Degree)
@@ -1231,8 +1220,6 @@ func parallelMapChanToChan(src *chanSource, out chan *Chunk, task func(*Chunk) *
 	fs := make([]*promise.Future, option.Degree)
 	for i := 0; i < option.Degree; i++ {
 		f := promise.Start(func() (r interface{}, e error) {
-			//var cc *Chunk
-			//TODO: promise.Start seems cannot capture the error stack?
 			defer func() {
 				if err := recover(); err != nil {
 					e = newErrorWithStacks(err)
@@ -1241,12 +1228,9 @@ func parallelMapChanToChan(src *chanSource, out chan *Chunk, task func(*Chunk) *
 			}()
 			for c := range srcChan {
 				if !isNil(c) {
-					//cc = c
 					d := task(c)
 					if out != nil && d != nil {
 						//fmt.Println("\nparallelMapChanToChan, from=", c.Order, c.Data.ToInterfaces(), "to=", d.Order, d.Data.ToInterfaces())
-						//d.Order += startOrder
-						//out <- d
 						sendChunk(out, d)
 					}
 				} else if cap(srcChan) > 0 {
@@ -1674,7 +1658,7 @@ func (this *chunkMatchResultList) Insert(node *chunkMatchResult) {
 		newList[order] = node
 		this.list = newList
 	}
-	//this.avl.Insert(node)
+
 	if node.matched {
 		this.matchChunk = node
 	}
@@ -1752,7 +1736,6 @@ func (this *chunkMatchResultList) handleMatchChunk(chunkResult *chunkMatchResult
 	} else {
 		//如果avl中不存在匹配的块，则检查当前块order是否等于下一个order，如果是，则找到了第一个匹配块，并进行对应处理
 		//如果不是下一个order，则插入list，以备后面的检查
-		//fmt.Println("发现第一个当前while块")
 		if this.putMatchChunk(chunkResult) {
 			return true
 		}
