@@ -30,7 +30,7 @@ var (
 )
 
 func init() {
-	fmt.Println("DEFAULTCHUNKSIZE=", DEFAULTCHUNKSIZE)
+	fmt.Println("DEFAULTCHUNKSIZE=", DefaultChunkSize)
 	fmt.Println("countForB=", countForB)
 	maxProcs = numCPU
 	runtime.GOMAXPROCS(maxProcs)

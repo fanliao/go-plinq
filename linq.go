@@ -10,14 +10,14 @@ import (
 )
 
 const (
-	DEFAULTCHUNKSIZE     = 200
-	LARGECHUNKSIZE       = 2000
-	SOURCE_LIST      int = iota //presents the list source
-	SOURCE_CHANNEL              //presents the channel source
+	LARGECHUNKSIZE     = 2000
+	SOURCE_LIST    int = iota //presents the list source
+	SOURCE_CHANNEL            //presents the channel source
 )
 
 var (
 	numCPU               int
+	DefaultChunkSize     = 200
 	ErrUnsupportSource   = errors.New("unsupport DataSource")
 	ErrNilSource         = errors.New("datasource cannot be nil")
 	ErrUnionNilSource    = errors.New("cannot union nil data source")
@@ -897,7 +897,7 @@ func newQueryable(ds DataSource) (q *Queryable) {
 	q.KeepOrder = true
 	q.steps = make([]step, 0, 4)
 	q.Degree = numCPU
-	q.ChunkSize = DEFAULTCHUNKSIZE
+	q.ChunkSize = DefaultChunkSize
 	q.data = ds
 	return
 }
