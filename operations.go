@@ -77,7 +77,7 @@ func (this commonStep) ChunkSize() int { return this.chunkSize }
 
 func (this commonStep) POption(option ParallelOption) *ParallelOption {
 	if this.typ == ACT_REVERSE || this.Typ() == ACT_UNION || this.Typ() == ACT_INTERSECT || this.Typ() == ACT_EXCEPT {
-		option.ChunkSize = LARGECHUNKSIZE
+		option.ChunkSize = DefaultLargeChunkSize
 	}
 	if this.chunkSize != 0 {
 		option.ChunkSize = this.chunkSize
@@ -384,7 +384,7 @@ func getJoinImpl(inner interface{},
 
 func canSequentialSet(src DataSource, src2 DataSource) bool {
 	if src.Typ() == SOURCE_LIST && src2.Typ() == SOURCE_LIST {
-		if src.ToSlice(false).Len() <= LARGECHUNKSIZE && src2.ToSlice(false).Len() <= LARGECHUNKSIZE {
+		if src.ToSlice(false).Len() <= DefaultLargeChunkSize && src2.ToSlice(false).Len() <= DefaultLargeChunkSize {
 			return true
 		}
 	}

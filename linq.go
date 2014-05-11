@@ -10,27 +10,27 @@ import (
 )
 
 const (
-	DEFAULTCHUNKSIZE     = 200
-	LARGECHUNKSIZE       = 2000
-	SOURCE_LIST      int = iota //presents the list source
-	SOURCE_CHANNEL              //presents the channel source
+	SOURCE_LIST    int = iota //presents the list source
+	SOURCE_CHANNEL            //presents the channel source
 )
 
 var (
-	numCPU               int
-	ErrUnsupportSource   = errors.New("unsupport DataSource")
-	ErrNilSource         = errors.New("datasource cannot be nil")
-	ErrUnionNilSource    = errors.New("cannot union nil data source")
-	ErrConcatNilSource   = errors.New("cannot concat nil data source")
-	ErrInterestNilSource = errors.New("cannot interest nil data source")
-	ErrExceptNilSource   = errors.New("cannot Except nil data source")
-	ErrJoinNilSource     = errors.New("cannot join nil data source")
-	ErrNilAction         = errors.New("action cannot be nil")
-	ErrOuterKeySelector  = errors.New("outerKeySelector cannot be nil")
-	ErrInnerKeySelector  = errors.New("innerKeySelector cannot be nil")
-	ErrResultSelector    = errors.New("resultSelector cannot be nil")
-	ErrTaskFailure       = errors.New("ErrTaskFailure")
-	countAggOpr          = getCountByOpr(nil)
+	numCPU                int
+	DefaultChunkSize      = 200
+	DefaultLargeChunkSize = 2000
+	ErrUnsupportSource    = errors.New("unsupport DataSource")
+	ErrNilSource          = errors.New("datasource cannot be nil")
+	ErrUnionNilSource     = errors.New("cannot union nil data source")
+	ErrConcatNilSource    = errors.New("cannot concat nil data source")
+	ErrInterestNilSource  = errors.New("cannot interest nil data source")
+	ErrExceptNilSource    = errors.New("cannot Except nil data source")
+	ErrJoinNilSource      = errors.New("cannot join nil data source")
+	ErrNilAction          = errors.New("action cannot be nil")
+	ErrOuterKeySelector   = errors.New("outerKeySelector cannot be nil")
+	ErrInnerKeySelector   = errors.New("innerKeySelector cannot be nil")
+	ErrResultSelector     = errors.New("resultSelector cannot be nil")
+	ErrTaskFailure        = errors.New("ErrTaskFailure")
+	countAggOpr           = getCountByOpr(nil)
 )
 
 func init() {
@@ -897,7 +897,7 @@ func newQueryable(ds DataSource) (q *Queryable) {
 	q.KeepOrder = true
 	q.steps = make([]step, 0, 4)
 	q.Degree = numCPU
-	q.ChunkSize = DEFAULTCHUNKSIZE
+	q.ChunkSize = DefaultChunkSize
 	q.data = ds
 	return
 }
