@@ -830,6 +830,48 @@ func getFirstElement(src DataSource, findMatch func(c *Chunk, canceller promise.
 	panic(ErrUnsupportSource)
 }
 
+// Get the action function for Any operation
+func getAny(src DataSource, predicate PredicateFunc, option *ParallelOption) (result interface{}, allMatched bool, err error) {
+	getMapChunk := func(c *Chunk) func(promise.Canceller) (interface{}, error) {
+		return func(canceller promise.Canceller) (foundNoMatched interface{}, e error) {
+			size := c.Data.Len()
+			for i := 0; i < size; i++ {
+				if canceller.IsCancellationRequested() {
+					break
+				}
+				if predicate(c.Data.Index(i)) {
+					return true, nil
+				}
+			}
+			//fmt.Println("getAny return", false)
+			return false, nil
+		}
+	}
+
+	predicateResult := func(v interface{}) bool {
+		if r, ok := v.(bool); r && ok {
+			return true
+		} else {
+			return false
+		}
+	}
+	var f *promise.Future
+	switch s := src.(type) {
+	case *listSource:
+		f = parallelMapListForAnyTrue(s, getMapChunk, predicateResult, option)
+	case *chanSource:
+		f = parallelMapChanForAnyTrue(s, getMapChunk, predicateResult, option)
+	}
+	r, e := f.Get()
+	if val, ok := r.(bool); ok {
+		return val, val, e
+	} else {
+		return false, false, e
+	}
+
+	return
+}
+
 func getChunkMatchResult(c *Chunk, findMatch func(c *Chunk, canceller promise.Canceller) (r int, found bool), useIndex bool) (r *chunkMatchResult) {
 	r = &chunkMatchResult{chunk: c}
 	if !useIndex {
@@ -1301,16 +1343,13 @@ func parallelMapListToChan(src DataSource, out chan *Chunk, task func(*Chunk) *C
 
 }
 
-func parallelMapListToList(src DataSource, task func(*Chunk) *Chunk, option *ParallelOption) *promise.Future {
-	return parallelMapList(src, func(c *Chunk) func() (interface{}, error) {
-		return func() (interface{}, error) {
-			r := task(c)
-			return r, nil
-		}
-	}, option)
-}
-
-func parallelMapList(src DataSource, getAction func(*Chunk) func() (interface{}, error), option *ParallelOption) (f *promise.Future) {
+func parallelMapListToList(src DataSource, task func(*Chunk) *Chunk, option *ParallelOption) (f *promise.Future) {
+	//return parallelMapList(src, func(c *Chunk) func() (interface{}, error) {
+	//	return func() (interface{}, error) {
+	//		r := task(c)
+	//		return r, nil
+	//	}
+	//}, option)
 	data := src.ToSlice(false)
 	size := data.Len()
 	if size == 0 {
@@ -1330,13 +1369,126 @@ func parallelMapList(src DataSource, getAction func(*Chunk) func() (interface{},
 		}
 		c := &Chunk{data.Slice(i*size, end), i, i * size} //, end}
 
-		f = promise.Start(getAction(c))
-		fs[i] = f
+		fs[i] = promise.Start(func() (interface{}, error) {
+			r := task(c)
+			return r, nil
+		})
 		j++
 	}
 	f = promise.WhenAll(fs[0:j]...)
 
 	return
+}
+
+//func parallelMapList(src DataSource, getAction func(*Chunk) func() (interface{}, error), option *ParallelOption) (f *promise.Future) {
+//	data := src.ToSlice(false)
+//	size := data.Len()
+//	if size == 0 {
+//		return promise.Wrap([]interface{}{})
+//	}
+//	lenOfData, size, j := size, ceilChunkSize(size, option.Degree), 0
+
+//	if size < option.ChunkSize {
+//		size = option.ChunkSize
+//	}
+
+//	fs := make([]*promise.Future, option.Degree)
+//	for i := 0; i < option.Degree && i*size < lenOfData; i++ {
+//		end := (i + 1) * size
+//		if end >= lenOfData {
+//			end = lenOfData
+//		}
+//		c := &Chunk{data.Slice(i*size, end), i, i * size} //, end}
+
+//		f = promise.Start(getAction(c))
+//		fs[i] = f
+//		j++
+//	}
+//	f = promise.WhenAll(fs[0:j]...)
+
+//	return
+//}
+
+//并行循环slice，如果任一任务的返回值满足要求，则返回该值，否则返回false，
+//如果没有匹配的返回值并且有任务失败则reject
+func parallelMapListForAnyTrue(src DataSource, getAction func(*Chunk) func(promise.Canceller) (interface{}, error), predicate PredicateFunc, option *ParallelOption) (f *promise.Future) {
+	data := src.ToSlice(false)
+	size := data.Len()
+	if size == 0 {
+		return promise.Wrap([]interface{}{})
+	}
+	lenOfData, size, j := size, ceilChunkSize(size, option.Degree), 0
+
+	if size < option.ChunkSize {
+		size = option.ChunkSize
+	}
+
+	fs := make([]*promise.Future, option.Degree)
+	for i := 0; i < option.Degree && i*size < lenOfData; i++ {
+		end := (i + 1) * size
+		if end >= lenOfData {
+			end = lenOfData
+		}
+		c := &Chunk{data.Slice(i*size, end), i, i * size} //, end}
+
+		f = promise.StartCanCancel(getAction(c))
+		fs[i] = f
+		j++
+	}
+	f = promise.WhenAnyTrue(predicate, fs[0:j]...)
+
+	return
+}
+
+//并行循环channel，如果任一任务的返回值满足要求，则返回该值，否则返回false，
+//如果没有匹配的返回值并且有任务失败则reject
+func parallelMapChanForAnyTrue(src *chanSource,
+	getAction func(*Chunk) func(promise.Canceller) (interface{}, error),
+	predicate PredicateFunc, option *ParallelOption) *promise.Future {
+
+	srcChan := src.ChunkChan(option.ChunkSize)
+
+	fs := make([]*promise.Future, option.Degree)
+	for i := 0; i < option.Degree; i++ {
+		k := i
+		f := promise.StartCanCancel(func(canceller promise.Canceller) (r interface{}, e error) {
+			defer func() {
+				if err := recover(); err != nil {
+					e = newErrorWithStacks(err)
+					//fmt.Println("parallelMapChanToChan, get error===:", cc, e)
+				}
+			}()
+			for c := range srcChan {
+				if !isNil(c) {
+					if result, err := getAction(c)(canceller); err == nil {
+						if predicate(result) {
+							r = result
+							fmt.Println("return 1", r, k)
+							return
+						}
+					} else {
+						fmt.Println("return 2", r, k)
+						return nil, err
+					}
+				} else if cap(srcChan) > 0 {
+					src.Close()
+					break
+				}
+			}
+			if src.future != nil {
+				if _, err := src.future.Get(); err != nil {
+					fmt.Println("return 3", r, k)
+					return nil, err
+				}
+			}
+			fmt.Println("return 4", r, k)
+			return
+		})
+		fs[i] = f
+	}
+	f := promise.WhenAnyTrue(predicate, fs...).Fail(func(err interface{}) { src.Close() })
+
+	return f
 }
 
 func parallelMatchListByDirection(src DataSource, getAction func(*Chunk, promise.Canceller) (int, bool), option *ParallelOption, befor2after bool) (f *promise.Future) {
@@ -1352,21 +1504,12 @@ func parallelMatchListByDirection(src DataSource, getAction func(*Chunk, promise
 	}
 
 	if size >= lenOfData {
-		f := promise.NewPromise()
-		func() {
-			defer func() {
-				if e := recover(); e != nil {
-					f.Reject(newErrorWithStacks(e))
-				}
-			}()
-			c := &Chunk{data, 0, 0}
-			if r, found := getAction(c, nil); found {
-				f.Resolve(r)
-			} else {
-				f.Resolve(-1)
-			}
-		}()
-		return f.Future
+		//数量小于默认的chunk size，直接start一个Promise
+		f := promise.Start(func() (r interface{}, e error) {
+			r, _ = getAction(&Chunk{data, 0, 0}, nil)
+			return
+		})
+		return f
 	}
 
 	//生成并行任务来查找符合条件的数据
@@ -1387,7 +1530,6 @@ func parallelMatchListByDirection(src DataSource, getAction func(*Chunk, promise
 			return r, nil
 		})
 		fs = append(fs, f)
-		//count++
 	}
 
 	//根据查找的顺序来检查各任务查找的结果

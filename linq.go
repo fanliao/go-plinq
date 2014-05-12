@@ -576,6 +576,44 @@ func (this *Queryable) LastBy(predicate PredicateFunc, chunkSizes ...int) (resul
 	})
 }
 
+// Any return true if any element matchs the provided predicate, otherwise return false.
+// Example:
+// 	found, err := From([]int{0,1,2,3}).Any(func (i interface{})bool{
+//		return i.(int) % 2 == 1
+// 	})
+// 	if err == nil {
+//		// found is true
+// 	}
+func (this *Queryable) Any(predicate PredicateFunc, chunkSizes ...int) (found bool, err error) {
+	_, found, err = this.singleValue(func(ds DataSource, pOption *ParallelOption) (result interface{}, found bool, err error) {
+		option, chunkSize := this.ParallelOption, getChunkSizeArg(chunkSizes...)
+		if chunkSize != 0 {
+			option.ChunkSize = chunkSize
+		}
+		return getAny(ds, predicate, &option)
+	})
+	return found, err
+}
+
+// All return true if all element matchs the provided predicate, otherwise return false.
+// Example:
+// 	found, err := From([]int{0,1,2,3}).All(func (i interface{})bool{
+//		return i.(int) % 2 == 1
+// 	})
+// 	if err == nil {
+//		// found is false
+// 	}
+func (this *Queryable) All(predicate PredicateFunc, chunkSizes ...int) (found bool, err error) {
+	_, found, err = this.singleValue(func(ds DataSource, pOption *ParallelOption) (result interface{}, found bool, err error) {
+		option, chunkSize := this.ParallelOption, getChunkSizeArg(chunkSizes...)
+		if chunkSize != 0 {
+			option.ChunkSize = chunkSize
+		}
+		return getAny(ds, invFunc(predicate), &option)
+	})
+	return !found, err
+}
+
 // Aggregate returns the results of aggregation operation.
 // Aggregation operation aggregates the result in the data source base on the AggregateOperation.
 //
