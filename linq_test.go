@@ -2000,6 +2000,98 @@ func TestFirstBy(t *testing.T) {
 	})
 }
 
+func TestAnyAndAll(t *testing.T) {
+	ints := make([]interface{}, count)
+	for i := 0; i < count; i++ {
+		ints[i] = i
+	}
+
+	c.Convey("Test Any and All in channel", t, func() {
+		c.Convey("Predicate with panic an error", func() {
+			_, err := From(getIntChan(tInts)).Any(func(v interface{}) bool {
+				panic(errors.New("!error"))
+			})
+			c.So(err, c.ShouldNotBeNil)
+		})
+		c.Convey("If an error appears in before operation", func() {
+			_, err := From(getIntChan(tInts)).Select(projectWithPanic).Any(func(v interface{}) bool {
+				return v.(int) == -1
+			})
+			c.So(err, c.ShouldNotBeNil)
+		})
+		c.Convey("Any and All nothing", func() {
+			found, err := From(getIntChan(tInts)).Any(func(v interface{}) bool {
+				return v.(int) == -1
+			})
+			c.So(err, c.ShouldBeNil)
+			c.So(found, c.ShouldEqual, false)
+
+			found, err = From(getIntChan(tInts)).All(func(v interface{}) bool {
+				return v.(int) == -1
+			})
+			c.So(err, c.ShouldBeNil)
+			c.So(found, c.ShouldEqual, false)
+		})
+		c.Convey("Find any int == 12", func() {
+			found, err := From(getIntChan(tInts)).Any(func(v interface{}) bool {
+				return v.(int) == 12
+			})
+			c.So(err, c.ShouldBeNil)
+			c.So(found, c.ShouldEqual, true)
+		})
+		c.Convey("Find all int >= 0", func() {
+			found, err := From(getIntChan(tInts)).Any(func(v interface{}) bool {
+				return v.(int) >= 0
+			})
+			c.So(err, c.ShouldBeNil)
+			c.So(found, c.ShouldEqual, true)
+		})
+	})
+
+	c.Convey("Test Any in slice", t, func() {
+		c.Convey("Any with panic an error", func() {
+			_, err := From(tInts).Any(func(v interface{}) bool {
+				panic(errors.New("!error"))
+			})
+			c.So(err, c.ShouldNotBeNil)
+		})
+		c.Convey("If an error appears in before operation", func() {
+			_, err := From(tInts).Select(projectWithPanic).Any(func(v interface{}) bool {
+				return v.(int) == -1
+			})
+			c.So(err, c.ShouldNotBeNil)
+		})
+		c.Convey("Any nothing", func() {
+			found, err := From(tInts).Any(func(v interface{}) bool {
+				return v.(int) == -1
+			})
+			c.So(err, c.ShouldBeNil)
+			c.So(found, c.ShouldEqual, false)
+
+			found, err = From(tInts).All(func(v interface{}) bool {
+				return v.(int) == -1
+			})
+			c.So(err, c.ShouldBeNil)
+			c.So(found, c.ShouldEqual, false)
+		})
+		c.Convey("Find any int == 12", func() {
+			found, err := From(tInts).Any(func(v interface{}) bool {
+				return v.(int) == 12
+			})
+			c.So(err, c.ShouldBeNil)
+			c.So(found, c.ShouldEqual, true)
+		})
+		c.Convey("Find all int >= 0", func() {
+			found, err := From(tInts).Any(func(v interface{}) bool {
+				return v.(int) >= 0
+			})
+			c.So(err, c.ShouldBeNil)
+			c.So(found, c.ShouldEqual, true)
+		})
+	})
+
+}
+
 func chanToSlice(out chan interface{}) (rs []interface{}) {
 	rs = make([]interface{}, 0, 4)
 	for v := range out {

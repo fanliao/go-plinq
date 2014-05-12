@@ -830,48 +830,43 @@ func getFirstElement(src DataSource, findMatch func(c *Chunk, canceller promise.
 	panic(ErrUnsupportSource)
 }
 
-// Get the action function for All operation
-func getAll(src DataSource, predicate PredicateFunc, option *ParallelOption) (allMatched bool, err error) {
-	getmapChunk := func(c *Chunk) func(promise.Canceller) (interface{}, error) {
+// Get the action function for Any operation
+func getAny(src DataSource, predicate PredicateFunc, option *ParallelOption) (result interface{}, allMatched bool, err error) {
+	getMapChunk := func(c *Chunk) func(promise.Canceller) (interface{}, error) {
 		return func(canceller promise.Canceller) (foundNoMatched interface{}, e error) {
 			size := c.Data.Len()
 			for i := 0; i < size; i++ {
 				if canceller.IsCancellationRequested() {
 					break
 				}
-				if !predicate(c.Data.Index(i)) {
+				if predicate(c.Data.Index(i)) {
 					return true, nil
 				}
 			}
+			//fmt.Println("getAny return", false)
 			return false, nil
 		}
 	}
 
-	////try to use sequentail if the size of the data is less than size of chunk
-	//if list, err, handled := trySequentialMap(src, option, mapChunk); handled {
-	//	return list, nil, option.KeepOrder, err
-	//} else if err != nil {
-	//	//fmt.Println("get error!!!!")
-	//	return nil, nil, option.KeepOrder, err
-	//}
-
+	predicateResult := func(v interface{}) bool {
+		if r, ok := v.(bool); r && ok {
+			return true
+		} else {
+			return false
+		}
+	}
+	var f *promise.Future
 	switch s := src.(type) {
 	case *listSource:
-		f := parallelMapListForAnyTrue(s, getmapChunk, func(v interface{}) bool { return v.(bool) == true }, option)
-		r, e := f.Get()
-		if val, ok := r.(bool); ok {
-			return val, e
-		} else {
-			return false, e
-		}
+		f = parallelMapListForAnyTrue(s, getMapChunk, predicateResult, option)
 	case *chanSource:
-		f := parallelMapChanForAnyTrue(s, getmapChunk, func(v interface{}) bool { return v.(bool) == true }, option)
-		r, e := f.Get()
-		if val, ok := r.(bool); ok {
-			return val, e
-		} else {
-			return false, e
-		}
+		f = parallelMapChanForAnyTrue(s, getMapChunk, predicateResult, option)
+	}
+	r, e := f.Get()
+	if val, ok := r.(bool); ok {
+		return val, val, e
+	} else {
+		return false, false, e
 	}
 
 	return
