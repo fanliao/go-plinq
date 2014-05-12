@@ -1450,7 +1450,7 @@ func parallelMapChanForAnyTrue(src *chanSource,
 
 	fs := make([]*promise.Future, option.Degree)
 	for i := 0; i < option.Degree; i++ {
-		k := i
+		//k := i
 		f := promise.StartCanCancel(func(canceller promise.Canceller) (r interface{}, e error) {
 			defer func() {
 				if err := recover(); err != nil {
@@ -1463,11 +1463,11 @@ func parallelMapChanForAnyTrue(src *chanSource,
 					if result, err := getAction(c)(canceller); err == nil {
 						if predicate(result) {
 							r = result
-							fmt.Println("return 1", r, k)
+							//fmt.Println("return 1", r, k)
 							return
 						}
 					} else {
-						fmt.Println("return 2", r, k)
+						//fmt.Println("return 2", r, k)
 						return nil, err
 					}
 				} else if cap(srcChan) > 0 {
@@ -1477,11 +1477,11 @@ func parallelMapChanForAnyTrue(src *chanSource,
 			}
 			if src.future != nil {
 				if _, err := src.future.Get(); err != nil {
-					fmt.Println("return 3", r, k)
+					//fmt.Println("return 3", r, k)
 					return nil, err
 				}
 			}
-			fmt.Println("return 4", r, k)
+			//fmt.Println("return 4", r, k)
 			return
 		})
 		fs[i] = f
