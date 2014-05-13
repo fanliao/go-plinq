@@ -1238,6 +1238,61 @@ func foundMatchFunc(predicate PredicateFunc, findFirst bool) func(c *Chunk, canc
 
 //paralleliam functions--------------------------------------------------
 
+//连续分割，将slice分割为几个连续的块，块数=option.Degree
+func splitContinuous(src DataSource, action func(*Chunk), option *ParallelOption) {
+	data := src.ToSlice(false)
+	size := data.Len()
+	lenOfData, size := size, ceilChunkSize(size, option.Degree)
+
+	if size < option.ChunkSize {
+		size = option.ChunkSize
+	}
+
+	for i := 0; i < option.Degree && i*size < lenOfData; i++ {
+		end := (i + 1) * size
+		if end >= lenOfData {
+			end = lenOfData
+		}
+		c := &Chunk{data.Slice(i*size, end), i, i * size} //, end}
+		action(c)
+	}
+
+	return
+}
+
+//条带式分割，将slice分割为固定大小的Chunk，然后发送到Channel并返回
+//如果数据量==0，则返回nil
+func splitToChunkChan(src DataSource, option *ParallelOption) (ch chan *Chunk) {
+	data := src.ToSlice(false)
+	lenOfData := data.Len()
+
+	size := option.ChunkSize
+	if size < lenOfData/(numCPU*5) {
+		size = lenOfData / (numCPU * 5)
+	}
+	//fmt.Println("splitToChunkChan, size=", size, "len=", lenOfData)
+	ch = make(chan *Chunk, option.Degree)
+	go func() {
+		if lenOfData == 0 {
+			sendChunk(ch, &Chunk{NewSlicer([]interface{}{}), 0, 0})
+		}
+		for i := 0; i*size < lenOfData; i++ {
+			end := (i + 1) * size
+			if end >= lenOfData {
+				end = lenOfData
+			}
+			c := &Chunk{data.Slice(i*size, end), i, i * size} //, end}
+			//fmt.Println("parallelMapListToChan, send", i, size, data.Slice(i*size, end).ToInterfaces())
+			sendChunk(ch, c)
+		}
+		func() {
+			defer func() { _ = recover() }()
+			close(ch)
+		}()
+	}()
+	return
+}
+
 func parallelMapToChan(src DataSource, reduceSrcChan chan *Chunk, mapChunk func(c *Chunk) (r *Chunk), option *ParallelOption) (f *promise.Future, ch chan *Chunk) {
 	//get all values and keys
 	switch s := src.(type) {
@@ -1304,36 +1359,45 @@ func parallelMapListToChan(src DataSource, out chan *Chunk, task func(*Chunk) *C
 		createOutChan = true
 	}
 
-	var f *promise.Future
-	data := src.ToSlice(false)
-	lenOfData := data.Len()
+	//var f *promise.Future
+	//data := src.ToSlice(false)
+	//lenOfData := data.Len()
 
-	if lenOfData == 0 {
+	//if lenOfData == 0 {
+	//	f = promise.Wrap([]interface{}{})
+	//} else {
+	//	size := option.ChunkSize
+	//	if size < lenOfData/(numCPU*5) {
+	//		size = lenOfData / (numCPU * 5)
+	//	}
+	//	//fmt.Println("parallelMapListToChan, size=", size, "len=", lenOfData)
+	//	ch := make(chan *Chunk, option.Degree)
+	//	go func() {
+	//		for i := 0; i*size < lenOfData; i++ {
+	//			end := (i + 1) * size
+	//			if end >= lenOfData {
+	//				end = lenOfData
+	//			}
+	//			c := &Chunk{data.Slice(i*size, end), i, i * size} //, end}
+	//			//fmt.Println("parallelMapListToChan, send", i, size, data.Slice(i*size, end).ToInterfaces())
+	//			sendChunk(ch, c)
+	//		}
+	//		func() {
+	//			defer func() { _ = recover() }()
+	//			close(ch)
+	//		}()
+	//	}()
+
+	//	cs := &chanSource{chunkChan: ch}
+	//	f, out = parallelMapChanToChan(cs, out, task, option)
+	//}
+
+	var f *promise.Future
+	chunkChan := splitToChunkChan(src, option)
+	if chunkChan == nil {
 		f = promise.Wrap([]interface{}{})
 	} else {
-		size := option.ChunkSize
-		if size < lenOfData/(numCPU*5) {
-			size = lenOfData / (numCPU * 5)
-		}
-		//fmt.Println("parallelMapListToChan, size=", size, "len=", lenOfData)
-		ch := make(chan *Chunk, option.Degree)
-		go func() {
-			for i := 0; i*size < lenOfData; i++ {
-				end := (i + 1) * size
-				if end >= lenOfData {
-					end = lenOfData
-				}
-				c := &Chunk{data.Slice(i*size, end), i, i * size} //, end}
-				//fmt.Println("parallelMapListToChan, send", i, size, data.Slice(i*size, end).ToInterfaces())
-				sendChunk(ch, c)
-			}
-			func() {
-				defer func() { _ = recover() }()
-				close(ch)
-			}()
-		}()
-
-		cs := &chanSource{chunkChan: ch}
+		cs := &chanSource{chunkChan: chunkChan}
 		f, out = parallelMapChanToChan(cs, out, task, option)
 	}
 	if createOutChan {
@@ -1377,37 +1441,17 @@ func parallelMapListToList(src DataSource, task func(*Chunk) *Chunk, option *Par
 	}
 	f = promise.WhenAll(fs[0:j]...)
 
+/*	i, fs := 0, make([]*promise.Future, option.Degree)
+	splitContinuous(src, func(c *Chunk){
+		fs[i] = promise.Start(func() (interface{}, error) {
+			r := task(c)
+			return r, nil
+		})
+		i++
+	}, option)
+	f = promise.WhenAll(fs[0:i]...)*/
 	return
 }
-
-//func parallelMapList(src DataSource, getAction func(*Chunk) func() (interface{}, error), option *ParallelOption) (f *promise.Future) {
-//	data := src.ToSlice(false)
-//	size := data.Len()
-//	if size == 0 {
-//		return promise.Wrap([]interface{}{})
-//	}
-//	lenOfData, size, j := size, ceilChunkSize(size, option.Degree), 0
-
-//	if size < option.ChunkSize {
-//		size = option.ChunkSize
-//	}
-
-//	fs := make([]*promise.Future, option.Degree)
-//	for i := 0; i < option.Degree && i*size < lenOfData; i++ {
-//		end := (i + 1) * size
-//		if end >= lenOfData {
-//			end = lenOfData
-//		}
-//		c := &Chunk{data.Slice(i*size, end), i, i * size} //, end}
-
-//		f = promise.Start(getAction(c))
-//		fs[i] = f
-//		j++
-//	}
-//	f = promise.WhenAll(fs[0:j]...)
-
-//	return
-//}
 
 //并行循环slice，如果任一任务的返回值满足要求，则返回该值，否则返回false，
 //如果没有匹配的返回值并且有任务失败则reject
