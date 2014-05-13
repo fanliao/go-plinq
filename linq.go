@@ -804,9 +804,9 @@ func (this *Queryable) execute() (data DataSource, err error) {
 	if len(this.steps) == 0 {
 		this.errChan = nil
 		return this.data, nil
-	} else {
-		this.errChan = make(chan []error)
-	}
+	} 
+	
+	this.errChan = make(chan []error)
 
 	//create a goroutines to collect the errors for the pipeline mode step
 	stepErrsChan := make(chan error)
