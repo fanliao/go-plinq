@@ -1,3 +1,19 @@
+/*
+Package plinq implements a library for parallel querying and manipulating slice or channel.
+A quick start sample:
+
+ch := make(chan int)
+go func() {
+	for i := 0; i++; i < 10000 { ch <- i }
+	close(ch)
+}()
+
+rs, err := From(ch).Where(func(v interface{}) bool {
+	return v.(int) %2 == 0
+}).Select(func(v interface{}) interface{} {
+	return v.(int) * 10
+}).Results()
+*/
 package plinq
 
 import (
@@ -9,15 +25,19 @@ import (
 	"sync"
 )
 
+var _ = fmt.Println //for debugger
+
 const (
 	SOURCE_LIST    int = iota //presents the list source
 	SOURCE_CHANNEL            //presents the channel source
 )
 
 var (
-	numCPU                int
 	DefaultChunkSize      = 200
 	DefaultLargeChunkSize = 2000
+)
+
+var (
 	ErrUnsupportSource    = errors.New("unsupport DataSource")
 	ErrNilSource          = errors.New("datasource cannot be nil")
 	ErrUnionNilSource     = errors.New("cannot union nil data source")
@@ -33,11 +53,9 @@ var (
 	countAggOpr           = getCountByOpr(nil)
 )
 
+var numCPU                int
 func init() {
 	numCPU = runtime.NumCPU()
-	_ = fmt.Println
-	//fmt.Println("numCPU is", numCPU)
-
 }
 
 type PredicateFunc func(interface{}) bool
@@ -45,21 +63,21 @@ type OneArgsFunc func(interface{}) interface{}
 type TwoArgsFunc func(interface{}, interface{}) interface{}
 type CompareFunc func(interface{}, interface{}) int
 
-//The Comparable presents the type can support the compare operation
+// Comparable presents the type can support the compare operation
 type Comparable interface {
 	CompareTo(interface{}) int
 }
 
 // the struct and interface about data DataSource---------------------------------------------------
 
-// A Chunk presents a data chunk, it is the minimal data unit for a task.
+// Chunk presents a data chunk, it is the minimal data unit for a task.
 type Chunk struct {
 	Data       Slicer //[]interface{}
 	Order      int    //a index presents the order of chunk
 	StartIndex int    //a index presents the start index in whole data
 }
 
-// The DataSource presents the data of linq operation，
+// DataSource presents the data of linq operation，
 // Most linq operations usually convert a DataSource to another DataSource
 type DataSource interface {
 	Typ() int                 //list or chan?
@@ -69,13 +87,12 @@ type DataSource interface {
 
 // KeyValue presents a key value pair, it be used by GroupBy, Join and Set operations
 type KeyValue struct {
-	Key   interface{}
-	Value interface{}
+	Key, Value interface{}
 }
 
 //Aggregate operation structs and functions-------------------------------
 
-//An AggregateOperation presents the customized aggregate operation.
+//AggregateOperation presents the customized aggregate operation.
 //It enables intermediate aggregation over a chunk,
 //with a final aggregation function to combine the results of all chunks.
 //TODO: let user can set the size of chunk for Aggregate operation
@@ -87,7 +104,7 @@ type AggregateOperation struct {
 
 // The functions for getting Standard Sum, Count, Min and Max Aggregation operation
 
-//Returns Max operation that returns the maximum value. optionally, user can invokes a transform function on each element
+// Max return the operation for getting the maximum value. optionally, user can invokes a transform function on each element
 func Max(converts ...OneArgsFunc) *AggregateOperation {
 	if converts != nil && len(converts) > 0 {
 		return getMaxOpr(converts[0])
@@ -95,7 +112,7 @@ func Max(converts ...OneArgsFunc) *AggregateOperation {
 	return getMaxOpr(nil)
 }
 
-//Returns Min operation that returns the minimum value. optionally, user can invokes a transform function on each element
+// Min return the operation for getting the minimum value. optionally, user can invokes a transform function on each element
 func Min(converts ...OneArgsFunc) *AggregateOperation {
 	if converts != nil && len(converts) > 0 {
 		return getMinOpr(converts[0])
@@ -103,7 +120,7 @@ func Min(converts ...OneArgsFunc) *AggregateOperation {
 	return getMinOpr(nil)
 }
 
-//Returns Sum operation that computes the sum of all elements. optionally, the value can be obtained by invoking a transform function on each element of the input sequence.
+// Sum returns the operation that computes the sum of all elements. optionally, the value can be obtained by invoking a transform function on each element of the input sequence.
 func Sum(converts ...OneArgsFunc) *AggregateOperation {
 	if converts != nil && len(converts) > 0 {
 		return getSumOpr(converts[0])
@@ -111,7 +128,7 @@ func Sum(converts ...OneArgsFunc) *AggregateOperation {
 	return getSumOpr(nil)
 }
 
-//Returns Count operation that returns number of elements in the data source.
+//Count returns the operation that returns number of elements in the data source.
 func Count(predicates ...PredicateFunc) *AggregateOperation {
 	if predicates == nil || len(predicates) == 0 {
 		return countAggOpr
@@ -122,14 +139,14 @@ func Count(predicates ...PredicateFunc) *AggregateOperation {
 
 //the queryable struct-------------------------------------------------------------------------
 
-// A ParallelOption presents the options of the paralleliam algorithm.
+// ParallelOption presents the options of the paralleliam algorithm.
 type ParallelOption struct {
 	Degree    int  //The degree of the paralleliam algorithm
 	ChunkSize int  //The size of chunk
 	KeepOrder bool //whether need keep order of original data
 }
 
-// A Queryable presents an object includes the data and query operations.
+// Queryable presents an object includes the data and query operations.
 // All query functions will return Queryable.
 // For getting the result slice of the query, use Results(). use ToChan() can get a chan presents the result.
 type Queryable struct {
@@ -139,8 +156,8 @@ type Queryable struct {
 	ParallelOption
 }
 
-// From initializes a linq query with passed slice, map or channel as the data source.
-// input parameter must be a slice, map or channel. Otherwise panics ErrUnsupportSource.
+// From initializes a Queryable with slice or channel as the data source.
+// input parameter must be a slice or channel. Otherwise panics ErrUnsupportSource.
 //
 // Example:
 //     i1 := []int{1,2,3,4,5,6}
@@ -186,7 +203,7 @@ func (this *Queryable) Results() (results []interface{}, err error) {
 // If the error occurred in during evaluation of the query, it will be returned.
 //
 // Example:
-// 	ch, err := From([]interface{}{"Jack", "Rock"}).Select(something).toChan
+// 	ch, errChan, err := From([]interface{}{"Jack", "Rock"}).Select(something).ToChan()
 func (this *Queryable) ToChan() (out chan interface{}, errChan chan error, err error) {
 	if ds, e := this.execute(); e == nil {
 		out = ds.ToChan()
@@ -383,6 +400,7 @@ func (this *Queryable) Join(inner interface{},
 	outerKeySelector OneArgsFunc,
 	innerKeySelector OneArgsFunc,
 	resultSelector TwoArgsFunc, chunkSizes ...int) *Queryable {
+	
 	mustNotNil(inner, ErrJoinNilSource)
 	mustNotNil(outerKeySelector, ErrOuterKeySelector)
 	mustNotNil(innerKeySelector, ErrInnerKeySelector)
@@ -400,6 +418,7 @@ func (this *Queryable) LeftJoin(inner interface{},
 	outerKeySelector OneArgsFunc,
 	innerKeySelector OneArgsFunc,
 	resultSelector TwoArgsFunc, chunkSizes ...int) *Queryable {
+	
 	mustNotNil(inner, ErrJoinNilSource)
 	mustNotNil(outerKeySelector, ErrOuterKeySelector)
 	mustNotNil(innerKeySelector, ErrInnerKeySelector)
@@ -434,6 +453,7 @@ func (this *Queryable) LeftGroupJoin(inner interface{},
 	outerKeySelector OneArgsFunc,
 	innerKeySelector OneArgsFunc,
 	resultSelector func(interface{}, []interface{}) interface{}, chunkSizes ...int) *Queryable {
+	
 	mustNotNil(inner, ErrJoinNilSource)
 	mustNotNil(outerKeySelector, ErrOuterKeySelector)
 	mustNotNil(innerKeySelector, ErrInnerKeySelector)
@@ -462,7 +482,6 @@ func (this *Queryable) Reverse(chunkSizes ...int) *Queryable {
 // 	arr, err := From([]int{1,2,3,4,5,6}).Skip(3).Results()
 //		// arr will be 4, 5, 6
 func (this *Queryable) Skip(count int) *Queryable {
-	//this.act.(predicate predicateFunc)
 	this.steps = append(this.steps, commonStep{ACT_SKIP, count, 0})
 	return this
 }
@@ -477,7 +496,7 @@ func (this *Queryable) Skip(count int) *Queryable {
 //		// arr will be 3,4,5,6
 func (this *Queryable) SkipWhile(predicate func(interface{}) bool, chunkSizes ...int) *Queryable {
 	mustNotNil(predicate, ErrNilAction)
-	//this.act.(predicate predicateFunc)
+
 	this.steps = append(this.steps, commonStep{ACT_SKIPWHILE, PredicateFunc(predicate), getChunkSizeArg(chunkSizes...)})
 	return this
 }
@@ -630,15 +649,16 @@ func (this *Queryable) All(predicate PredicateFunc, chunkSizes ...int) (found bo
 //	// or
 //	sum, err := From(arr).Aggregate(Sum) // sum is 18
 func (this *Queryable) Aggregate(aggregateFuncs ...*AggregateOperation) (result interface{}, err error) {
-	result, _, err = this.singleValue(func(ds DataSource, pOption *ParallelOption) (resultValue interface{}, found bool, err1 error) {
-		results, e := getAggregate(ds, aggregateFuncs, &(this.ParallelOption))
-		if e != nil {
-			return nil, false, e
+	result, _, err = this.singleValue(func(ds DataSource, pOption *ParallelOption) (resultValue interface{}, found bool, e error) {
+		rs, err1 := getAggregate(ds, aggregateFuncs, &(this.ParallelOption))
+		if err1 != nil {
+			e = err1
+			return
 		}
 		if len(aggregateFuncs) == 1 {
-			resultValue = results[0]
+			resultValue = rs[0]
 		} else {
-			resultValue = results
+			resultValue = rs
 		}
 		return
 	})
@@ -658,12 +678,7 @@ func (this *Queryable) Sum(converts ...OneArgsFunc) (result interface{}, err err
 	}
 	aggregateOprs := []*AggregateOperation{opr}
 
-	if result, err = this.Aggregate(aggregateOprs...); err == nil {
-		return result, nil
-	} else {
-		return nil, err
-	}
-
+	return this.Aggregate(aggregateOprs...)
 }
 
 // Count returns number of elements in the data source.
@@ -674,29 +689,8 @@ func (this *Queryable) Sum(converts ...OneArgsFunc) (result interface{}, err err
 func (this *Queryable) Count(predicates ...PredicateFunc) (result interface{}, err error) {
 	aggregateOprs := []*AggregateOperation{Count(predicates...)}
 
-	if result, err = this.Aggregate(aggregateOprs...); err == nil {
-		return result, nil
-	} else {
-		return nil, err
-	}
+	return this.Aggregate(aggregateOprs...)
 }
-
-//// CountBy returns number of elements matched the predicate in the data source.
-//// Example:
-////	arr = []interface{}{0, 3, 6, 9}
-////	count, err := From(arr).Countby(func(i interface{}) bool {return i < 9}) // count is 3
-//func (this *Queryable) CountBy(predicate PredicateFunc) (result interface{}, err error) {
-//	if predicate == nil {
-//		predicate = PredicateFunc(func(interface{}) bool { return true })
-//	}
-//	aggregateOprs := []*AggregateOperation{Count(predicate)}
-
-//	if result, err = this.Aggregate(aggregateOprs...); err == nil {
-//		return result, nil
-//	} else {
-//		return nil, err
-//	}
-//}
 
 // Average computes the average of numeric values in the data source.
 // Optionally, the value can be obtained by invoking a transform function on each element of the input sequence.
@@ -710,14 +704,15 @@ func (this *Queryable) Average(converts ...OneArgsFunc) (result interface{}, err
 	}
 	aggregateOprs := []*AggregateOperation{sumOpr, countAggOpr}
 
-	if results, err := this.Aggregate(aggregateOprs...); err == nil {
-		count := float64(results.([]interface{})[1].(int))
-		sum := results.([]interface{})[0]
-
-		return divide(sum, count), nil
-	} else {
+	results, e := this.Aggregate(aggregateOprs...)
+	if e != nil {
 		return nil, err
 	}
+	
+	count := float64(results.([]interface{})[1].(int))
+	sum := results.([]interface{})[0]
+
+	return divide(sum, count), nil
 }
 
 // Max returns the maximum value in the data source.
@@ -735,11 +730,7 @@ func (this *Queryable) Max(converts ...OneArgsFunc) (result interface{}, err err
 
 	aggregateOprs := []*AggregateOperation{opr}
 
-	if results, err := this.Aggregate(aggregateOprs...); err == nil {
-		return results, nil
-	} else {
-		return nil, err
-	}
+	return this.Aggregate(aggregateOprs...)
 }
 
 // Min returns the minimum value in the data source.
@@ -756,11 +747,7 @@ func (this *Queryable) Min(converts ...OneArgsFunc) (result interface{}, err err
 	}
 
 	aggregateOprs := []*AggregateOperation{opr}
-	if results, err := this.Aggregate(aggregateOprs...); err == nil {
-		return results, nil
-	} else {
-		return nil, err
-	}
+	return this.Aggregate(aggregateOprs...)
 }
 
 // TakeWhile returns a query includes the TakeWhile operation.

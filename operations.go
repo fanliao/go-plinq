@@ -1260,6 +1260,116 @@ func splitContinuous(src DataSource, action func(*Chunk), option *ParallelOption
 	return
 }
 
+func parallelMapToChan(src DataSource, reduceSrcChan chan *Chunk, mapChunk func(c *Chunk) (r *Chunk), option *ParallelOption) (f *promise.Future, ch chan *Chunk) {
+	//get all values and keys
+	switch s := src.(type) {
+	case *listSource:
+		return parallelMapListToChan(s, reduceSrcChan, mapChunk, option)
+	case *chanSource:
+		return parallelMapChanToChan(s, reduceSrcChan, mapChunk, option) //, startOrders...)
+	default:
+		panic(ErrUnsupportSource)
+	}
+}
+
+func forEachChan(src *chanSource, srcChan chan *Chunk, action func(*Chunk) (result interface{}, beEnded bool, err error)) (r interface{}, e error) {
+	defer func() {
+		if err := recover(); err != nil {
+			e = newErrorWithStacks(err)
+			//fmt.Println("parallelMapChanToChan, get error===:", cc, e)
+		}
+	}()
+	for c := range srcChan {
+		if !isNil(c) {
+			r, beEnded, err := action(c)
+			if err != nil {
+				return nil, err
+			} else if beEnded {
+				return r, err
+			}
+			//if result, err := getAction(c)(canceller); err == nil {
+			//	if predicate(result) {
+			//		r = result
+			//		//fmt.Println("return 1", r, k)
+			//		return
+			//	}
+			//} else {
+			//	//fmt.Println("return 2", r, k)
+			//	return nil, err
+			//}
+		} else if cap(srcChan) > 0 {
+			src.Close()
+			break
+		}
+	}
+	if src.future != nil {
+		if _, err := src.future.Get(); err != nil {
+			//fmt.Println("return 3", r, k)
+			return nil, err
+		}
+	}
+	//fmt.Println("return 4", r, k)
+	return
+
+}
+
+func parallelMapChanToChan(src *chanSource, out chan *Chunk, task func(*Chunk) *Chunk, option *ParallelOption) (*promise.Future, chan *Chunk) {
+	var createOutChan bool
+	if out == nil {
+		out = make(chan *Chunk, option.Degree)
+		createOutChan = true
+	}
+
+	srcChan := src.ChunkChan(option.ChunkSize)
+
+	fs := make([]*promise.Future, option.Degree)
+	for i := 0; i < option.Degree; i++ {
+		f := promise.Start(func() (r interface{}, e error) {
+			//defer func() {
+			//	if err := recover(); err != nil {
+			//		e = newErrorWithStacks(err)
+			//		//fmt.Println("parallelMapChanToChan, get error===:", cc, e)
+			//	}
+			//}()
+			//for c := range srcChan {
+			//	if !isNil(c) {
+			//		d := task(c)
+			//		if out != nil && d != nil {
+			//			//fmt.Println("\nparallelMapChanToChan, from=", c.Order, c.Data.ToInterfaces(), "to=", d.Order, d.Data.ToInterfaces())
+			//			sendChunk(out, d)
+			//		}
+			//	} else if cap(srcChan) > 0 {
+			//		src.Close()
+			//		break
+			//	}
+			//}
+			//if src.future != nil {
+			//	if _, err := src.future.Get(); err != nil {
+			//		return nil, err
+			//	}
+			//}
+			//return
+
+			r, e = forEachChan(src, srcChan, func(c *Chunk) (result interface{}, beEnded bool, err error) {
+				d := task(c)
+				if out != nil && d != nil {
+					//fmt.Println("\nparallelMapChanToChan, from=", c.Order, c.Data.ToInterfaces(), "to=", d.Order, d.Data.ToInterfaces())
+					sendChunk(out, d)
+				}
+				return nil, false, nil
+			})
+			return
+		})
+		fs[i] = f
+	}
+	f := promise.WhenAll(fs...).Fail(func(err interface{}) { src.Close() })
+
+	if createOutChan {
+		addCallbackToCloseChan(f, out)
+	}
+	return f, out
+}
+
 //条带式分割，将slice分割为固定大小的Chunk，然后发送到Channel并返回
 //如果数据量==0，则返回nil
 func splitToChunkChan(src DataSource, option *ParallelOption) (ch chan *Chunk) {
@@ -1272,10 +1382,11 @@ func splitToChunkChan(src DataSource, option *ParallelOption) (ch chan *Chunk) {
 	}
 	//fmt.Println("splitToChunkChan, size=", size, "len=", lenOfData)
 	ch = make(chan *Chunk, option.Degree)
+	if lenOfData == 0 {
+		ch = nil
+	}
+
 	go func() {
-		if lenOfData == 0 {
-			sendChunk(ch, &Chunk{NewSlicer([]interface{}{}), 0, 0})
-		}
 		for i := 0; i*size < lenOfData; i++ {
 			end := (i + 1) * size
 			if end >= lenOfData {
@@ -1293,65 +1404,6 @@ func splitToChunkChan(src DataSource, option *ParallelOption) (ch chan *Chunk) {
 	return
 }
 
-func parallelMapToChan(src DataSource, reduceSrcChan chan *Chunk, mapChunk func(c *Chunk) (r *Chunk), option *ParallelOption) (f *promise.Future, ch chan *Chunk) {
-	//get all values and keys
-	switch s := src.(type) {
-	case *listSource:
-		return parallelMapListToChan(s, reduceSrcChan, mapChunk, option)
-	case *chanSource:
-		return parallelMapChanToChan(s, reduceSrcChan, mapChunk, option) //, startOrders...)
-	default:
-		panic(ErrUnsupportSource)
-	}
-}
-
-func parallelMapChanToChan(src *chanSource, out chan *Chunk, task func(*Chunk) *Chunk, option *ParallelOption) (*promise.Future, chan *Chunk) {
-	var createOutChan bool
-	if out == nil {
-		out = make(chan *Chunk, option.Degree)
-		createOutChan = true
-	}
-
-	srcChan := src.ChunkChan(option.ChunkSize)
-
-	fs := make([]*promise.Future, option.Degree)
-	for i := 0; i < option.Degree; i++ {
-		f := promise.Start(func() (r interface{}, e error) {
-			defer func() {
-				if err := recover(); err != nil {
-					e = newErrorWithStacks(err)
-					//fmt.Println("parallelMapChanToChan, get error===:", cc, e)
-				}
-			}()
-			for c := range srcChan {
-				if !isNil(c) {
-					d := task(c)
-					if out != nil && d != nil {
-						//fmt.Println("\nparallelMapChanToChan, from=", c.Order, c.Data.ToInterfaces(), "to=", d.Order, d.Data.ToInterfaces())
-						sendChunk(out, d)
-					}
-				} else if cap(srcChan) > 0 {
-					src.Close()
-					break
-				}
-			}
-			if src.future != nil {
-				if _, err := src.future.Get(); err != nil {
-					return nil, err
-				}
-			}
-			return
-		})
-		fs[i] = f
-	}
-	f := promise.WhenAll(fs...).Fail(func(err interface{}) { src.Close() })
-
-	if createOutChan {
-		addCallbackToCloseChan(f, out)
-	}
-	return f, out
-}
-
 func parallelMapListToChan(src DataSource, out chan *Chunk, task func(*Chunk) *Chunk, option *ParallelOption) (*promise.Future, chan *Chunk) {
 	var createOutChan bool
 	if out == nil {
@@ -1359,7 +1411,7 @@ func parallelMapListToChan(src DataSource, out chan *Chunk, task func(*Chunk) *C
 		createOutChan = true
 	}
 
-	//var f *promise.Future
+	var f *promise.Future
 	//data := src.ToSlice(false)
 	//lenOfData := data.Len()
 
@@ -1392,7 +1444,6 @@ func parallelMapListToChan(src DataSource, out chan *Chunk, task func(*Chunk) *C
 	//	f, out = parallelMapChanToChan(cs, out, task, option)
 	//}
 
-	var f *promise.Future
 	chunkChan := splitToChunkChan(src, option)
 	if chunkChan == nil {
 		f = promise.Wrap([]interface{}{})
@@ -1408,79 +1459,80 @@ func parallelMapListToChan(src DataSource, out chan *Chunk, task func(*Chunk) *C
 }
 
 func parallelMapListToList(src DataSource, task func(*Chunk) *Chunk, option *ParallelOption) (f *promise.Future) {
-	//return parallelMapList(src, func(c *Chunk) func() (interface{}, error) {
-	//	return func() (interface{}, error) {
+
+	//data := src.ToSlice(false)
+	//size := data.Len()
+	//if size == 0 {
+	//	return promise.Wrap([]interface{}{})
+	//}
+	//lenOfData, size, j := size, ceilChunkSize(size, option.Degree), 0
+
+	//if size < option.ChunkSize {
+	//	size = option.ChunkSize
+	//}
+
+	//fs := make([]*promise.Future, option.Degree)
+	//for i := 0; i < option.Degree && i*size < lenOfData; i++ {
+	//	end := (i + 1) * size
+	//	if end >= lenOfData {
+	//		end = lenOfData
+	//	}
+	//	c := &Chunk{data.Slice(i*size, end), i, i * size} //, end}
+
+	//	fs[i] = promise.Start(func() (interface{}, error) {
 	//		r := task(c)
 	//		return r, nil
-	//	}
-	//}, option)
-	data := src.ToSlice(false)
-	size := data.Len()
-	if size == 0 {
-		return promise.Wrap([]interface{}{})
-	}
-	lenOfData, size, j := size, ceilChunkSize(size, option.Degree), 0
+	//	})
+	//	j++
+	//}
+	//f = promise.WhenAll(fs[0:j]...)
 
-	if size < option.ChunkSize {
-		size = option.ChunkSize
-	}
-
-	fs := make([]*promise.Future, option.Degree)
-	for i := 0; i < option.Degree && i*size < lenOfData; i++ {
-		end := (i + 1) * size
-		if end >= lenOfData {
-			end = lenOfData
-		}
-		c := &Chunk{data.Slice(i*size, end), i, i * size} //, end}
-
-		fs[i] = promise.Start(func() (interface{}, error) {
-			r := task(c)
-			return r, nil
-		})
-		j++
-	}
-	f = promise.WhenAll(fs[0:j]...)
-
-/*	i, fs := 0, make([]*promise.Future, option.Degree)
-	splitContinuous(src, func(c *Chunk){
+	i, fs := 0, make([]*promise.Future, option.Degree)
+	splitContinuous(src, func(c *Chunk) {
 		fs[i] = promise.Start(func() (interface{}, error) {
 			r := task(c)
 			return r, nil
 		})
 		i++
 	}, option)
-	f = promise.WhenAll(fs[0:i]...)*/
+	f = promise.WhenAll(fs[0:i]...)
 	return
 }
 
 //并行循环slice，如果任一任务的返回值满足要求，则返回该值，否则返回false，
 //如果没有匹配的返回值并且有任务失败则reject
 func parallelMapListForAnyTrue(src DataSource, getAction func(*Chunk) func(promise.Canceller) (interface{}, error), predicate PredicateFunc, option *ParallelOption) (f *promise.Future) {
-	data := src.ToSlice(false)
-	size := data.Len()
-	if size == 0 {
-		return promise.Wrap([]interface{}{})
-	}
-	lenOfData, size, j := size, ceilChunkSize(size, option.Degree), 0
+	//data := src.ToSlice(false)
+	//size := data.Len()
+	//if size == 0 {
+	//	return promise.Wrap([]interface{}{})
+	//}
+	//lenOfData, size, j := size, ceilChunkSize(size, option.Degree), 0
 
-	if size < option.ChunkSize {
-		size = option.ChunkSize
-	}
+	//if size < option.ChunkSize {
+	//	size = option.ChunkSize
+	//}
 
-	fs := make([]*promise.Future, option.Degree)
-	for i := 0; i < option.Degree && i*size < lenOfData; i++ {
-		end := (i + 1) * size
-		if end >= lenOfData {
-			end = lenOfData
-		}
-		c := &Chunk{data.Slice(i*size, end), i, i * size} //, end}
+	//fs := make([]*promise.Future, option.Degree)
+	//for i := 0; i < option.Degree && i*size < lenOfData; i++ {
+	//	end := (i + 1) * size
+	//	if end >= lenOfData {
+	//		end = lenOfData
+	//	}
+	//	c := &Chunk{data.Slice(i*size, end), i, i * size} //, end}
 
-		f = promise.StartCanCancel(getAction(c))
-		fs[i] = f
-		j++
-	}
-	f = promise.WhenAnyTrue(predicate, fs[0:j]...)
+	//	f = promise.StartCanCancel(getAction(c))
+	//	fs[i] = f
+	//	j++
+	//}
+	//f = promise.WhenAnyTrue(predicate, fs[0:j]...)
 
+	i, fs := 0, make([]*promise.Future, option.Degree)
+	splitContinuous(src, func(c *Chunk) {
+		fs[i] = promise.StartCanCancel(getAction(c))
+		i++
+	}, option)
+	f = promise.WhenAnyTrue(predicate, fs[0:i]...)
 	return
 }
 
@@ -1496,36 +1548,52 @@ func parallelMapChanForAnyTrue(src *chanSource,
 	for i := 0; i < option.Degree; i++ {
 		//k := i
 		f := promise.StartCanCancel(func(canceller promise.Canceller) (r interface{}, e error) {
-			defer func() {
-				if err := recover(); err != nil {
-					e = newErrorWithStacks(err)
-					//fmt.Println("parallelMapChanToChan, get error===:", cc, e)
-				}
-			}()
-			for c := range srcChan {
-				if !isNil(c) {
-					if result, err := getAction(c)(canceller); err == nil {
-						if predicate(result) {
-							r = result
-							//fmt.Println("return 1", r, k)
-							return
-						}
-					} else {
-						//fmt.Println("return 2", r, k)
-						return nil, err
+			//defer func() {
+			//	if err := recover(); err != nil {
+			//		e = newErrorWithStacks(err)
+			//		//fmt.Println("parallelMapChanToChan, get error===:", cc, e)
+			//	}
+			//}()
+			//for c := range srcChan {
+			//	if !isNil(c) {
+			//		if result, err := getAction(c)(canceller); err == nil {
+			//			if predicate(result) {
+			//				r = result
+			//				//fmt.Println("return 1", r, k)
+			//				return
+			//			}
+			//		} else {
+			//			//fmt.Println("return 2", r, k)
+			//			return nil, err
+			//		}
+			//	} else if cap(srcChan) > 0 {
+			//		src.Close()
+			//		break
+			//	}
+			//}
+			//if src.future != nil {
+			//	if _, err := src.future.Get(); err != nil {
+			//		//fmt.Println("return 3", r, k)
+			//		return nil, err
+			//	}
+			//}
+			////fmt.Println("return 4", r, k)
+			//return
+
+			r, e = forEachChan(src, srcChan, func(c *Chunk) (result interface{}, beEnded bool, err error) {
+				if result, err = getAction(c)(canceller); err == nil {
+					if predicate(result) {
+						r = result
+						beEnded = true
+						//fmt.Println("return 1", r, k)
+						return
 					}
-				} else if cap(srcChan) > 0 {
-					src.Close()
-					break
+				} else {
+					//fmt.Println("return 2", r, k)
+					return
 				}
-			}
-			if src.future != nil {
-				if _, err := src.future.Get(); err != nil {
-					//fmt.Println("return 3", r, k)
-					return nil, err
-				}
-			}
-			//fmt.Println("return 4", r, k)
+				return nil, false, nil
+			})
 			return
 		})
 		fs[i] = f
@@ -1536,55 +1604,67 @@ func parallelMapChanForAnyTrue(src *chanSource,
 }
 
 func parallelMatchListByDirection(src DataSource, getAction func(*Chunk, promise.Canceller) (int, bool), option *ParallelOption, befor2after bool) (f *promise.Future) {
-	data := src.ToSlice(false)
-	size := data.Len()
-	if size == 0 {
-		return promise.Wrap(-1)
-	}
-	lenOfData, size := size, ceilChunkSize(size, option.Degree)
+	//data := src.ToSlice(false)
+	//size := data.Len()
+	//if size == 0 {
+	//	return promise.Wrap(-1)
+	//}
+	//lenOfData, size := size, ceilChunkSize(size, option.Degree)
 
-	if size < option.ChunkSize {
-		size = option.ChunkSize
-	}
+	//if size < option.ChunkSize {
+	//	size = option.ChunkSize
+	//}
 
-	if size >= lenOfData {
-		//数量小于默认的chunk size，直接start一个Promise
-		f := promise.Start(func() (r interface{}, e error) {
-			r, _ = getAction(&Chunk{data, 0, 0}, nil)
-			return
-		})
-		return f
-	}
+	//if size >= lenOfData {
+	//	//数量小于默认的chunk size，直接start一个Promise
+	//	f := promise.Start(func() (r interface{}, e error) {
+	//		r, _ = getAction(&Chunk{data, 0, 0}, nil)
+	//		return
+	//	})
+	//	return f
+	//}
 
-	//生成并行任务来查找符合条件的数据
-	fs := make([]*promise.Future, 0, option.Degree)
-	for i := 0; i < option.Degree && i*size < lenOfData; i++ {
-		end := (i + 1) * size
-		if end >= lenOfData {
-			end = lenOfData
-		}
-		c := &Chunk{data.Slice(i*size, end), i, i * size} //, end}
+	////生成并行任务来查找符合条件的数据
+	//fs := make([]*promise.Future, 0, option.Degree)
+	//for i := 0; i < option.Degree && i*size < lenOfData; i++ {
+	//	end := (i + 1) * size
+	//	if end >= lenOfData {
+	//		end = lenOfData
+	//	}
+	//	c := &Chunk{data.Slice(i*size, end), i, i * size} //, end}
 
-		startIndex := i * size
-		f = promise.StartCanCancel(func(canceller promise.Canceller) (interface{}, error) {
+	//	startIndex := i * size
+	//	f = promise.StartCanCancel(func(canceller promise.Canceller) (interface{}, error) {
+	//		r, found := getAction(c, canceller)
+	//		if found && r != -1 {
+	//			r = r + startIndex
+	//		}
+	//		return r, nil
+	//	})
+	//	fs = append(fs, f)
+	//}
+
+	count, fs := 0, make([]*promise.Future, option.Degree)
+	splitContinuous(src, func(c *Chunk) {
+		fs[count] = promise.StartCanCancel(func(canceller promise.Canceller) (interface{}, error) {
 			r, found := getAction(c, canceller)
 			if found && r != -1 {
-				r = r + startIndex
+				r = r + c.StartIndex
 			}
 			return r, nil
 		})
-		fs = append(fs, f)
-	}
+		count++
+	}, option)
 
 	//根据查找的顺序来检查各任务查找的结果
 	f = promise.Start(func() (interface{}, error) {
 		var idx interface{}
-		rs, errs := make([]interface{}, len(fs)), make([]error, len(fs))
+		rs, errs := make([]interface{}, count), make([]error, count)
 		allOk, hasOk := true, false
-		start, end, i := 0, len(fs), 0
+		start, end, i := 0, count, 0
 
 		if !befor2after {
-			start = len(fs) - 1
+			start = count - 1
 			end, i = 0, start
 		}
 
