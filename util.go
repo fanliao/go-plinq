@@ -27,7 +27,7 @@ func self(v interface{}) interface{} {
 }
 
 //the Utils functions for Slice and Chunk----------------------
-func distinctChunkValues(c *Chunk, distKVs map[interface{}]int, pResults *[]interface{}) *Chunk {
+func distChunkValues(c *Chunk, distKVs map[interface{}]int, pResults *[]interface{}) *Chunk {
 	if pResults == nil {
 		size := c.Data.Len()
 		result := make([]interface{}, 0, size)

@@ -38,22 +38,23 @@ var (
 )
 
 var (
-	ErrUnsupportSource    = errors.New("unsupport DataSource")
-	ErrNilSource          = errors.New("datasource cannot be nil")
-	ErrUnionNilSource     = errors.New("cannot union nil data source")
-	ErrConcatNilSource    = errors.New("cannot concat nil data source")
-	ErrInterestNilSource  = errors.New("cannot interest nil data source")
-	ErrExceptNilSource    = errors.New("cannot Except nil data source")
-	ErrJoinNilSource      = errors.New("cannot join nil data source")
-	ErrNilAction          = errors.New("action cannot be nil")
-	ErrOuterKeySelector   = errors.New("outerKeySelector cannot be nil")
-	ErrInnerKeySelector   = errors.New("innerKeySelector cannot be nil")
-	ErrResultSelector     = errors.New("resultSelector cannot be nil")
-	ErrTaskFailure        = errors.New("ErrTaskFailure")
-	countAggOpr           = getCountByOpr(nil)
+	ErrUnsupportSource   = errors.New("unsupport DataSource")
+	ErrNilSource         = errors.New("datasource cannot be nil")
+	ErrUnionNilSource    = errors.New("cannot union nil data source")
+	ErrConcatNilSource   = errors.New("cannot concat nil data source")
+	ErrInterestNilSource = errors.New("cannot interest nil data source")
+	ErrExceptNilSource   = errors.New("cannot Except nil data source")
+	ErrJoinNilSource     = errors.New("cannot join nil data source")
+	ErrNilAction         = errors.New("action cannot be nil")
+	ErrOuterKeySelector  = errors.New("outerKeySelector cannot be nil")
+	ErrInnerKeySelector  = errors.New("innerKeySelector cannot be nil")
+	ErrResultSelector    = errors.New("resultSelector cannot be nil")
+	ErrTaskFailure       = errors.New("ErrTaskFailure")
+	countAggOpr          = getCountByOpr(nil)
 )
 
-var numCPU                int
+var numCPU int
+
 func init() {
 	numCPU = runtime.NumCPU()
 }
@@ -243,10 +244,10 @@ func (this *Queryable) Where(predicate PredicateFunc, chunkSizes ...int) *Querya
 // 	q := From(users).Select(func (v interface{}) interface{}{
 //		return v.(*User).Name
 // 	})
-func (this *Queryable) Select(selectFunc OneArgsFunc, chunkSizes ...int) *Queryable {
-	mustNotNil(selectFunc, ErrNilAction)
+func (this *Queryable) Select(selector OneArgsFunc, chunkSizes ...int) *Queryable {
+	mustNotNil(selector, ErrNilAction)
 
-	this.steps = append(this.steps, commonStep{ACT_SELECT, selectFunc, getChunkSizeArg(chunkSizes...)})
+	this.steps = append(this.steps, commonStep{ACT_SELECT, selector, getChunkSizeArg(chunkSizes...)})
 	return this
 }
 
@@ -258,10 +259,10 @@ func (this *Queryable) Select(selectFunc OneArgsFunc, chunkSizes ...int) *Querya
 // 	q := From(users).Select(func (v interface{}) interface{}{
 //		return v.(*User).Name
 // 	})
-func (this *Queryable) SelectMany(selectManyFunc func(interface{}) []interface{}, chunkSizes ...int) *Queryable {
-	mustNotNil(selectManyFunc, ErrNilAction)
+func (this *Queryable) SelectMany(manySelector func(interface{}) []interface{}, chunkSizes ...int) *Queryable {
+	mustNotNil(manySelector, ErrNilAction)
 
-	this.steps = append(this.steps, commonStep{ACT_SELECTMANY, selectManyFunc, getChunkSizeArg(chunkSizes...)})
+	this.steps = append(this.steps, commonStep{ACT_SELECTMANY, manySelector, getChunkSizeArg(chunkSizes...)})
 	return this
 }
 
@@ -284,27 +285,27 @@ func (this *Queryable) Distinct(chunkSizes ...int) *Queryable {
 // 	q := From(user).DistinctBy(func (p interface{}) interface{}{
 //		return p.(*Person).FirstName
 // 	})
-func (this *Queryable) DistinctBy(distinctFunc OneArgsFunc, chunkSizes ...int) *Queryable {
-	mustNotNil(distinctFunc, ErrNilAction)
-	this.steps = append(this.steps, commonStep{ACT_DISTINCT, distinctFunc, getChunkSizeArg(chunkSizes...)})
+func (this *Queryable) DistinctBy(selector OneArgsFunc, chunkSizes ...int) *Queryable {
+	mustNotNil(selector, ErrNilAction)
+	this.steps = append(this.steps, commonStep{ACT_DISTINCT, selector, getChunkSizeArg(chunkSizes...)})
 	return this
 }
 
 // OrderBy returns a query includes the OrderBy operation.
 // OrderBy operation sorts elements with provided compare function
 // in ascending order.
-// The comparer function should return -1 if the parameter "this" is less
+// The comparator function should return -1 if the parameter "this" is less
 // than "that", returns 0 if the "this" is same with "that", otherwisze returns 1
 //
 // Example:
 //	q := From(user).OrderBy(func (this interface{}, that interface{}) bool {
 //		return this.(*User).Age < that.(*User).Age
 // 	})
-func (this *Queryable) OrderBy(compare CompareFunc) *Queryable {
-	if compare == nil {
-		compare = defCompare
+func (this *Queryable) OrderBy(comparator CompareFunc) *Queryable {
+	if comparator == nil {
+		comparator = defCompare
 	}
-	this.steps = append(this.steps, commonStep{ACT_ORDERBY, compare, this.Degree})
+	this.steps = append(this.steps, commonStep{ACT_ORDERBY, comparator, this.Degree})
 	return this
 }
 
@@ -325,7 +326,7 @@ func (this *Queryable) GroupBy(keySelector OneArgsFunc, chunkSizes ...int) *Quer
 
 // Union returns a query includes the Union operation.
 // Union operation returns set union of the source and the provided
-// secondary source using hash function comparer, hash(i)==hash(o). the secondary source must
+// secondary source using hash function comparator, hash(i)==hash(o). the secondary source must
 // be a valid linq data source
 //
 // Noted: GroupBy will returns an unordered sequence.
@@ -356,7 +357,7 @@ func (this *Queryable) Concat(source2 interface{}) *Queryable {
 
 // Intersect returns a query includes the Intersect operation.
 // Intersect operation returns set intersection of the source and the
-// provided secondary using hash function comparer, hash(i)==hash(o). the secondary source must
+// provided secondary using hash function comparator, hash(i)==hash(o). the secondary source must
 // be a valid linq data source.
 //
 // Example:
@@ -371,7 +372,7 @@ func (this *Queryable) Intersect(source2 interface{}, chunkSizes ...int) *Querya
 
 // Except returns a query includes the Except operation.
 // Except operation returns set except of the source and the
-// provided secondary source using hash function comparer, hash(i)==hash(o). the secondary source must
+// provided secondary source using hash function comparator, hash(i)==hash(o). the secondary source must
 // be a valid linq data source.
 //
 // Example:
@@ -386,7 +387,7 @@ func (this *Queryable) Except(source2 interface{}, chunkSizes ...int) *Queryable
 
 // Join returns a query includes the Join operation.
 // Join operation correlates the elements of two source based on the equality of keys.
-// Inner and outer keys are matched using hash function comparer, hash(i)==hash(o).
+// Inner and outer keys are matched using hash function comparator, hash(i)==hash(o).
 //
 // Outer collection is the original sequence.
 //
@@ -400,7 +401,7 @@ func (this *Queryable) Join(inner interface{},
 	outerKeySelector OneArgsFunc,
 	innerKeySelector OneArgsFunc,
 	resultSelector TwoArgsFunc, chunkSizes ...int) *Queryable {
-	
+
 	mustNotNil(inner, ErrJoinNilSource)
 	mustNotNil(outerKeySelector, ErrOuterKeySelector)
 	mustNotNil(innerKeySelector, ErrInnerKeySelector)
@@ -418,7 +419,7 @@ func (this *Queryable) LeftJoin(inner interface{},
 	outerKeySelector OneArgsFunc,
 	innerKeySelector OneArgsFunc,
 	resultSelector TwoArgsFunc, chunkSizes ...int) *Queryable {
-	
+
 	mustNotNil(inner, ErrJoinNilSource)
 	mustNotNil(outerKeySelector, ErrOuterKeySelector)
 	mustNotNil(innerKeySelector, ErrInnerKeySelector)
@@ -453,7 +454,7 @@ func (this *Queryable) LeftGroupJoin(inner interface{},
 	outerKeySelector OneArgsFunc,
 	innerKeySelector OneArgsFunc,
 	resultSelector func(interface{}, []interface{}) interface{}, chunkSizes ...int) *Queryable {
-	
+
 	mustNotNil(inner, ErrJoinNilSource)
 	mustNotNil(outerKeySelector, ErrOuterKeySelector)
 	mustNotNil(innerKeySelector, ErrInnerKeySelector)
@@ -671,10 +672,10 @@ func (this *Queryable) Aggregate(aggregateFuncs ...*AggregateOperation) (result 
 // Example:
 //	arr = []interface{}{0, 3, 6, 9}
 //	sum, err := From(arr).Sum() // sum is 18
-func (this *Queryable) Sum(converts ...OneArgsFunc) (result interface{}, err error) {
+func (this *Queryable) Sum(selectors ...OneArgsFunc) (result interface{}, err error) {
 	opr := getSumOpr(nil)
-	if converts != nil && len(converts) > 0 {
-		opr = getMinOpr(converts[0])
+	if selectors != nil && len(selectors) > 0 {
+		opr = getMinOpr(selectors[0])
 	}
 	aggregateOprs := []*AggregateOperation{opr}
 
@@ -697,10 +698,10 @@ func (this *Queryable) Count(predicates ...PredicateFunc) (result interface{}, e
 // Example:
 //	arr = []interface{}{0, 3, 6, 9}
 //	arg, err := From(arr).Average() // sum is 4.5
-func (this *Queryable) Average(converts ...OneArgsFunc) (result interface{}, err error) {
+func (this *Queryable) Average(selectors ...OneArgsFunc) (result interface{}, err error) {
 	sumOpr := getSumOpr(nil)
-	if converts != nil && len(converts) > 0 {
-		sumOpr = getMinOpr(converts[0])
+	if selectors != nil && len(selectors) > 0 {
+		sumOpr = getMinOpr(selectors[0])
 	}
 	aggregateOprs := []*AggregateOperation{sumOpr, countAggOpr}
 
@@ -708,7 +709,7 @@ func (this *Queryable) Average(converts ...OneArgsFunc) (result interface{}, err
 	if e != nil {
 		return nil, err
 	}
-	
+
 	count := float64(results.([]interface{})[1].(int))
 	sum := results.([]interface{})[0]
 
@@ -722,10 +723,10 @@ func (this *Queryable) Average(converts ...OneArgsFunc) (result interface{}, err
 // Example:
 //	arr = []interface{}{0, 3, 6, 9}
 //	max, err := From(arr).Max() // max is 9
-func (this *Queryable) Max(converts ...OneArgsFunc) (result interface{}, err error) {
+func (this *Queryable) Max(selector ...OneArgsFunc) (result interface{}, err error) {
 	opr := getMaxOpr(nil)
-	if converts != nil && len(converts) > 0 {
-		opr = getMaxOpr(converts[0])
+	if selector != nil && len(selector) > 0 {
+		opr = getMaxOpr(selector[0])
 	}
 
 	aggregateOprs := []*AggregateOperation{opr}
@@ -740,10 +741,10 @@ func (this *Queryable) Max(converts ...OneArgsFunc) (result interface{}, err err
 // Example:
 //	arr = []interface{}{0, 3, 6, 9}
 //	min, err := From(arr).Max(converts ...OneArgsFunc) // min is 0
-func (this *Queryable) Min(converts ...OneArgsFunc) (result interface{}, err error) {
+func (this *Queryable) Min(selectors ...OneArgsFunc) (result interface{}, err error) {
 	opr := getMinOpr(nil)
-	if converts != nil && len(converts) > 0 {
-		opr = getMinOpr(converts[0])
+	if selectors != nil && len(selectors) > 0 {
+		opr = getMinOpr(selectors[0])
 	}
 
 	aggregateOprs := []*AggregateOperation{opr}
@@ -800,12 +801,12 @@ func (this *Queryable) hGroupBy(keySelector OneArgsFunc, chunkSizes ...int) *Que
 }
 
 // Executes the query and get latest data source
-func (this *Queryable) execute() (data DataSource, err error) {
+func (this *Queryable) execute() (ds DataSource, err error) {
 	if len(this.steps) == 0 {
 		this.errChan = nil
 		return this.data, nil
-	} 
-	
+	}
+
 	this.errChan = make(chan []error)
 
 	//create a goroutines to collect the errors for the pipeline mode step
@@ -826,7 +827,7 @@ func (this *Queryable) execute() (data DataSource, err error) {
 		}
 	}()
 
-	data = this.data
+	ds = this.data
 	pOption, keepOrder := this.ParallelOption, this.ParallelOption.KeepOrder
 
 	for i, step := range this.steps {
@@ -841,7 +842,7 @@ func (this *Queryable) execute() (data DataSource, err error) {
 					stepErrsChan <- NewStepError(i, step1.Typ(), newErrorWithStacks(err))
 				}
 			}()
-			if data, f, keepOrder, err = step.Action()(data, step.POption(pOption), i == 0); err != nil {
+			if ds, f, keepOrder, err = step.Action()(ds, step.POption(pOption), i == 0); err != nil {
 				//fmt.Println("err in step2----------", i, err)
 				stepErrsChan <- NewStepError(i, step1.Typ(), err)
 				for j := i + 1; j < len(this.steps); j++ {
@@ -876,7 +877,7 @@ func (this *Queryable) execute() (data DataSource, err error) {
 		pOption.KeepOrder = keepOrder
 	}
 
-	return data, nil
+	return ds, nil
 }
 
 func (this *Queryable) stepErrs() (err *AggregateError) {
@@ -885,19 +886,17 @@ func (this *Queryable) stepErrs() (err *AggregateError) {
 			err = NewAggregateError("Aggregate errors", errs)
 		}
 		close(this.errChan)
-	} else {
-		return nil
 	}
 	return
 }
 
-func newDataSource(data interface{}) DataSource {
+func newDataSource(data interface{}) (ds DataSource) {
 	mustNotNil(data, ErrNilSource)
 
 	if _, ok := data.(Slicer); ok {
 		return newListSource(data)
 	}
-	var ds DataSource
+	//var ds DataSource
 	if v := reflect.ValueOf(data); v.Kind() == reflect.Slice || v.Kind() == reflect.Map {
 		ds = newListSource(data) //&listSource{data: data}
 	} else if v.Kind() == reflect.Ptr {
@@ -914,7 +913,7 @@ func newDataSource(data interface{}) DataSource {
 	} else {
 		panic(ErrUnsupportSource)
 	}
-	return ds
+	return
 }
 
 func newQueryable(ds DataSource) (q *Queryable) {
@@ -944,15 +943,15 @@ func (this listSource) ToSlice(keepOrder bool) Slicer {
 	return this.data
 }
 
-func (this listSource) ToChan() chan interface{} {
-	out := make(chan interface{})
+func (this listSource) ToChan() (out chan interface{}) {
+	out = make(chan interface{})
 	go func() {
 		forEachSlicer(this.data, func(i int, v interface{}) {
 			out <- v
 		})
 		close(out)
 	}()
-	return out
+	return
 }
 
 func newListSource(data interface{}) *listSource {
@@ -981,7 +980,7 @@ func sendChunk(out chan *Chunk, c *Chunk) (closed bool) {
 		}
 	}()
 	out <- c
-	closed = false
+	//closed = false
 	return
 }
 
@@ -1083,9 +1082,9 @@ func (this chanSource) ToSlice(keepOrder bool) Slicer {
 		return NewSlicer(expandChunks(chunks, false))
 	} else {
 		srcChan := reflect.ValueOf(this.data)
-		if srcChan.Kind() != reflect.Chan {
-			panic(ErrUnsupportSource)
-		}
+		//if srcChan.Kind() != reflect.Chan {
+		//	panic(ErrUnsupportSource)
+		//}
 
 		result := make([]interface{}, 0, 10)
 		for {
@@ -1120,9 +1119,9 @@ func (this chanSource) ToChan() chan interface{} {
 		}()
 	} else if this.data != nil {
 		srcChan := reflect.ValueOf(this.data)
-		if srcChan.Kind() != reflect.Chan {
-			panic(ErrUnsupportSource)
-		}
+		//if srcChan.Kind() != reflect.Chan {
+		//	panic(ErrUnsupportSource)
+		//}
 
 		go func() {
 			for {
