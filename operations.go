@@ -152,9 +152,6 @@ func getSelect(selector OneArgsFunc) stepAction {
 			return nil, nil, option.KeepOrder, err
 		}
 
-		//if src.Typ() == SOURCE_LIST && src.ToSlice(false).Len() <= option.ChunkSize {
-		//}
-
 		fu, out := parallelMapToChan(src, nil, mapChunk, option)
 		dst = &chanSource{chunkChan: out}
 
@@ -1265,6 +1262,40 @@ func splitContinuous(src DataSource, action func(*Chunk), option *ParallelOption
 	return
 }
 
+//条带式分割，将slice分割为固定大小的Chunk，然后发送到Channel并返回
+//如果数据量==0，则返回nil
+func splitToChunkChan(src DataSource, option *ParallelOption) (ch chan *Chunk) {
+	data := src.ToSlice(false)
+	lenOfData := data.Len()
+
+	size := option.ChunkSize
+	if size < lenOfData/(numCPU*5) {
+		size = lenOfData / (numCPU * 5)
+	}
+	//fmt.Println("splitToChunkChan, size=", size, "len=", lenOfData)
+	ch = make(chan *Chunk, option.Degree)
+	if lenOfData == 0 {
+		ch = nil
+	}
+
+	go func() {
+		for i := 0; i*size < lenOfData; i++ {
+			end := (i + 1) * size
+			if end >= lenOfData {
+				end = lenOfData
+			}
+			c := &Chunk{data.Slice(i*size, end), i, i * size} //, end}
+			//fmt.Println("parallelMapListToChan, send", i, size, data.Slice(i*size, end).ToInterfaces())
+			sendChunk(ch, c)
+		}
+		func() {
+			defer func() { _ = recover() }()
+			close(ch)
+		}()
+	}()
+	return
+}
+
 func parallelMapToChan(src DataSource, reduceSrcChan chan *Chunk, mapChunk func(c *Chunk) (r *Chunk), option *ParallelOption) (f *promise.Future, ch chan *Chunk) {
 	//get all values and keys
 	switch s := src.(type) {
@@ -1338,40 +1369,6 @@ func parallelMapChanToChan(src *chanSource, out chan *Chunk, task func(*Chunk) *
 		addCallbackToCloseChan(f, out)
 	}
 	return f, out
-}
-
-//条带式分割，将slice分割为固定大小的Chunk，然后发送到Channel并返回
-//如果数据量==0，则返回nil
-func splitToChunkChan(src DataSource, option *ParallelOption) (ch chan *Chunk) {
-	data := src.ToSlice(false)
-	lenOfData := data.Len()
-
-	size := option.ChunkSize
-	if size < lenOfData/(numCPU*5) {
-		size = lenOfData / (numCPU * 5)
-	}
-	//fmt.Println("splitToChunkChan, size=", size, "len=", lenOfData)
-	ch = make(chan *Chunk, option.Degree)
-	if lenOfData == 0 {
-		ch = nil
-	}
-
-	go func() {
-		for i := 0; i*size < lenOfData; i++ {
-			end := (i + 1) * size
-			if end >= lenOfData {
-				end = lenOfData
-			}
-			c := &Chunk{data.Slice(i*size, end), i, i * size} //, end}
-			//fmt.Println("parallelMapListToChan, send", i, size, data.Slice(i*size, end).ToInterfaces())
-			sendChunk(ch, c)
-		}
-		func() {
-			defer func() { _ = recover() }()
-			close(ch)
-		}()
-	}()
-	return
 }
 
 func parallelMapListToChan(src DataSource, out chan *Chunk, task func(*Chunk) *Chunk, option *ParallelOption) (*promise.Future, chan *Chunk) {
