@@ -1363,7 +1363,7 @@ func parallelMapChanToChan(src *chanSource, out chan *Chunk, task func(*Chunk) *
 		})
 		fs[i] = f
 	}
-	f := promise.WhenAll(fs...).Fail(func(err interface{}) { src.Close() })
+	f := promise.WhenAllFuture(fs...).Fail(func(err interface{}) { src.Close() })
 
 	if createOutChan {
 		addCallbackToCloseChan(f, out)
@@ -1396,15 +1396,16 @@ func parallelMapListToChan(src DataSource, out chan *Chunk, task func(*Chunk) *C
 
 func parallelMapListToList(src DataSource, task func(*Chunk) *Chunk, option *ParallelOption) (f *promise.Future) {
 
-	i, fs := 0, make([]*promise.Future, option.Degree)
+	i, fs := 0, make([]interface{}, option.Degree)//make([]*promise.Future, option.Degree)
 	splitContinuous(src, func(c *Chunk) {
-		fs[i] = promise.Start(func() (interface{}, error) {
+		fs[i] = func() (interface{}, error) {//promise.Start(func() (interface{}, error) {
 			r := task(c)
 			return r, nil
-		})
+		}
 		i++
 	}, option)
-	f = promise.WhenAll(fs[0:i]...)
+	//f = promise.WhenAllFuture(fs[0:i]...)
+	f = promise.WaitAll(fs[0:i]...)
 	return
 }
 
@@ -1413,7 +1414,7 @@ func parallelMapListToList(src DataSource, task func(*Chunk) *Chunk, option *Par
 func parallelMapListForAnyTrue(src DataSource, getAction func(*Chunk) func(promise.Canceller) (interface{}, error), predicate PredicateFunc, option *ParallelOption) (f *promise.Future) {
 	i, fs := 0, make([]*promise.Future, option.Degree)
 	splitContinuous(src, func(c *Chunk) {
-		fs[i] = promise.StartCanCancel(getAction(c))
+		fs[i] = promise.Start(getAction(c))
 		i++
 	}, option)
 	f = promise.WhenAnyTrue(predicate, fs[0:i]...)
@@ -1431,7 +1432,7 @@ func parallelMapChanForAnyTrue(src *chanSource,
 	fs := make([]*promise.Future, option.Degree)
 	for i := 0; i < option.Degree; i++ {
 		//k := i
-		f := promise.StartCanCancel(func(canceller promise.Canceller) (r interface{}, e error) {
+		f := promise.Start(func(canceller promise.Canceller) (r interface{}, e error) {
 			r, e = forEachChan(src, srcChan, func(c *Chunk) (result interface{}, beEnded bool, err error) {
 				if result, err = getAction(c)(canceller); err == nil {
 					if predicate(result) {
@@ -1458,7 +1459,7 @@ func parallelMapChanForAnyTrue(src *chanSource,
 func parallelMatchListByDirection(src DataSource, getAction func(*Chunk, promise.Canceller) (int, bool), option *ParallelOption, isFarword bool) (f *promise.Future) {
 	count, fs := 0, make([]*promise.Future, option.Degree)
 	splitContinuous(src, func(c *Chunk) {
-		fs[count] = promise.StartCanCancel(func(canceller promise.Canceller) (interface{}, error) {
+		fs[count] = promise.Start(func(canceller promise.Canceller) (interface{}, error) {
 			r, found := getAction(c, canceller)
 			if found && r != -1 {
 				r = r + c.StartIndex
