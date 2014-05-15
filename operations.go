@@ -152,10 +152,10 @@ func getSelect(selector OneArgsFunc) stepAction {
 			return nil, option.KeepOrder, err
 		}
 
-		fu, out := parallelMapToChan(src, nil, mapChunk, option)
-		dst = &chanSource{chunkChan: out, future: fu}
+		return parallelMapToChan(src, nil, mapChunk, option)
+		//dst = &chanSource{chunkChan: out, future: fu}
 
-		return
+		//return
 	})
 
 }
@@ -174,10 +174,10 @@ func getSelectMany(manySelector func(interface{}) []interface{}) stepAction {
 			return list, option.KeepOrder, err
 		}
 
-		fu, out := parallelMapToChan(src, nil, mapChunk, option)
-		dst = &chanSource{chunkChan: out, future: fu}
+		return parallelMapToChan(src, nil, mapChunk, option)
+		//dst = &chanSource{chunkChan: out, future: fu}
 
-		return
+		//return
 	})
 
 }
@@ -193,9 +193,9 @@ func getWhere(predicate PredicateFunc) stepAction {
 		}
 
 		//always use channel mode in Where operation
-		f, reduceSrc := parallelMapToChan(src, nil, mapChunk, option)
+		cs := parallelMapToChan(src, nil, mapChunk, option)
 
-		return &chanSource{chunkChan: reduceSrc, future: f}, option.KeepOrder, nil
+		return cs, option.KeepOrder, nil
 	})
 }
 
@@ -252,10 +252,10 @@ func getDistinct(selector OneArgsFunc) stepAction {
 		//}
 
 		//map the element to a keyValue that key is hash value and value is element
-		f, reduceSrcChan := parallelMapToChan(src, nil, mapChunk, option)
+		cs := parallelMapToChan(src, nil, mapChunk, option)
 
-		fu, out := reduceDistValues(f, reduceSrcChan, option)
-		dst, keep = &chanSource{chunkChan: out, future: fu}, option.KeepOrder
+		dst := reduceDistValues(cs, option)
+		keep = option.KeepOrder
 		return
 	})
 }
@@ -269,7 +269,7 @@ func getGroupBy(selector OneArgsFunc, hashAsKey bool) stepAction {
 		mapChunk := getMapChunkToKVChunkFunc(&useDefHash, selector)
 
 		//map the element to a keyValue that key is group key and value is element
-		f, reduceSrc := parallelMapToChan(src, nil, mapChunk, option)
+		cs := parallelMapToChan(src, nil, mapChunk, option)
 
 		groups := make(map[interface{}]interface{})
 		group := func(v interface{}) {
@@ -287,7 +287,7 @@ func getGroupBy(selector OneArgsFunc, hashAsKey bool) stepAction {
 
 		//reduce the keyValue map to get grouped slice
 		//get key with group values values
-		errs := reduceChan(f, reduceSrc, getChunkOprFunc(forEachSlicer, func(i int, v interface{}) {
+		errs := reduceChan(cs, getChunkOprFunc(forEachSlicer, func(i int, v interface{}) {
 			group(v)
 		}))
 
@@ -372,8 +372,8 @@ func getJoinImpl(inner interface{},
 		}
 
 		//always use channel mode in Where operation
-		fu, out := parallelMapToChan(src, nil, mapChunk, option)
-		dst = &chanSource{chunkChan: out, future: fu}
+		dst := parallelMapToChan(src, nil, mapChunk, option)
+		//dst = &chanSource{chunkChan: out, future: fu}
 		return
 	})
 }
@@ -405,14 +405,14 @@ func getUnion(source2 interface{}) stepAction {
 
 		//map the elements of source and source2 to the a KeyValue slice
 		//includes the hash value and the original element
-		f1, reduceSrcChan := parallelMapToChan(src, reduceSrcChan, mapChunk, option)
-		f2, reduceSrcChan := parallelMapToChan(src2, reduceSrcChan, mapChunk, option)
+		cs1 := parallelMapToChan(src, reduceSrcChan, mapChunk, option)
+		cs2 := parallelMapToChan(src2, reduceSrcChan, mapChunk, option)
 
-		mapFuture := promise.WhenAll(f1, f2)
+		mapFuture := promise.WhenAll(cs1.Future(), cs2.Future())
 		addCallbackToCloseChan(mapFuture, reduceSrcChan)
 
-		f3, out := reduceDistValues(mapFuture, reduceSrcChan, option)
-		return &chanSource{chunkChan: out, future: f3}, option.KeepOrder, nil
+		reduceCs := reduceDistValues(mapFuture, reduceSrcChan, option)
+		return reduceCs, option.KeepOrder, nil
 	})
 }
 
@@ -602,7 +602,7 @@ func getAggregate(src DataSource, aggregateFuncs []*AggregateOperation, option *
 		r = &Chunk{aggregateSlice(c.Data, aggregateFuncs, false, true), c.Order, c.StartIndex}
 		return
 	}
-	f, reduceSrc := parallelMapToChan(src, nil, mapChunk, option)
+	cs := parallelMapToChan(src, nil, mapChunk, option)
 
 	//reduce the keyValue map to get grouped slice
 	//get key with group values values
@@ -621,7 +621,7 @@ func getAggregate(src DataSource, aggregateFuncs []*AggregateOperation, option *
 	}
 
 	avl := newChunkAvlTree()
-	if errs := reduceChan(f, reduceSrc, func(c *Chunk) (r *Chunk) {
+	if errs := reduceChan(cs, func(c *Chunk) (r *Chunk) {
 		if !keep {
 			reduce(c)
 		} else {
@@ -1048,8 +1048,8 @@ func filterSetByChan(src DataSource, src2 DataSource, isExcept bool, option *Par
 	mapChunk, mapChunk2 := getFilterSetMapFuncs()
 	//map the elements of source and source2 to the a KeyValue slice
 	//includes the hash value and the original element
-	f1, reduceSrcChan1 := parallelMapToChan(src, nil, mapChunk, option)
-	f2, reduceSrcChan2 := parallelMapToChan(src2, nil, mapChunk2, option)
+	cs1 := parallelMapToChan(src, nil, mapChunk, option)
+	cs2 := parallelMapToChan(src2, nil, mapChunk2, option)
 
 	distKVs1 := make(map[interface{}]bool, 100)
 	distKVs2 := make(map[interface{}]bool, 100)
@@ -1296,7 +1296,7 @@ func splitToChunkChan(src DataSource, option *ParallelOption) (ch chan *Chunk) {
 	return
 }
 
-func parallelMapToChan(src DataSource, reduceSrcChan chan *Chunk, mapChunk func(c *Chunk) (r *Chunk), option *ParallelOption) (f *promise.Future, ch chan *Chunk) {
+func parallelMapToChan(src DataSource, reduceSrcChan chan *Chunk, mapChunk func(c *Chunk) (r *Chunk), option *ParallelOption) (cs *chanSource) { //f *promise.Future, ch chan *Chunk) {
 	//get all values and keys
 	switch s := src.(type) {
 	case *listSource:
@@ -1339,7 +1339,7 @@ func forEachChan(src *chanSource, srcChan chan *Chunk, action func(*Chunk) (resu
 
 }
 
-func parallelMapChanToChan(src *chanSource, out chan *Chunk, task func(*Chunk) *Chunk, option *ParallelOption) (*promise.Future, chan *Chunk) {
+func parallelMapChanToChan(src *chanSource, out chan *Chunk, task func(*Chunk) *Chunk, option *ParallelOption) (cs *chanSource) { //(*promise.Future, chan *Chunk) {
 	var createOutChan bool
 	if out == nil {
 		out = make(chan *Chunk, option.Degree)
@@ -1368,10 +1368,10 @@ func parallelMapChanToChan(src *chanSource, out chan *Chunk, task func(*Chunk) *
 	if createOutChan {
 		addCallbackToCloseChan(f, out)
 	}
-	return f, out
+	return &chanSource{out, f}
 }
 
-func parallelMapListToChan(src DataSource, out chan *Chunk, task func(*Chunk) *Chunk, option *ParallelOption) (*promise.Future, chan *Chunk) {
+func parallelMapListToChan(src DataSource, out chan *Chunk, task func(*Chunk) *Chunk, option *ParallelOption) (cs *chanSource) { //(*promise.Future, chan *Chunk) {
 	var createOutChan bool
 	if out == nil {
 		out = make(chan *Chunk, option.Degree)
@@ -1390,7 +1390,7 @@ func parallelMapListToChan(src DataSource, out chan *Chunk, task func(*Chunk) *C
 	if createOutChan {
 		addCallbackToCloseChan(f, out)
 	}
-	return f, out
+	return &chanSource{out, f}
 
 }
 
@@ -1614,11 +1614,11 @@ func reduceChan(f *promise.Future, src chan *Chunk, reduce func(*Chunk) *Chunk) 
 }
 
 //the functions reduces the paralleliam map result----------------------------------------------------------
-func reduceDistValues(mapFuture *promise.Future, reduceSrcChan chan *Chunk, option *ParallelOption) (f *promise.Future, out chan *Chunk) {
+func reduceDistValues(cs *chanSource, option *ParallelOption) (cs *chanSource) { //(f *promise.Future, out chan *Chunk) {
 	//get distinct values
 	distKVs := make(map[interface{}]int)
 	option.Degree = 1
-	return parallelMapChanToChan(&chanSource{chunkChan: reduceSrcChan, future: mapFuture}, nil, func(c *Chunk) *Chunk {
+	return parallelMapChanToChan(cs, nil, func(c *Chunk) *Chunk {
 
 		r := distChunkValues(c, distKVs, nil)
 		//fmt.Println("\nreduceDistinctValues", c, r.Data)
