@@ -832,7 +832,7 @@ func (this *Queryable) execute() (ds DataSource, err error) {
 	pOption, keepOrder := this.ParallelOption, this.ParallelOption.KeepOrder
 
 	for i, step := range this.steps {
-		var f *promise.Future
+		//var f *promise.Future
 		step1 := step
 
 		//execute the operation
@@ -843,19 +843,19 @@ func (this *Queryable) execute() (ds DataSource, err error) {
 					stepErrsChan <- NewStepError(i, step1.Typ(), newErrorWithStacks(err))
 				}
 			}()
-			if ds, f, keepOrder, err = step.Action()(ds, step.POption(pOption), i == 0); err != nil {
+			if ds, keepOrder, err = step.Action()(ds, step.POption(pOption), i == 0); err != nil {
 				//fmt.Println("err in step2----------", i, err)
 				stepErrsChan <- NewStepError(i, step1.Typ(), err)
 				for j := i + 1; j < len(this.steps); j++ {
 					stepErrsChan <- nil
 				}
 				return err
-			} else if f != nil {
+			} else if ds.Future() != nil {
 				j := i
 				//add a fail callback to collect the errors in pipeline mode
 				//because the steps will be paralle in piplline mode,
 				//so cannot use return value of the function
-				f.Fail(func(results interface{}) {
+				ds.Future().Fail(func(results interface{}) {
 					//fmt.Println("err in step3----------", j, NewStepError(j, step1.Typ(), results))
 					stepErrsChan <- NewStepError(j, step1.Typ(), results)
 				}).Done(func(results interface{}) {
