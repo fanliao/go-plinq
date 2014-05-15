@@ -152,7 +152,7 @@ func getSelect(selector OneArgsFunc) stepAction {
 			return nil, option.KeepOrder, err
 		}
 
-		dst = parallelMapToChan(src, nil, mapChunk, option)
+		dst, e = parallelMap(src, nil, mapChunk, option)
 		//dst = &chanSource{chunkChan: out, future: fu}
 
 		return
@@ -174,7 +174,7 @@ func getSelectMany(manySelector func(interface{}) []interface{}) stepAction {
 			return list, option.KeepOrder, err
 		}
 
-		dst = parallelMapToChan(src, nil, mapChunk, option)
+		dst, e = parallelMap(src, nil, mapChunk, option)
 		//dst = &chanSource{chunkChan: out, future: fu}
 
 		return
@@ -193,9 +193,10 @@ func getWhere(predicate PredicateFunc) stepAction {
 		}
 
 		//always use channel mode in Where operation
-		cs := parallelMapToChan(src, nil, mapChunk, option)
+		dst, e = parallelMap(src, nil, mapChunk, option)
+		keep = option.KeepOrder
 
-		return cs, option.KeepOrder, nil
+		return
 	})
 }
 
@@ -371,7 +372,6 @@ func getJoinImpl(inner interface{},
 			return &Chunk{NewSlicer(results), c.Order, c.StartIndex}
 		}
 
-		//always use channel mode in Where operation
 		dst = parallelMapToChan(src, nil, mapChunk, option)
 		//dst = &chanSource{chunkChan: out, future: fu}
 		return
@@ -1158,7 +1158,7 @@ func filterSetWithSeq(src DataSource, src2 DataSource, isExcept bool, option *Pa
 func filterSetByList(src DataSource, src2 DataSource, isExcept bool, option *ParallelOption) (cs DataSource, e error) {
 	ds2 := src2
 	mapChunk, mapChunk2 := getFilterSetMapFuncs()
-	cs1 := parallelMapToChan(src, nil, mapChunk, option)
+	ds1, e := parallelMap(src, nil, mapChunk, option)
 	f2 := parallelMapListToList(ds2, mapChunk2, option)
 
 	var distKVs map[interface{}]bool
@@ -1195,7 +1195,7 @@ func filterSetByList(src DataSource, src2 DataSource, isExcept bool, option *Par
 	}
 
 	option.Degree = 1
-	cs = parallelMapToChan(cs1, nil, mapDist, option)
+	cs = parallelMapToChan(ds1, nil, mapDist, option)
 	return
 }
 
@@ -1300,6 +1300,28 @@ func splitToChunkChan(src DataSource, option *ParallelOption) (ch chan *Chunk) {
 	return
 }
 
+//对data source进行并行的Map处理，小数据量下返回listSource，否则都返回chanSource
+func parallelMap(src DataSource, reduceSrcChan chan *Chunk, mapChunk func(c *Chunk) (r *Chunk), option *ParallelOption) (dst DataSource, err error) { //f *promise.Future, ch chan *Chunk) {
+	//get all values and keys
+	switch s := src.(type) {
+	case *listSource:
+		if s.data.Len() <= option.ChunkSize*option.Degree {
+			f := parallelMapListToList(s, mapChunk, option)
+			dst, err = getFutureResult(f, func(r []interface{}) DataSource {
+				return newDataSource(r)
+			})
+			return
+		} else {
+			return parallelMapListToChan(s, reduceSrcChan, mapChunk, option), nil
+		}
+	case *chanSource:
+		return parallelMapChanToChan(s, reduceSrcChan, mapChunk, option), nil //, startOrders...)
+	default:
+		panic(ErrUnsupportSource)
+	}
+}
+
+//对data source进行并行的Map处理，返回chanSource
 func parallelMapToChan(src DataSource, reduceSrcChan chan *Chunk, mapChunk func(c *Chunk) (r *Chunk), option *ParallelOption) (cs *chanSource) { //f *promise.Future, ch chan *Chunk) {
 	//get all values and keys
 	switch s := src.(type) {
@@ -1629,7 +1651,7 @@ func reduceDistValues(src *chanSource, option *ParallelOption) (cs *chanSource) 
 	distKVs := make(map[interface{}]int)
 	option.Degree = 1
 	//fmt.Println("reduceDistValues")
-	return parallelMapChanToChan(src, nil, func(c *Chunk) *Chunk {
+	return parallelMapToChan(src, nil, func(c *Chunk) *Chunk {
 
 		r := distChunkValues(c, distKVs, nil)
 		//fmt.Println("\n distChunkValues", c, r.Data)
