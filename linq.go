@@ -83,7 +83,8 @@ type Chunk struct {
 type DataSource interface {
 	Typ() int                 //list or chan?
 	ToSlice(bool) Slicer      //Get a slice includes all datas
-	ToChan() chan interface{} //will be implement in futures
+	ToChan() chan interface{} //Get a channel includes all datas
+	Future() *promise.Future  //Get a future object used to capture errors in future
 }
 
 // KeyValue presents a key value pair, it be used by GroupBy, Join and Set operations
@@ -934,16 +935,16 @@ type listSource struct {
 	data Slicer
 }
 
-func (this listSource) Typ() int {
+func (this *listSource) Typ() int {
 	return SOURCE_LIST
 }
 
 // ToSlice returns the interface{} slice
-func (this listSource) ToSlice(keepOrder bool) Slicer {
+func (this *listSource) ToSlice(keepOrder bool) Slicer {
 	return this.data
 }
 
-func (this listSource) ToChan() (out chan interface{}) {
+func (this *listSource) ToChan() (out chan interface{}) {
 	out = make(chan interface{})
 	go func() {
 		forEachSlicer(this.data, func(i int, v interface{}) {
@@ -952,6 +953,10 @@ func (this listSource) ToChan() (out chan interface{}) {
 		close(out)
 	}()
 	return
+}
+
+func (this *listSource) Future() *promise.Future {
+	return nil
 }
 
 func newListSource(data interface{}) *listSource {
@@ -973,72 +978,13 @@ func (this chanSource) Typ() int {
 	return SOURCE_CHANNEL
 }
 
-func sendChunk(out chan *Chunk, c *Chunk) (closed bool) {
-	defer func() {
-		if e := recover(); e != nil {
-			closed = true
-		}
-	}()
-	out <- c
-	//closed = false
-	return
-}
-
-// makeChunkChanSure make the channel of chunk for linq operations
-// This function will only run once
-func (this *chanSource) makeChunkChanSure(chunkSize int) {
-	if this.chunkChan == nil {
-		this.once.Do(func() {
-			if this.chunkChan != nil {
-				return
-			}
-			srcChan := reflect.ValueOf(this.data)
-			this.chunkChan = make(chan *Chunk, numCPU)
-
-			this.future = promise.Start(func() (r interface{}, e error) {
-				defer func() {
-					if err := recover(); err != nil {
-						e = newErrorWithStacks(err)
-					}
-				}()
-
-				chunkData := make([]interface{}, 0, chunkSize)
-				lasti, i, order := 0, 0, 0
-				for {
-					if v, ok := srcChan.Recv(); ok {
-						i++
-						chunkData = append(chunkData, v.Interface())
-						if len(chunkData) == cap(chunkData) {
-							c := &Chunk{NewSlicer(chunkData), order, lasti}
-							if closed := sendChunk(this.chunkChan, c); closed {
-								return nil, nil
-							}
-
-							order++
-							lasti = i
-							chunkData = make([]interface{}, 0, chunkSize)
-						}
-					} else {
-						break
-					}
-				}
-
-				if len(chunkData) > 0 {
-					sendChunk(this.chunkChan, &Chunk{NewSlicer(chunkData), order, lasti})
-				}
-
-				//this.Close()
-				sendChunk(this.chunkChan, nil)
-				return nil, nil
-			})
-
-		})
-	}
-}
-
 func (this *chanSource) ChunkChan(chunkSize int) chan *Chunk {
 	this.makeChunkChanSure(chunkSize)
 	return this.chunkChan
+}
+
+func (this *chanSource) Future() *promise.Future {
+	return this.future
 }
 
 //Close closes the channel of the chunk
@@ -1135,6 +1081,69 @@ func (this chanSource) ToChan() chan interface{} {
 		}()
 	}
 	return out
+}
+
+func sendChunk(out chan *Chunk, c *Chunk) (closed bool) {
+	defer func() {
+		if e := recover(); e != nil {
+			closed = true
+		}
+	}()
+	out <- c
+	//closed = false
+	return
+}
+
+// makeChunkChanSure make the channel of chunk for linq operations
+// This function will only run once
+func (this *chanSource) makeChunkChanSure(chunkSize int) {
+	if this.chunkChan == nil {
+		this.once.Do(func() {
+			if this.chunkChan != nil {
+				return
+			}
+			srcChan := reflect.ValueOf(this.data)
+			this.chunkChan = make(chan *Chunk, numCPU)
+
+			this.future = promise.Start(func() (r interface{}, e error) {
+				defer func() {
+					if err := recover(); err != nil {
+						e = newErrorWithStacks(err)
+					}
+				}()
+
+				chunkData := make([]interface{}, 0, chunkSize)
+				lasti, i, order := 0, 0, 0
+				for {
+					if v, ok := srcChan.Recv(); ok {
+						i++
+						chunkData = append(chunkData, v.Interface())
+						if len(chunkData) == cap(chunkData) {
+							c := &Chunk{NewSlicer(chunkData), order, lasti}
+							if closed := sendChunk(this.chunkChan, c); closed {
+								return nil, nil
+							}
+
+							order++
+							lasti = i
+							chunkData = make([]interface{}, 0, chunkSize)
+						}
+					} else {
+						break
+					}
+				}
+
+				if len(chunkData) > 0 {
+					sendChunk(this.chunkChan, &Chunk{NewSlicer(chunkData), order, lasti})
+				}
+
+				//this.Close()
+				sendChunk(this.chunkChan, nil)
+				return nil, nil
+			})
+
+		})
+	}
 }
 
 // hKeyValue be used in Distinct, Join, Union/Intersect operations
