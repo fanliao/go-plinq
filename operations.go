@@ -144,13 +144,13 @@ func getSelect(selector OneArgsFunc) stepAction {
 			//mapChunk = getMapChunkFunc(selectFunc)
 		}
 
-		//try to use sequentail if the size of the data is less than size of chunk
-		if list, err, handled := trySequentialMap(src, option, mapChunk); handled {
-			return list, option.KeepOrder, err
-		} else if err != nil {
-			//fmt.Println("get error!!!!")
-			return nil, option.KeepOrder, err
-		}
+		////try to use sequentail if the size of the data is less than size of chunk
+		//if list, err, handled := trySequentialMap(src, option, mapChunk); handled {
+		//	return list, option.KeepOrder, err
+		//} else if err != nil {
+		//	//fmt.Println("get error!!!!")
+		//	return nil, option.KeepOrder, err
+		//}
 
 		dst, e = parallelMap(src, nil, mapChunk, option)
 		//dst = &chanSource{chunkChan: out, future: fu}
@@ -187,10 +187,10 @@ func getWhere(predicate PredicateFunc) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption, first bool) (dst DataSource, keep bool, e error) {
 		mapChunk := getChunkOprFunc(filterSlice, predicate)
 
-		//try to use sequentail if the size of the data is less than size of chunk
-		if list, err, handled := trySequentialMap(src, option, mapChunk); handled {
-			return list, option.KeepOrder, err
-		}
+		////try to use sequentail if the size of the data is less than size of chunk
+		//if list, err, handled := trySequentialMap(src, option, mapChunk); handled {
+		//	return list, option.KeepOrder, err
+		//}
 
 		//always use channel mode in Where operation
 		dst, e = parallelMap(src, nil, mapChunk, option)
@@ -523,18 +523,28 @@ func getReverse() stepAction {
 		}
 
 		reverseSrc := &listSource{NewSlicer(srcSlice)} //newDataSource(srcSlice)
-
-		//try to use sequentail if the size of the data is less than size of chunk
-		if _, err, handled := trySequentialMap(reverseSrc, option, mapChunk); handled {
-			return newDataSource(wholeSlice), option.KeepOrder, err
+		if size <= 1000 {
+			forEachSlicer(srcSlice, func(i int, v interface{}) {
+				j := i
+				wholeSlice[size-1-j], wholeSlice[j] = srcSlice.Index(i), slicer.Index(size-1-j)
+			})
+			dst = newDataSource(wholeSlice)
+			return
 		}
+
+		////try to use sequentail if the size of the data is less than size of chunk
+		//if _, err, handled := trySequentialMap(reverseSrc, option, mapChunk); handled {
+		//	return newDataSource(wholeSlice), option.KeepOrder, err
+		//}
 
 		f := parallelMapListToList(reverseSrc, func(c *Chunk) *Chunk {
 			return mapChunk(c)
 		}, option)
-		dst, e = getFutureResult(f, func(r []interface{}) DataSource {
-			return newDataSource(wholeSlice)
-		})
+		_, e = f.Get()
+		dst = newDataSource(wholeSlice)
+		//dst, e = getFutureResult(f, func(r []interface{}) DataSource {
+		//	return newDataSource(wholeSlice)
+		//})
 		return
 	})
 }
