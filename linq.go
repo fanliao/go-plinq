@@ -1083,6 +1083,26 @@ func (this chanSource) ToChan() chan interface{} {
 	return out
 }
 
+func (this *chanSource) addCallbackToCloseChan() {
+	out := this.chunkChan
+	if this.future != nil {
+		this.future.Always(func(results interface{}) {
+			//must use goroutiner, else may deadlock when out is buffer chan
+			//because it maybe called before the chan receiver be started.
+			//if the buffer is full, out <- nil will be holder then deadlock
+			go func() {
+				if out != nil {
+					if cap(out) == 0 {
+						close(out)
+					} else {
+						sendChunk(out, nil)
+					}
+				}
+			}()
+		})
+	}
+}
+
 func sendChunk(out chan *Chunk, c *Chunk) (closed bool) {
 	defer func() {
 		if e := recover(); e != nil {
