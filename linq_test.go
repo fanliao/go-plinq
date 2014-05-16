@@ -169,7 +169,7 @@ var (
 		case user:
 			return strconv.Itoa(val.id) + "/" + val.name
 		}
-		panic(errors.New("error!"))
+		panic(errors.New(fmt.Sprintf("error!, %v", v)))
 	}
 
 	distinctUser = func(v interface{}) interface{} {
@@ -230,16 +230,16 @@ func TestBasicOperations(t *testing.T) {
 
 	c.Convey("DistinctBy a slice of interface{}", t, func() {
 		rs, err := From(tRptUsers).DistinctBy(distinctUser).Results()
-		c.So(len(rs), c.ShouldEqual, len(tUsers))
 		c.So(err, c.ShouldBeNil)
+		c.So(len(rs), c.ShouldEqual, len(tUsers))
 	})
 
 	c.Convey("groupBy a slice of int", t, func() {
 		rs, err := From(tInts).GroupBy(func(v interface{}) interface{} {
 			return v.(int) / 10
 		}).Results()
-		c.So(len(rs), c.ShouldEqual, len(tInts)/10)
 		c.So(err, c.ShouldBeNil)
+		c.So(len(rs), c.ShouldEqual, len(tInts)/10)
 	})
 
 	c.Convey("OrderBy a slice of interface{} ", t, func() {
