@@ -169,7 +169,7 @@ var (
 		case user:
 			return strconv.Itoa(val.id) + "/" + val.name
 		}
-		panic(errors.New("error!"))
+		panic(errors.New(fmt.Sprintf("error!, %v", v)))
 	}
 
 	distinctUser = func(v interface{}) interface{} {

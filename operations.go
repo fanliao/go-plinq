@@ -169,10 +169,10 @@ func getSelectMany(manySelector func(interface{}) []interface{}) stepAction {
 			return &Chunk{NewSlicer(results), c.Order, c.StartIndex}
 		}
 
-		//try to use sequentail if the size of the data is less than size of chunk
-		if list, err, handled := trySequentialMap(src, option, mapChunk); handled {
-			return list, option.KeepOrder, err
-		}
+		////try to use sequentail if the size of the data is less than size of chunk
+		//if list, err, handled := trySequentialMap(src, option, mapChunk); handled {
+		//	return list, option.KeepOrder, err
+		//}
 
 		dst, e = parallelMap(src, nil, mapChunk, option)
 		//dst = &chanSource{chunkChan: out, future: fu}
@@ -1308,7 +1308,7 @@ func parallelMap(src DataSource, reduceSrcChan chan *Chunk, mapChunk func(c *Chu
 		if s.data.Len() <= option.ChunkSize*option.Degree {
 			f := parallelMapListToList(s, mapChunk, option)
 			dst, err = getFutureResult(f, func(r []interface{}) DataSource {
-				return newDataSource(r)
+				return newDataSource(expandChunks(r, option.KeepOrder))
 			})
 			return
 		} else {
@@ -1684,7 +1684,13 @@ func getFutureResult(f *promise.Future, dataSourceFunc func([]interface{}) DataS
 		//todo
 		return nil, err
 	} else {
-		return dataSourceFunc(results.([]interface{})), nil
+		rs := results.([]interface{})
+		if rs != nil && len(rs) == 1 {
+			if c, ok := rs[0].(*Chunk); ok {
+				return &listSource{c.Data}, nil
+			}
+		}
+		return dataSourceFunc(rs), nil
 	}
 }
 
