@@ -144,14 +144,6 @@ func getSelect(selector OneArgsFunc) stepAction {
 			//mapChunk = getMapChunkFunc(selectFunc)
 		}
 
-		//try to use sequentail if the size of the data is less than size of chunk
-		if list, err, handled := trySequentialMap(src, option, mapChunk); handled {
-			return list, option.KeepOrder, err
-		} else if err != nil {
-			//fmt.Println("get error!!!!")
-			return nil, option.KeepOrder, err
-		}
-
 		dst, e = parallelMap(src, nil, mapChunk, option)
 		//dst = &chanSource{chunkChan: out, future: fu}
 
@@ -169,13 +161,12 @@ func getSelectMany(manySelector func(interface{}) []interface{}) stepAction {
 			return &Chunk{NewSlicer(results), c.Order, c.StartIndex}
 		}
 
-		//try to use sequentail if the size of the data is less than size of chunk
-		if list, err, handled := trySequentialMap(src, option, mapChunk); handled {
-			return list, option.KeepOrder, err
-		}
+		////try to use sequentail if the size of the data is less than size of chunk
+		//if list, err, handled := trySequentialMap(src, option, mapChunk); handled {
+		//	return list, option.KeepOrder, err
+		//}
 
 		dst, e = parallelMap(src, nil, mapChunk, option)
-		//dst = &chanSource{chunkChan: out, future: fu}
 
 		return
 	})
@@ -186,11 +177,6 @@ func getSelectMany(manySelector func(interface{}) []interface{}) stepAction {
 func getWhere(predicate PredicateFunc) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption, first bool) (dst DataSource, keep bool, e error) {
 		mapChunk := getChunkOprFunc(filterSlice, predicate)
-
-		//try to use sequentail if the size of the data is less than size of chunk
-		if list, err, handled := trySequentialMap(src, option, mapChunk); handled {
-			return list, option.KeepOrder, err
-		}
 
 		//always use channel mode in Where operation
 		dst, e = parallelMap(src, nil, mapChunk, option)
@@ -243,14 +229,6 @@ func getDistinct(selector OneArgsFunc) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption, first bool) (dst DataSource, keep bool, e error) {
 		var useDefHash uint32 = 0
 		mapChunk := getMapChunkToKVChunkFunc(&useDefHash, selector)
-
-		//test the size = 100, trySequentialMap only speed up 10%
-		//if list, handled := trySequentialMap(src, &option, mapChunk); handled {
-		//	c := &Chunk{list.ToSlice(false), 0}
-		//	distKVs := make(map[uint64]int)
-		//	c = distinctChunkValues(c, distKVs)
-		//	return &listSource{c.Data}, nil, option.KeepOrder, nil
-		//}
 
 		//map the element to a keyValue that key is hash value and value is element
 		cs := parallelMapToChan(src, nil, mapChunk, option)
@@ -340,7 +318,6 @@ func getJoinImpl(inner interface{},
 	unmatchSelector func(*hKeyValue, *[]interface{}), isLeftJoin bool) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption, first bool) (dst DataSource, keep bool, e error) {
 		keep = option.KeepOrder
-		//option.ChunkSize = DEFAULTMINCUNKSIZE
 		innerKVtask := promise.Start(func() (interface{}, error) {
 			if innerKVsDs, err := From(inner).hGroupBy(innerKeySelector).execute(); err == nil {
 				return innerKVsDs.(*listSource).data.(*mapSlicer).data, nil
@@ -373,7 +350,6 @@ func getJoinImpl(inner interface{},
 		}
 
 		dst = parallelMapToChan(src, nil, mapChunk, option)
-		//dst = &chanSource{chunkChan: out, future: fu}
 		return
 	})
 }
@@ -409,7 +385,7 @@ func getUnion(source2 interface{}) stepAction {
 		cs2 := parallelMapToChan(src2, reduceSrcChan, mapChunk, option)
 
 		mapFuture := promise.WhenAll(cs1.Future(), cs2.Future())
-		//addCallbackToCloseChan(mapFuture, reduceSrcChan)
+
 		outCs := &chanSource{chunkChan: reduceSrcChan, future: mapFuture}
 		outCs.addCallbackToCloseChan()
 
@@ -438,7 +414,6 @@ func sequentialUnion(src DataSource, src2 DataSource, option *ParallelOption, fi
 	result := make([]interface{}, 0, s1.Len()+s2.Len())
 
 	distKVs := make(map[interface{}]int)
-	//count := 0
 	distChunkValues(c1, distKVs, &result)
 	distChunkValues(c2, distKVs, &result)
 	//fmt.Println("\n-----result=", result)
@@ -471,11 +446,6 @@ func getIntersect(source2 interface{}) stepAction {
 		keep = option.KeepOrder
 		return
 
-		//if e == nil {
-		//	return dst, fu, option.KeepOrder, nil
-		//} else {
-		//	return nil, nil, option.KeepOrder, e
-		//}
 	})
 }
 
@@ -487,11 +457,6 @@ func getExcept(source2 interface{}) stepAction {
 		dst, e = filterSet(src, source2, true, option)
 		keep = option.KeepOrder
 		return
-		//if e == nil {
-		//	return dst, fu, option.KeepOrder, nil
-		//} else {
-		//	return nil, nil, option.KeepOrder, e
-		//}
 	})
 }
 
@@ -523,18 +488,20 @@ func getReverse() stepAction {
 		}
 
 		reverseSrc := &listSource{NewSlicer(srcSlice)} //newDataSource(srcSlice)
-
-		//try to use sequentail if the size of the data is less than size of chunk
-		if _, err, handled := trySequentialMap(reverseSrc, option, mapChunk); handled {
-			return newDataSource(wholeSlice), option.KeepOrder, err
+		if size <= 1000 {
+			forEachSlicer(srcSlice, func(i int, v interface{}) {
+				j := i
+				wholeSlice[size-1-j], wholeSlice[j] = srcSlice.Index(i), slicer.Index(size-1-j)
+			})
+			dst = newDataSource(wholeSlice)
+			return
 		}
 
 		f := parallelMapListToList(reverseSrc, func(c *Chunk) *Chunk {
 			return mapChunk(c)
 		}, option)
-		dst, e = getFutureResult(f, func(r []interface{}) DataSource {
-			return newDataSource(wholeSlice)
-		})
+		_, e = f.Get()
+		dst = newDataSource(wholeSlice)
 		return
 	})
 }
@@ -595,7 +562,6 @@ func getAggregate(src DataSource, aggregateFuncs []*AggregateOperation, option *
 
 	//try to use sequentail if the size of the data is less than size of chunk
 	if rs, err, handled := trySequentialAggregate(src, option, aggregateFuncs); handled {
-		//fmt.Println("trySequentialAggregate")
 		return rs, err
 	}
 
@@ -1276,7 +1242,6 @@ func splitToChunkChan(src DataSource, option *ParallelOption) (ch chan *Chunk) {
 	if size < lenOfData/(numCPU*5) {
 		size = lenOfData / (numCPU * 5)
 	}
-	//fmt.Println("splitToChunkChan, size=", size, "len=", lenOfData)
 	ch = make(chan *Chunk, option.Degree)
 	if lenOfData == 0 {
 		ch = nil
@@ -1308,7 +1273,7 @@ func parallelMap(src DataSource, reduceSrcChan chan *Chunk, mapChunk func(c *Chu
 		if s.data.Len() <= option.ChunkSize*option.Degree {
 			f := parallelMapListToList(s, mapChunk, option)
 			dst, err = getFutureResult(f, func(r []interface{}) DataSource {
-				return newDataSource(r)
+				return newDataSource(expandChunks(r, option.KeepOrder))
 			})
 			return
 		} else {
@@ -1357,11 +1322,9 @@ func forEachChan(src *chanSource, srcChan chan *Chunk, action func(*Chunk) (resu
 	}
 	if src.Future() != nil {
 		if _, err := src.Future().Get(); err != nil {
-			//fmt.Println("return 3", r, k)
 			return nil, err
 		}
 	}
-	//fmt.Println("return 4", r, k)
 	return
 
 }
@@ -1415,7 +1378,6 @@ func parallelMapListToChan(src DataSource, out chan *Chunk, task func(*Chunk) *C
 	} else {
 		src := &chanSource{chunkChan: chunkChan}
 		cs = parallelMapChanToChan(src, out, task, option)
-		//f = cs.Future()
 	}
 	if createOutChan {
 		cs.addCallbackToCloseChan()
@@ -1426,15 +1388,14 @@ func parallelMapListToChan(src DataSource, out chan *Chunk, task func(*Chunk) *C
 
 func parallelMapListToList(src DataSource, task func(*Chunk) *Chunk, option *ParallelOption) (f *promise.Future) {
 
-	i, fs := 0, make([]interface{}, option.Degree) //make([]*promise.Future, option.Degree)
+	i, fs := 0, make([]interface{}, option.Degree)
 	splitContinuous(src, func(c *Chunk) {
-		fs[i] = func() (interface{}, error) { //promise.Start(func() (interface{}, error) {
+		fs[i] = func() (interface{}, error) {
 			r := task(c)
 			return r, nil
 		}
 		i++
 	}, option)
-	//f = promise.WhenAllFuture(fs[0:i]...)
 	f = promise.WaitAll(fs[0:i]...)
 	return
 }
@@ -1468,11 +1429,9 @@ func parallelMapChanForAnyTrue(src *chanSource,
 					if predicate(result) {
 						r = result
 						beEnded = true
-						//fmt.Println("return 1", r, k)
 						return
 					}
 				} else {
-					//fmt.Println("return 2", r, k)
 					return
 				}
 				return nil, false, nil
@@ -1660,31 +1619,19 @@ func reduceDistValues(src *chanSource, option *ParallelOption) (cs *chanSource) 
 }
 
 //util functions-----------------------------------------------------------------
-//func addCallbackToCloseChan(f *promise.Future, out chan *Chunk) {
-//	if f != nil {
-//		f.Always(func(results interface{}) {
-//			//must use goroutiner, else may deadlock when out is buffer chan
-//			//because it maybe called before the chan receiver be started.
-//			//if the buffer is full, out <- nil will be holder then deadlock
-//			go func() {
-//				if out != nil {
-//					if cap(out) == 0 {
-//						close(out)
-//					} else {
-//						sendChunk(out, nil)
-//					}
-//				}
-//			}()
-//		})
-//	}
-//}
 
 func getFutureResult(f *promise.Future, dataSourceFunc func([]interface{}) DataSource) (DataSource, error) {
 	if results, err := f.Get(); err != nil {
 		//todo
 		return nil, err
 	} else {
-		return dataSourceFunc(results.([]interface{})), nil
+		rs := results.([]interface{})
+		if rs != nil && len(rs) == 1 {
+			if c, ok := rs[0].(*Chunk); ok {
+				return &listSource{c.Data}, nil
+			}
+		}
+		return dataSourceFunc(rs), nil
 	}
 }
 

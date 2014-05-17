@@ -248,25 +248,27 @@ func expandChunks(src []interface{}, keepOrder bool) []interface{} {
 
 	if keepOrder {
 		//根据需要排序
-		src = sortSlice(src, func(a interface{}, b interface{}) bool {
-			var (
-				a1, b1 *Chunk
-			)
+		if len(src) > 1 {
+			src = sortSlice(src, func(a interface{}, b interface{}) bool {
+				var (
+					a1, b1 *Chunk
+				)
 
-			if isNil(a) {
-				return true
-			} else if isNil(b) {
-				return false
-			}
+				if isNil(a) {
+					return true
+				} else if isNil(b) {
+					return false
+				}
 
-			switch v := a.(type) {
-			case []interface{}:
-				a1, b1 = v[0].(*Chunk), b.([]interface{})[0].(*Chunk)
-			case *Chunk:
-				a1, b1 = v, b.(*Chunk)
-			}
-			return a1.Order < b1.Order
-		})
+				switch v := a.(type) {
+				case []interface{}:
+					a1, b1 = v[0].(*Chunk), b.([]interface{})[0].(*Chunk)
+				case *Chunk:
+					a1, b1 = v, b.(*Chunk)
+				}
+				return a1.Order < b1.Order
+			})
+		}
 	}
 
 	//得到块列表
@@ -1371,7 +1373,3 @@ func bytesEquals(addr1 uintptr, addr2 uintptr, size uintptr) bool {
 	}
 	return true
 }
-
-//func Equals(a, b interface{}) bool {
-//	return equals(a, b)
-//}
