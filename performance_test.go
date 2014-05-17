@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	countForB      int  = 10000
-	rptCountForB   int  = 11000
+	countForB      int  = 100
+	rptCountForB   int  = 110
 	testGoLinq     bool = true
 	largeChunkSize int  = 1000
 )
@@ -22,11 +22,6 @@ var (
 	bRptUsers []user = make([]user, rptCountForB, rptCountForB)
 	bUsers2   []user = make([]user, countForB, countForB)
 	bRoles    []role = make([]role, countForB, countForB)
-	//bInts     []interface{} = make([]interface{}, countForB, countForB)
-	//bUsers    []interface{} = make([]interface{}, countForB, countForB)
-	//bRptUsers []interface{} = make([]interface{}, rptCountForB, rptCountForB)
-	//bUsers2   []interface{} = make([]interface{}, countForB, countForB)
-	//bRoles    []interface{} = make([]interface{}, countForB, countForB)
 )
 
 func init() {
