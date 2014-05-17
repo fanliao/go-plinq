@@ -301,7 +301,7 @@ func TestWhere(t *testing.T) {
 		expectedUsers[i] = user{i * 2, "user" + strconv.Itoa(i*2)}
 	}
 	test := func(size int) {
-		DefaultChunkSize = size
+		defaultChunkSize = size
 		c.Convey("When passed nil function, error be returned", func() {
 			c.So(func() { From(tInts).Where(nil) }, c.ShouldPanicWith, ErrNilAction)
 		})
@@ -369,7 +369,7 @@ func TestWhere(t *testing.T) {
 			c.So(rs, shouldSlicesResemble, expectedInts)
 			c.So(err, c.ShouldBeNil)
 		})
-
+		defaultChunkSize = DEFAULTCHUNKSIZE
 	}
 
 	//设置chunk size==count，测试串行模式
@@ -388,7 +388,8 @@ func TestSelect(t *testing.T) {
 	}
 
 	test := func(size int) {
-		DefaultChunkSize = size
+		defaultChunkSize = size
+
 		c.Convey("When passed nil function, error be returned", func() {
 			c.So(func() { From(tInts).Select(nil) }, c.ShouldPanicWith, ErrNilAction)
 		})
@@ -453,6 +454,7 @@ func TestSelect(t *testing.T) {
 			c.So(rs, shouldSlicesResemble, newInts)
 		})
 
+		defaultChunkSize = DEFAULTCHUNKSIZE
 	}
 
 	c.Convey("Test Select Sequential", t, func() { test(sequentialChunkSize) })
@@ -485,7 +487,7 @@ func TestSelectMany(t *testing.T) {
 	}
 
 	test := func(size int) {
-		DefaultChunkSize = size
+		defaultChunkSize = size
 		c.Convey("When passed nil function, error be returned", func() {
 			c.So(func() { From(tInts).SelectMany(nil) }, c.ShouldPanicWith, ErrNilAction)
 		})
@@ -530,6 +532,7 @@ func TestSelectMany(t *testing.T) {
 			c.So(err, c.ShouldBeNil)
 		})
 
+		defaultChunkSize = DEFAULTCHUNKSIZE
 	}
 
 	c.Convey("Test selectMany Sequential", t, func() { test(sequentialChunkSize) })
@@ -545,7 +548,7 @@ func distinctUserPanic(v interface{}) interface{} {
 
 func TestDistinct(t *testing.T) {
 	test := func(size int) {
-		DefaultChunkSize = size
+		defaultChunkSize = size
 		c.Convey("When passed nil function, error be returned", func() {
 			c.So(func() { From(tInts).DistinctBy(nil) }, c.ShouldPanicWith, ErrNilAction)
 		})
@@ -607,6 +610,7 @@ func TestDistinct(t *testing.T) {
 			c.So(err, c.ShouldBeNil)
 		})
 
+		defaultChunkSize = DEFAULTCHUNKSIZE
 	}
 
 	c.Convey("Test Distinct Sequential", t, func() { test(sequentialChunkSize) })
@@ -621,7 +625,7 @@ func TestGroupBy(t *testing.T) {
 		panic(errors.New("panic"))
 	}
 	test := func(size int) {
-		DefaultChunkSize = size
+		defaultChunkSize = size
 		c.Convey("When passed nil function, error be returned", func() {
 			c.So(func() { From(tInts).GroupBy(nil) }, c.ShouldPanicWith, ErrNilAction)
 		})
@@ -666,6 +670,7 @@ func TestGroupBy(t *testing.T) {
 			c.So(err, c.ShouldBeNil)
 		})
 
+		defaultChunkSize = DEFAULTCHUNKSIZE
 	}
 
 	c.Convey("Test groupBy Sequential", t, func() { test(sequentialChunkSize) })
@@ -721,7 +726,7 @@ func TestJoin(t *testing.T) {
 	}
 
 	testJoin := func(size int) {
-		DefaultChunkSize = size
+		defaultChunkSize = size
 		c.Convey("When passed nil inner, error be returned", func() {
 			c.So(func() { From(tUsers).Join(nil, nil, nil, nil) }, c.ShouldPanicWith, ErrJoinNilSource)
 			c.So(func() { From(tUsers).Join(tRoles, nil, nil, nil) }, c.ShouldPanicWith, ErrOuterKeySelector)
@@ -809,12 +814,13 @@ func TestJoin(t *testing.T) {
 			c.So(err, c.ShouldBeNil)
 			checkOrder(rs)
 		})
+		defaultChunkSize = DEFAULTCHUNKSIZE
 	}
 	c.Convey("Test Join Sequential", t, func() { testJoin(30) })
 	c.Convey("Test Join parallel", t, func() { testJoin(7) })
 
 	testLeftJoin := func(size int) {
-		DefaultChunkSize = size
+		defaultChunkSize = size
 		c.Convey("LeftJoin an empty slice as outer source", func() {
 			rs, err := From([]int{}).LeftJoin(tUsers2, userSelector, roleSelector, resultSelector).Results()
 			c.So(len(rs), c.ShouldEqual, 0)
@@ -854,7 +860,7 @@ func TestJoin(t *testing.T) {
 			c.So(err, c.ShouldBeNil)
 			checkOrder(rs)
 		})
-
+		defaultChunkSize = DEFAULTCHUNKSIZE
 	}
 	c.Convey("Test LeftJoin Sequential", t, func() { testLeftJoin(30) })
 	c.Convey("Test LeftJoin parallel", t, func() { testLeftJoin(7) })
@@ -881,7 +887,7 @@ func TestGroupJoin(t *testing.T) {
 	}
 
 	testGroupJoin := func(size int) {
-		DefaultChunkSize = size
+		defaultChunkSize = size
 		c.Convey("When passed nil inner, error be returned", func() {
 			c.So(func() { From(tUsers).GroupJoin(nil, nil, nil, nil) }, c.ShouldPanicWith, ErrJoinNilSource)
 			c.So(func() { From(tUsers).GroupJoin(tRoles, nil, nil, nil) }, c.ShouldPanicWith, ErrOuterKeySelector)
@@ -950,13 +956,13 @@ func TestGroupJoin(t *testing.T) {
 				c.So(len(ur.roles), c.ShouldEqual, 2)
 			}
 		})
-
+		defaultChunkSize = DEFAULTCHUNKSIZE
 	}
 	c.Convey("Test GroupJoin Sequential", t, func() { testGroupJoin(30) })
 	c.Convey("Test GroupJoin parallel", t, func() { testGroupJoin(7) })
 
 	testLeftGroupJoin := func(size int) {
-		DefaultChunkSize = size
+		defaultChunkSize = size
 		c.Convey("LeftGroupJoin an empty slice as outer source", func() {
 			rs, err := From([]int{}).LeftGroupJoin(tUsers2, userSelector, roleSelector, groupResultSelector).Results()
 			c.So(len(rs), c.ShouldEqual, 0)
@@ -976,7 +982,7 @@ func TestGroupJoin(t *testing.T) {
 			c.So(len(rs), c.ShouldEqual, count)
 			c.So(err, c.ShouldBeNil)
 		})
-
+		defaultChunkSize = DEFAULTCHUNKSIZE
 	}
 	c.Convey("Test LeftGroupJoin Sequential", t, func() { testLeftGroupJoin(30) })
 	c.Convey("Test LeftGroupJoin parallel", t, func() { testLeftGroupJoin(7) })
@@ -985,7 +991,7 @@ func TestGroupJoin(t *testing.T) {
 
 func TestUnion(t *testing.T) {
 	test := func(size int) {
-		DefaultChunkSize = size
+		defaultChunkSize = size
 		c.Convey("When passed nil source, error be returned", func() {
 			c.So(func() { From(tUsers).Union(nil) }, c.ShouldPanicWith, ErrUnionNilSource)
 		})
@@ -1027,6 +1033,7 @@ func TestUnion(t *testing.T) {
 			c.So(len(rs), c.ShouldEqual, count+count/2)
 			c.So(err, c.ShouldBeNil)
 		})
+		defaultChunkSize = DEFAULTCHUNKSIZE
 	}
 	c.Convey("Test Union Sequential", t, func() { test(sequentialChunkSize) })
 	c.Convey("Test Union parallel", t, func() { test(parallelChunkSize) })
@@ -1035,7 +1042,7 @@ func TestUnion(t *testing.T) {
 
 func TestConcat(t *testing.T) {
 	test := func(size int) {
-		DefaultChunkSize = size
+		defaultChunkSize = size
 		c.Convey("When passed nil source, error be returned", func() {
 			c.So(func() { From(tUsers).Concat(nil) }, c.ShouldPanicWith, ErrConcatNilSource)
 		})
@@ -1077,6 +1084,7 @@ func TestConcat(t *testing.T) {
 			c.So(err, c.ShouldBeNil)
 			c.So(len(rs), c.ShouldEqual, count*2)
 		})
+		defaultChunkSize = DEFAULTCHUNKSIZE
 	}
 	c.Convey("Test Concat Sequential", t, func() { test(sequentialChunkSize) })
 	c.Convey("Test Concat parallel", t, func() { test(parallelChunkSize) })
@@ -1085,7 +1093,7 @@ func TestConcat(t *testing.T) {
 
 func TestInterest(t *testing.T) {
 	test := func(size int) {
-		DefaultChunkSize = size
+		defaultChunkSize = size
 		c.Convey("When passed nil source, error be returned", func() {
 			c.So(func() { From(tUsers).Intersect(nil) }, c.ShouldPanicWith, ErrInterestNilSource)
 		})
@@ -1127,6 +1135,7 @@ func TestInterest(t *testing.T) {
 			c.So(len(rs), c.ShouldEqual, count/2)
 			c.So(err, c.ShouldBeNil)
 		})
+		defaultChunkSize = DEFAULTCHUNKSIZE
 	}
 	c.Convey("Test Interest Sequential", t, func() { test(sequentialChunkSize) })
 	c.Convey("Test Interest parallel", t, func() { test(parallelChunkSize) })
@@ -1135,7 +1144,7 @@ func TestInterest(t *testing.T) {
 
 func TestExcept(t *testing.T) {
 	test := func(size int) {
-		DefaultChunkSize = size
+		defaultChunkSize = size
 		c.Convey("When passed nil source, error be returned", func() {
 			c.So(func() { From(tUsers).Except(nil) }, c.ShouldPanicWith, ErrExceptNilSource)
 		})
@@ -1177,6 +1186,7 @@ func TestExcept(t *testing.T) {
 			c.So(len(rs), c.ShouldEqual, count/2)
 			c.So(err, c.ShouldBeNil)
 		})
+		defaultChunkSize = DEFAULTCHUNKSIZE
 	}
 	c.Convey("Test Except Sequential", t, func() { test(sequentialChunkSize) })
 	c.Convey("Test Except parallel", t, func() { test(parallelChunkSize) })
@@ -1200,7 +1210,7 @@ func orderUserByIdPanic(v1 interface{}, v2 interface{}) int {
 
 func TestOrderBy(t *testing.T) {
 	test := func(size int) {
-		DefaultChunkSize = size
+		defaultChunkSize = size
 		c.Convey("When passed nil function, should use the default compare function", func() {
 			rs, err := From([]int{4, 2, 3, 1}).OrderBy(nil).Results()
 			c.So(rs, shouldSlicesResemble, []int{1, 2, 3, 4})
@@ -1248,13 +1258,14 @@ func TestOrderBy(t *testing.T) {
 				id = u.id
 			}
 		})
+		defaultChunkSize = size
 	}
 	c.Convey("Test Order Sequential", t, func() { test(sequentialChunkSize) })
 }
 
 func TestReverse(t *testing.T) {
 	test := func(size int) {
-		DefaultChunkSize = size
+		defaultChunkSize = size
 		c.Convey("An error appears in before operation", func() {
 			_, err := From(getChan(tRptUsers)).Select(projectWithPanic).Reverse().Results()
 			c.So(err, c.ShouldNotBeNil)
@@ -1286,6 +1297,7 @@ func TestReverse(t *testing.T) {
 				id = u.id
 			}
 		})
+		defaultChunkSize = DEFAULTCHUNKSIZE
 	}
 	c.Convey("Test Reverse Sequential", t, func() { test(sequentialChunkSize) })
 	c.Convey("Test Reverse parallel", t, func() { test(parallelChunkSize) })
@@ -1307,7 +1319,7 @@ func TestAggregate(t *testing.T) {
 	}
 
 	test := func(size int) {
-		DefaultChunkSize = size
+		defaultChunkSize = size
 		c.Convey("When passed nil function, should use the default compare function", func() {
 			_, err := From([]int{4, 2, 3, 1}).Aggregate(nil)
 			c.So(err, c.ShouldNotBeNil)
@@ -1342,6 +1354,7 @@ func TestAggregate(t *testing.T) {
 			c.So(err, c.ShouldBeNil)
 			_ = r
 		})
+		defaultChunkSize = DEFAULTCHUNKSIZE
 	}
 	c.Convey("Test Aggregate Sequential", t, func() { test(sequentialChunkSize) })
 	c.Convey("Test Aggregate parallel", t, func() { test(parallelChunkSize) })
@@ -1350,7 +1363,7 @@ func TestAggregate(t *testing.T) {
 func TestSumCountAvgMaxMin(t *testing.T) {
 
 	test := func(size int) {
-		DefaultChunkSize = size
+		defaultChunkSize = size
 		c.Convey("Max an int slice", func() {
 			r, err := From(tInts).Max()
 			//TODO: need test keep order
@@ -1426,6 +1439,7 @@ func TestSumCountAvgMaxMin(t *testing.T) {
 			c.So(err, c.ShouldBeNil)
 			c.So(r, c.ShouldEqual, float32(count-1)/float32(2))
 		})
+		defaultChunkSize = DEFAULTCHUNKSIZE
 	}
 	c.Convey("Test Sum/Count/Avg/Max/Min Sequential", t, func() { test(sequentialChunkSize) })
 	c.Convey("Test Sum/Count/Avg/Max/Min parallel", t, func() { test(parallelChunkSize) })
@@ -1519,7 +1533,7 @@ func TestSkipAndTake(t *testing.T) {
 	_ = getTakeResult
 
 	test := func(size int) {
-		DefaultChunkSize = size
+		defaultChunkSize = size
 		//test list source -----------------------------------------------
 		c.Convey("Test Skip in list", func() {
 			c.Convey("Skip nothing", func() {
@@ -1809,7 +1823,7 @@ func TestSkipAndTake(t *testing.T) {
 				}
 			})
 		})
-
+		defaultChunkSize = DEFAULTCHUNKSIZE
 	}
 	c.Convey("Test Skip and Take Sequential", t, func() { test(sequentialChunkSize) })
 	c.Convey("Test Skip and Take parallel", t, func() { test(parallelChunkSize) })

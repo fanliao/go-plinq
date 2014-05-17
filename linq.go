@@ -28,13 +28,15 @@ import (
 var _ = fmt.Println //for debugger
 
 const (
-	SOURCE_LIST    int = iota //presents the list source
-	SOURCE_CHANNEL            //presents the channel source
+	SOURCE_LIST           int = iota //presents the list source
+	SOURCE_CHANNEL                   //presents the channel source
+	DEFAULTCHUNKSIZE      = 200
+	DEFAULTLARGECHUNKSIZE = 2000
 )
 
 var (
-	DefaultChunkSize      = 200
-	DefaultLargeChunkSize = 2000
+	defaultChunkSize      = DEFAULTCHUNKSIZE
+	defaultLargeChunkSize = DEFAULTLARGECHUNKSIZE
 )
 
 var (
@@ -676,10 +678,9 @@ func (this *Queryable) Aggregate(aggregateFuncs ...*AggregateOperation) (result 
 func (this *Queryable) Sum(selectors ...OneArgsFunc) (result interface{}, err error) {
 	opr := getSumOpr(nil)
 	if selectors != nil && len(selectors) > 0 {
-		opr = getMinOpr(selectors[0])
+		opr = getSumOpr(selectors[0])
 	}
 	aggregateOprs := []*AggregateOperation{opr}
-
 	return this.Aggregate(aggregateOprs...)
 }
 
@@ -702,7 +703,7 @@ func (this *Queryable) Count(predicates ...PredicateFunc) (result interface{}, e
 func (this *Queryable) Average(selectors ...OneArgsFunc) (result interface{}, err error) {
 	sumOpr := getSumOpr(nil)
 	if selectors != nil && len(selectors) > 0 {
-		sumOpr = getMinOpr(selectors[0])
+		sumOpr = getSumOpr(selectors[0])
 	}
 	aggregateOprs := []*AggregateOperation{sumOpr, countAggOpr}
 
@@ -922,7 +923,7 @@ func newQueryable(ds DataSource) (q *Queryable) {
 	q.KeepOrder = true
 	q.steps = make([]step, 0, 4)
 	q.Degree = numCPU
-	q.ChunkSize = DefaultChunkSize
+	q.ChunkSize = defaultChunkSize
 	q.data = ds
 	return
 }
