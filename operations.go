@@ -1213,13 +1213,14 @@ func foundMatchFunc(predicate PredicateFunc, findFirst bool) func(c *Chunk, canc
 //连续分割，将slice分割为几个连续的块，块数=option.Degree
 func splitContinuous(src DataSource, action func(*Chunk), option *ParallelOption) {
 	data := src.ToSlice(false)
-	size := data.Len()
-	lenOfData, size := size, ceilChunkSize(size, option.Degree)
+	size := defaultChunkSize
+	lenOfData, size := data.Len(), ceilChunkSize(size, option.Degree)
 
 	if size < option.ChunkSize {
 		size = option.ChunkSize
 	}
 
+	j := 0
 	for i := 0; i < option.Degree && i*size < lenOfData; i++ {
 		end := (i + 1) * size
 		if end >= lenOfData {
@@ -1227,7 +1228,9 @@ func splitContinuous(src DataSource, action func(*Chunk), option *ParallelOption
 		}
 		c := &Chunk{data.Slice(i*size, end), i, i * size} //, end}
 		action(c)
+		j = i
 	}
+	fmt.Println("size=", size, j)
 
 	return
 }
@@ -1488,7 +1491,7 @@ func parallelMatchListByDirection(src DataSource, getAction func(*Chunk, promise
 			}
 		}
 
-		//for {
+		fmt.Println("fs.count=", len(fs))
 		forFutures(fs, start, func(i int) (beEnd bool) {
 			f := fs[i]
 			//根据查找顺序，如果有Future失败或者找到了数据，则取消后面的Future
