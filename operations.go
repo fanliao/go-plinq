@@ -644,6 +644,7 @@ func getSkipTake(findMatch func(*Chunk, promise.Canceller) (int, bool), isTake b
 				if i, found, e = getFirstOrLastIndex(s, findMatch, option, true); !found {
 					i = s.data.Len()
 				}
+				//fmt.Println("getSkipTake", i, found, "\n")
 			}
 
 			//根据Take还是Skip返回结果
@@ -1180,6 +1181,7 @@ func filterSetByList(src DataSource, src2 DataSource, isExcept bool, option *Par
 
 func getFirstOrLastIndex(src *listSource, predicate func(c *Chunk, canceller promise.Canceller) (r int, found bool), option *ParallelOption, before2after bool) (idx int, found bool, err error) {
 	i, err := parallelMatchListByDirection(src, predicate, option, before2after)
+	//fmt.Println("getFirstOrLastIndex", i, err)
 	if err == nil && i != -1 {
 		idx, found = i.(int), true
 		return
@@ -1229,11 +1231,11 @@ func foundMatchFunc(predicate PredicateFunc, findFirst bool) func(c *Chunk, canc
 
 //paralleliam functions--------------------------------------------------
 
-//连续分割，将slice分割为几个连续的块，块数=option.Degree
+//连续分割，将slice分割为几个连续的块，块数<=option.Degree
 func splitContinuous(src DataSource, action func(*Chunk), option *ParallelOption) {
 	data := src.ToSlice(false)
-	size := defaultChunkSize
-	lenOfData, size := data.Len(), ceilChunkSize(size, option.Degree)
+	lenOfData := data.Len()
+	size := ceilChunkSize(lenOfData, option.Degree)
 
 	if size < option.ChunkSize {
 		size = option.ChunkSize
@@ -1249,6 +1251,7 @@ func splitContinuous(src DataSource, action func(*Chunk), option *ParallelOption
 		action(c)
 		//j = i
 	}
+	//fmt.Println("splitContinuous, ", lenOfData, size, j)
 	//fmt.Println("size=", size, j)
 
 	return
@@ -1267,6 +1270,7 @@ func splitToChunkChan(src DataSource, option *ParallelOption) (ch chan *Chunk) {
 	ch = make(chan *Chunk, option.Degree)
 	if lenOfData == 0 {
 		ch = nil
+		return
 	}
 
 	go func() {
@@ -1473,12 +1477,14 @@ func parallelMapChanForAnyTrue(src *chanSource,
 //并行查找slice中第一个符合条件的索引，可以选择从前和从后开始判断
 func parallelMatchListByDirection(src DataSource, getAction func(*Chunk, promise.Canceller) (int, bool), option *ParallelOption, isFarword bool) (index interface{}, err error) {
 	count, funs := 0, make([]func(promise.Canceller) (interface{}, error), option.Degree)
+	//fmt.Println("match list,len(src)=", src.ToSlice(false).Len())
 	splitContinuous(src, func(c *Chunk) {
 		funs[count] = func(canceller promise.Canceller) (interface{}, error) {
 			r, found := getAction(c, canceller)
 			if found && r != -1 {
 				r = r + c.StartIndex
 			}
+			//fmt.Println("match list", c.StartIndex, r, found)
 			return r, nil
 		}
 		count++
@@ -1532,7 +1538,7 @@ func parallelMatchListByDirection(src DataSource, getAction func(*Chunk, promise
 		}
 	}
 
-	fmt.Println("fs.count=", len(fs))
+	//fmt.Println("fs.count=", len(fs))
 	forFutures(fs, start, func(i int) (beEnd bool) {
 		f := fs[i]
 		//根据查找顺序，如果有Future出错或者找到了数据，则取消后面的Future
@@ -1554,13 +1560,16 @@ func parallelMatchListByDirection(src DataSource, getAction func(*Chunk, promise
 			hasOk = true
 		}
 		idx = rs[i]
+		//fmt.Println("Last Match list result,", idx, allOk, hasOk)
 		return
 	})
 
 	if !allOk {
+		//fmt.Println("Match list result fail,", idx, allOk, hasOk)
 		return -1, NewAggregateError("Error appears in WhenAll:", errs)
 	}
 
+	//fmt.Println("Match list result,", idx, allOk, hasOk)
 	return idx, nil
 	//})
 

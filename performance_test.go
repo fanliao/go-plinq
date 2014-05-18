@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	countForB      int  = 100
-	rptCountForB   int  = 110
+	countForB      int  = 10000
+	rptCountForB   int  = 11000
 	testGoLinq     bool = true
 	largeChunkSize int  = 1000
 )
@@ -414,8 +414,11 @@ func testPlinqSkipWhile(b *testing.B, i int) {
 
 func BenchmarkGoPLinq_SkipWhile(b *testing.B) {
 	for i := 0; i < b.N; i++ {
+		//fmt.Println("skip while", countForB/3)
 		testPlinqSkipWhile(b, countForB/3)
+		//fmt.Println("skip while", 2*countForB/3)
 		testPlinqSkipWhile(b, 2*countForB/3)
+		//fmt.Println("skip while", 5*countForB/6)
 		testPlinqSkipWhile(b, 5*countForB/6)
 	}
 }
