@@ -465,35 +465,38 @@ func getReverse() stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption, first bool) (dst DataSource, keep bool, e error) {
 		keep = option.KeepOrder
 		var (
-			wholeSlice []interface{}
-			slicer     Slicer
+			dstSlicer []interface{}
+			srcSlicer Slicer
 		)
 
 		if listSrc, ok := src.(*listSource); ok && first {
-			wholeSlice = make([]interface{}, listSrc.data.Len())
-			slicer = listSrc.data
+			dstSlicer = make([]interface{}, listSrc.data.Len())
+			srcSlicer = listSrc.data
 		} else {
-			wholeSlice = src.ToSlice(true).ToInterfaces()
-			slicer = NewSlicer(wholeSlice)
+			dstSlicer = src.ToSlice(true).ToInterfaces()
+			srcSlicer = NewSlicer(dstSlicer)
 		}
-		size := slicer.Len()
-		srcSlice := slicer.Slice(0, size/2) //wholeSlice[0 : size/2]
+		size := srcSlicer.Len()
+		srcSlice := srcSlicer.Slice(0, size/2) //wholeSlice[0 : size/2]
 
 		mapChunk := func(c *Chunk) *Chunk {
 			forEachSlicer(c.Data, func(i int, v interface{}) {
 				j := c.StartIndex + i
-				wholeSlice[size-1-j], wholeSlice[j] = c.Data.Index(i), slicer.Index(size-1-j)
+				dstSlicer[size-1-j], dstSlicer[j] = c.Data.Index(i), srcSlicer.Index(size-1-j)
 			})
 			return c
 		}
 
 		reverseSrc := &listSource{NewSlicer(srcSlice)} //newDataSource(srcSlice)
 		if size <= 1000 {
-			forEachSlicer(srcSlice, func(i int, v interface{}) {
-				j := i
-				wholeSlice[size-1-j], wholeSlice[j] = srcSlice.Index(i), slicer.Index(size-1-j)
-			})
-			dst = newDataSource(wholeSlice)
+			c := &Chunk{Data: srcSlice}
+			mapChunk(c)
+			//forEachSlicer(srcSlice, func(i int, v interface{}) {
+			//	j := i
+			//	dstSlicer[size-1-j], dstSlicer[j] = srcSlice.Index(i), srcSlicer.Index(size-1-j)
+			//})
+			fmt.Println("dstSlicer=", dstSlicer)
+			dst = newDataSource(dstSlicer)
 			return
 		}
 
@@ -501,7 +504,7 @@ func getReverse() stepAction {
 			return mapChunk(c)
 		}, option)
 		_, e = f.Get()
-		dst = newDataSource(wholeSlice)
+		dst = newDataSource(dstSlicer)
 		return
 	})
 }
@@ -1166,14 +1169,20 @@ func filterSetByList(src DataSource, src2 DataSource, isExcept bool, option *Par
 }
 
 func getFirstOrLastIndex(src *listSource, predicate func(c *Chunk, canceller promise.Canceller) (r int, found bool), option *ParallelOption, before2after bool) (idx int, found bool, err error) {
-	f := parallelMatchListByDirection(src, predicate, option, before2after)
-	if i, e := f.Get(); e != nil {
-		return -1, false, e
-	} else if i == -1 {
-		return -1, false, nil
-	} else {
-		return i.(int), true, nil
+	i, err := parallelMatchListByDirection(src, predicate, option, before2after)
+	if err == nil && i != -1 {
+		idx, found = i.(int), true
+		return
 	}
+	idx = -1
+	return
+	//if i, e := f.Get(); e != nil {
+	//	return -1, false, e
+	//} else if i == -1 {
+	//	return -1, false, nil
+	//} else {
+	//	return i.(int), true, nil
+	//}
 }
 
 func foundMatchFunc(predicate PredicateFunc, findFirst bool) func(c *Chunk, canceller promise.Canceller) (r int, found bool) {
@@ -1220,7 +1229,7 @@ func splitContinuous(src DataSource, action func(*Chunk), option *ParallelOption
 		size = option.ChunkSize
 	}
 
-	j := 0
+	//j := 0
 	for i := 0; i < option.Degree && i*size < lenOfData; i++ {
 		end := (i + 1) * size
 		if end >= lenOfData {
@@ -1228,9 +1237,9 @@ func splitContinuous(src DataSource, action func(*Chunk), option *ParallelOption
 		}
 		c := &Chunk{data.Slice(i*size, end), i, i * size} //, end}
 		action(c)
-		j = i
+		//j = i
 	}
-	fmt.Println("size=", size, j)
+	//fmt.Println("size=", size, j)
 
 	return
 }
@@ -1448,82 +1457,101 @@ func parallelMapChanForAnyTrue(src *chanSource,
 	return f
 }
 
-func parallelMatchListByDirection(src DataSource, getAction func(*Chunk, promise.Canceller) (int, bool), option *ParallelOption, isFarword bool) (f *promise.Future) {
-	count, fs := 0, make([]*promise.Future, option.Degree)
+//并行查找slice中第一个符合条件的索引，可以选择从前和从后开始判断
+func parallelMatchListByDirection(src DataSource, getAction func(*Chunk, promise.Canceller) (int, bool), option *ParallelOption, isFarword bool) (index interface{}, err error) {
+	count, funs := 0, make([]func(promise.Canceller) (interface{}, error), option.Degree)
 	splitContinuous(src, func(c *Chunk) {
-		fs[count] = promise.Start(func(canceller promise.Canceller) (interface{}, error) {
+		funs[count] = func(canceller promise.Canceller) (interface{}, error) {
 			r, found := getAction(c, canceller)
 			if found && r != -1 {
 				r = r + c.StartIndex
 			}
 			return r, nil
-		})
+		}
 		count++
 	}, option)
 
+	//只有1个数据块，则无需使用promise
+	if count == 1 {
+		func() {
+			defer func() {
+				if e := recover(); e != nil {
+					err = newErrorWithStacks(e)
+				}
+			}()
+			index, err = funs[0](nil)
+		}()
+		return
+	}
+
+	fs := make([]*promise.Future, count)
+	for i, fun := range funs {
+		fs[i] = promise.Start(fun)
+	}
+
 	//根据查找的顺序来检查各任务查找的结果
-	f = promise.Start(func() (interface{}, error) {
-		var idx interface{}
-		rs, errs := make([]interface{}, count), make([]error, count)
-		allOk, hasOk := true, false
-		start, end := 0, count
+	//f = promise.Start(func() (interface{}, error) {
+	var idx interface{}
+	rs, errs := make([]interface{}, count), make([]error, count)
+	allOk, hasOk := true, false
+	start, end := 0, count
 
-		if !isFarword {
-			start, end = count-1, -1
-		}
+	if !isFarword {
+		start, end = count-1, -1
+	}
 
-		forFutures := func(fs []*promise.Future, start int, action func(i int) bool) {
-			i := start
-			for {
-				if action(i) {
-					break
-				}
-
-				if isFarword {
-					i++
-				} else {
-					i--
-				}
-				//所有Future都判断完毕
-				if i == end {
-					break
-				}
-			}
-		}
-
-		fmt.Println("fs.count=", len(fs))
-		forFutures(fs, start, func(i int) (beEnd bool) {
-			f := fs[i]
-			//根据查找顺序，如果有Future失败或者找到了数据，则取消后面的Future
-			if !allOk || hasOk {
-				forFutures(fs, i, func(i int) (beEnd bool) {
-					if c := fs[i].Canceller(); c != nil {
-						fs[i].RequestCancel()
-					}
-					return
-				})
-				return true
+	forFutures := func(fs []*promise.Future, start int, action func(i int) bool) {
+		i := start
+		for {
+			if action(i) {
+				break
 			}
 
-			//判断每个Future的结果
-			rs[i], errs[i] = f.Get()
-			if errs[i] != nil {
-				allOk = false
-			} else if rs[i].(int) != -1 {
-				hasOk = true
+			if isFarword {
+				i++
+			} else {
+				i--
 			}
-			idx = rs[i]
-			return
-		})
+			//所有Future都判断完毕
+			if i == end {
+				break
+			}
+		}
+	}
 
-		if !allOk {
-			return -1, NewAggregateError("Error appears in WhenAll:", errs)
+	fmt.Println("fs.count=", len(fs))
+	forFutures(fs, start, func(i int) (beEnd bool) {
+		f := fs[i]
+		//根据查找顺序，如果有Future出错或者找到了数据，则取消后面的Future
+		if !allOk || hasOk {
+			forFutures(fs, i, func(i int) (beEnd bool) {
+				if c := fs[i].Canceller(); c != nil {
+					fs[i].RequestCancel()
+				}
+				return
+			})
+			return true
 		}
 
-		return idx, nil
+		//判断每个Future的结果
+		rs[i], errs[i] = f.Get()
+		if errs[i] != nil {
+			allOk = false
+		} else if rs[i].(int) != -1 {
+			hasOk = true
+		}
+		idx = rs[i]
+		return
 	})
 
-	return f
+	if !allOk {
+		return -1, NewAggregateError("Error appears in WhenAll:", errs)
+	}
+
+	return idx, nil
+	//})
+
+	//return f
 }
 
 //The functions for check if should be Sequential and execute the Sequential mode ----------------------------
