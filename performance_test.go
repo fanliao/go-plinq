@@ -22,15 +22,10 @@ var (
 	bRptUsers []user = make([]user, rptCountForB, rptCountForB)
 	bUsers2   []user = make([]user, countForB, countForB)
 	bRoles    []role = make([]role, countForB, countForB)
-	//bInts     []interface{} = make([]interface{}, countForB, countForB)
-	//bUsers    []interface{} = make([]interface{}, countForB, countForB)
-	//bRptUsers []interface{} = make([]interface{}, rptCountForB, rptCountForB)
-	//bUsers2   []interface{} = make([]interface{}, countForB, countForB)
-	//bRoles    []interface{} = make([]interface{}, countForB, countForB)
 )
 
 func init() {
-	fmt.Println("DEFAULTCHUNKSIZE=", DefaultChunkSize)
+	fmt.Println("DEFAULTCHUNKSIZE=", defaultChunkSize)
 	fmt.Println("countForB=", countForB)
 	maxProcs = numCPU
 	runtime.GOMAXPROCS(maxProcs)
@@ -419,8 +414,11 @@ func testPlinqSkipWhile(b *testing.B, i int) {
 
 func BenchmarkGoPLinq_SkipWhile(b *testing.B) {
 	for i := 0; i < b.N; i++ {
+		//fmt.Println("skip while", countForB/3)
 		testPlinqSkipWhile(b, countForB/3)
+		//fmt.Println("skip while", 2*countForB/3)
 		testPlinqSkipWhile(b, 2*countForB/3)
+		//fmt.Println("skip while", 5*countForB/6)
 		testPlinqSkipWhile(b, 5*countForB/6)
 	}
 }
