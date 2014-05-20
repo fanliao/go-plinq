@@ -528,74 +528,117 @@ func TestSelect(t *testing.T) {
 		return v.(int) * 10
 	}
 
+	testPlinqLazyOpr("If the error appears in select function", t, taInts, func(q *Queryable) *Queryable {
+		return q.Select(projectWithPanic)
+	}, func(rs []interface{}, err error, n int) {
+		c.So(err, c.ShouldNotBeNil)
+	})
+
+	testPlinqLazyOpr("If the error appears in previous operations", t, taInts, func(q *Queryable) *Queryable {
+		return q.Where(filterWithPanic).Select(projectFunc)
+	}, func(rs []interface{}, err error, n int) {
+		c.So(err, c.ShouldNotBeNil)
+	})
+
+	testPlinqLazyOpr("Select an empty slice", t, taEmptys, func(q *Queryable) *Queryable {
+		return q.Where(filterWithPanic).Select(projectFunc)
+	}, func(rs []interface{}, err error, n int) {
+		c.So(len(rs), c.ShouldEqual, 0)
+		c.So(err, c.ShouldBeNil)
+	})
+
+	newInts := func(n int) []interface{} {
+		ints := make([]interface{}, n)
+		for i := 0; i < n; i++ {
+			ints[i] = i * 10
+		}
+		return ints
+	}
+	testPlinqLazyOpr("select an int slice, and keep original order", t, taInts, func(q *Queryable) *Queryable {
+		return q.Select(selectIntForConfusedOrder)
+	}, func(rs []interface{}, err error, n int) {
+		c.So(rs, shouldSlicesResemble, newInts(n))
+		c.So(err, c.ShouldBeNil)
+	})
+
+	newUsers := func(n int) []interface{} {
+		users := make([]interface{}, n)
+		for i := 0; i < n; i++ {
+			users[i] = strconv.Itoa(i) + "/" + "user" + strconv.Itoa(i)
+		}
+		return users
+	}
+	testPlinqLazyOpr("Select an interface{} slice", t, taUsers, func(q *Queryable) *Queryable {
+		return q.Select(projectFunc)
+	}, func(rs []interface{}, err error, n int) {
+		c.So(err, c.ShouldBeNil)
+		c.So(rs, shouldSlicesResemble, newUsers(n))
+	})
+
 	test := func(size int) {
-		defaultChunkSize = size
+		//defaultChunkSize = size
 
 		c.Convey("When passed nil function, error be returned", func() {
 			c.So(func() { From(tInts).Select(nil) }, c.ShouldPanicWith, ErrNilAction)
 		})
 
-		c.Convey("If the error appears in select function", func() {
-			_, err := From(tInts).Select(projectWithPanic).Results()
-			c.So(err, c.ShouldNotBeNil)
-		})
+		//c.Convey("If the error appears in select function", func() {
+		//	_, err := From(tInts).Select(projectWithPanic).Results()
+		//	c.So(err, c.ShouldNotBeNil)
+		//})
 
-		c.Convey("If the error appears in before operations", func() {
-			_, err := From(getIntChan(tInts)).Where(filterWithPanic).Select(projectFunc).Results()
-			c.So(err, c.ShouldNotBeNil)
-		})
+		//c.Convey("If the error appears in before operations", func() {
+		//	_, err := From(getIntChan(tInts)).Where(filterWithPanic).Select(projectFunc).Results()
+		//	c.So(err, c.ShouldNotBeNil)
+		//})
 
-		c.Convey("Select an empty slice", func() {
-			rs, err := From([]int{}).Select(projectWithPanic).Results()
-			c.So(len(rs), c.ShouldEqual, 0)
-			c.So(err, c.ShouldBeNil)
-		})
+		//c.Convey("Select an empty slice", func() {
+		//	rs, err := From([]int{}).Select(projectWithPanic).Results()
+		//	c.So(len(rs), c.ShouldEqual, 0)
+		//	c.So(err, c.ShouldBeNil)
+		//})
 
-		newInts := make([]interface{}, count)
-		for i := 0; i < count; i++ {
-			newInts[i] = i * 10
-		}
-		c.Convey("select an int slice", func() {
-			rs, err := From(tInts).Select(projectFunc).Results()
-			c.So(rs, shouldSlicesResemble, newInts)
-			c.So(err, c.ShouldBeNil)
-		})
+		//c.Convey("select an int slice", func() {
+		//	rs, err := From(tInts).Select(projectFunc).Results()
+		//	c.So(rs, shouldSlicesResemble, newInts)
+		//	c.So(err, c.ShouldBeNil)
+		//})
 
-		c.Convey("select an int slice, and keep original order", func() {
-			rs, err := From(tInts).Select(selectIntForConfusedOrder).Results()
-			c.So(rs, shouldSlicesResemble, newInts)
-			c.So(err, c.ShouldBeNil)
-		})
+		//c.Convey("select an int slice, and keep original order", func() {
+		//	rs, err := From(tInts).Select(selectIntForConfusedOrder).Results()
+		//	c.So(rs, shouldSlicesResemble, newInts)
+		//	c.So(err, c.ShouldBeNil)
+		//})
 
-		newUsers := make([]interface{}, count)
-		for i := 0; i < count; i++ {
-			newUsers[i] = strconv.Itoa(i) + "/" + "user" + strconv.Itoa(i)
-		}
-		c.Convey("Select an interface{} slice", func() {
-			rs, err := From(tUsers).Select(projectFunc).Results()
-			c.So(err, c.ShouldBeNil)
-			c.So(rs, shouldSlicesResemble, newUsers)
-		})
+		//newUsers := make([]interface{}, count)
+		//for i := 0; i < count; i++ {
+		//	newUsers[i] = strconv.Itoa(i) + "/" + "user" + strconv.Itoa(i)
+		//}
+		//c.Convey("Select an interface{} slice", func() {
+		//	rs, err := From(tUsers).Select(projectFunc).Results()
+		//	c.So(err, c.ShouldBeNil)
+		//	c.So(rs, shouldSlicesResemble, newUsers)
+		//})
 
-		c.Convey("Select an interface{} channel", func() {
-			rs, err := From(getChan(tUsers)).Select(projectFunc).Results()
-			c.So(err, c.ShouldBeNil)
-			c.So(rs, shouldSlicesResemble, newUsers)
-		})
+		//c.Convey("Select an interface{} channel", func() {
+		//	rs, err := From(getChan(tUsers)).Select(projectFunc).Results()
+		//	c.So(err, c.ShouldBeNil)
+		//	c.So(rs, shouldSlicesResemble, newUsers)
+		//})
 
-		c.Convey("Select an int channel", func() {
-			rs, err := From(getIntChan(tInts)).Select(projectFunc).Results()
-			c.So(err, c.ShouldBeNil)
-			c.So(rs, shouldSlicesResemble, newInts)
-		})
+		//c.Convey("Select an int channel", func() {
+		//	rs, err := From(getIntChan(tInts)).Select(projectFunc).Results()
+		//	c.So(err, c.ShouldBeNil)
+		//	c.So(rs, shouldSlicesResemble, newInts)
+		//})
 
-		c.Convey("Select an int channel, and keep original order", func() {
-			rs, err := From(getIntChan(tInts)).Select(selectIntForConfusedOrder).Results()
-			c.So(err, c.ShouldBeNil)
-			c.So(rs, shouldSlicesResemble, newInts)
-		})
+		//c.Convey("Select an int channel, and keep original order", func() {
+		//	rs, err := From(getIntChan(tInts)).Select(selectIntForConfusedOrder).Results()
+		//	c.So(err, c.ShouldBeNil)
+		//	c.So(rs, shouldSlicesResemble, newInts)
+		//})
 
-		defaultChunkSize = DEFAULTCHUNKSIZE
+		//defaultChunkSize = DEFAULTCHUNKSIZE
 	}
 
 	c.Convey("Test Select Sequential", t, func() { test(sequentialChunkSize) })
@@ -627,12 +670,40 @@ func TestSelectMany(t *testing.T) {
 		return rs
 	}
 
+	testPlinqLazyOpr("If the error appears in select function", t, taInts, func(q *Queryable) *Queryable {
+		return q.SelectMany(selectManyWithPanic)
+	}, func(rs []interface{}, err error, n int) {
+		c.So(err, c.ShouldNotBeNil)
+	})
+
+	testPlinqLazyOpr("selectMany an empty slice", t, taEmptys, func(q *Queryable) *Queryable {
+		return q.SelectMany(selectManyWithPanic)
+	}, func(rs []interface{}, err error, n int) {
+			c.So(len(rs), c.ShouldEqual, 0)
+			c.So(err, c.ShouldBeNil)
+	})
+
+	newInts := func(n int)[]interface{}{
+	ints := make([]interface{}, n*2)
+	for i := 0; i < n; i++ {
+		ints[2*i] = i * 10
+		ints[2*i+1] = i + n
+	}
+	return ints
+	}
+	testPlinqLazyOpr("selectMany an int slice, and keep original order", t, taInts, func(q *Queryable) *Queryable {
+		return q.SelectMany(selectIntManyForConfusedOrder)
+	}, func(rs []interface{}, err error, n int) {
+			c.So(err, c.ShouldBeNil)
+			c.So(rs, shouldSlicesResemble, newInts(n))
+	})
+	
 	test := func(size int) {
-		defaultChunkSize = size
 		c.Convey("When passed nil function, error be returned", func() {
 			c.So(func() { From(tInts).SelectMany(nil) }, c.ShouldPanicWith, ErrNilAction)
 		})
 
+		/*defaultChunkSize = size
 		c.Convey("An error should be returned if the error appears in select function", func() {
 			_, err := From(tInts).SelectMany(selectManyWithPanic).Results()
 			c.So(err, c.ShouldNotBeNil)
@@ -674,6 +745,7 @@ func TestSelectMany(t *testing.T) {
 		})
 
 		defaultChunkSize = DEFAULTCHUNKSIZE
+		*/
 	}
 
 	c.Convey("Test selectMany Sequential", t, func() { test(sequentialChunkSize) })
