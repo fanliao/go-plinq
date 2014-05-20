@@ -16,8 +16,8 @@ import (
 const (
 	count     int = 20
 	rptCount  int = 22
-	countP    int = 1000
-	rptCountP int = 1000
+	countP    int = 300
+	rptCountP int = 300
 )
 
 var (
@@ -105,7 +105,7 @@ var (
 	//随机运算，用于打乱次序
 	confusedOrder = func() {
 		rand.Seed(10)
-		j := rand.Intn(1000000)
+		j := rand.Intn(50000)
 		var sum float64 = 0
 		for k := 0; k < j; k++ {
 			sum += math.Cos(float64(k)) * math.Pi
@@ -321,9 +321,10 @@ func TestBasicOperations(t *testing.T) {
 
 //全面测试所有的linq操作，包括串行和并行两种模式-------------------------------
 //testingthe opretion returns the collecion
-func testPlinqLazyOpr(t *testing.T, desc string, srcs interface{},
+func testLazyOpr(desc string, t *testing.T, srcs interface{},
 	opr func(q *Queryable) *Queryable,
-	assert func([]interface{}, error, int)) {
+	assert func([]interface{}, error, int, bool)) {
+	defaultChunkSize = 20
 
 	getC := func(src interface{}) interface{} {
 		switch s := src.(type) {
@@ -352,35 +353,35 @@ func testPlinqLazyOpr(t *testing.T, desc string, srcs interface{},
 		c.Convey("Test the slicer -> slicer", func() {
 			//fmt.Println("Test the slicer -> slicer", src)
 			rs, err := opr(From(src)).Results()
-			assert(rs, err, n)
+			assert(rs, err, n, false)
 		})
 
 		c.Convey("Test the channel -> slicer", func() {
 			//fmt.Println("Test the channel -> slicer", src)
 			rs, err := opr(From(getC(src))).Results()
-			assert(rs, err, n)
+			assert(rs, err, n, false)
 		})
 
 		c.Convey("Test the slicer -> channel", func() {
 			//fmt.Println("Test the slicer -> channel", src)
 			rsChan, errChan, err := opr(From(src)).ToChan()
 			if err != nil {
-				assert(nil, err, n)
+				assert(nil, err, n, true)
 				return
 			}
 			rs, err := getChanResult(rsChan, errChan)
-			assert(rs, err, n)
+			assert(rs, err, n, true)
 		})
 
 		c.Convey("Test the channel -> channel", func() {
 			//fmt.Println("Test the channel -> channel", src)
 			rsChan, errChan, err := opr(From(getC(src))).ToChan()
 			if err != nil {
-				assert(nil, err, n)
+				assert(nil, err, n, true)
 				return
 			}
 			rs, err := getChanResult(rsChan, errChan)
-			assert(rs, err, n)
+			assert(rs, err, n, true)
 		})
 		//})
 	}
@@ -405,6 +406,7 @@ func testPlinqLazyOpr(t *testing.T, desc string, srcs interface{},
 			test(ss[1])
 		})
 	}
+	defaultChunkSize = DEFAULTCHUNKSIZE
 }
 
 func TestWhere(t *testing.T) {
@@ -424,44 +426,54 @@ func TestWhere(t *testing.T) {
 		return expecteds
 	}
 
-	testPlinqLazyOpr(t, "If the error appears in where function", taInts, func(q *Queryable) *Queryable {
+	testLazyOpr("If the error appears in where function", t, taInts, func(q *Queryable) *Queryable {
 		return q.Where(filterWithPanic)
-	}, func(rs []interface{}, err error, n int) {
+	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
 		c.So(err, c.ShouldNotBeNil)
 	})
 
-	testPlinqLazyOpr(t, "If the error appears in previous operation", taInts, func(q *Queryable) *Queryable {
+	testLazyOpr("If the error appears in previous operation", t, taInts, func(q *Queryable) *Queryable {
 		return q.Select(projectWithPanic).Where(filterWithPanic)
-	}, func(rs []interface{}, err error, n int) {
+	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
 		c.So(err, c.ShouldNotBeNil)
 	})
 
-	testPlinqLazyOpr(t, "Filter an empty slice", taEmptys, func(q *Queryable) *Queryable {
+	testLazyOpr("Filter an empty slice", t, taEmptys, func(q *Queryable) *Queryable {
 		return q.Where(filterWithPanic)
-	}, func(rs []interface{}, err error, n int) {
+	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
 		c.So(len(rs), c.ShouldEqual, 0)
 		c.So(err, c.ShouldBeNil)
 	})
 
-	testPlinqLazyOpr(t, "Filter an int slice", taInts, func(q *Queryable) *Queryable {
-		return q.Where(filterFunc)
-	}, func(rs []interface{}, err error, n int) {
-		c.So(err, c.ShouldBeNil)
-		c.So(rs, shouldSlicesResemble, expectedInts(n))
-	})
+	//testPlinqLazyOpr("Filter an int slice", t, taInts, func(q *Queryable) *Queryable {
+	//	return q.Where(filterFunc)
+	//}, func(rs []interface{}, err error, n int, chanAsOut bool) {
+	//	c.So(err, c.ShouldBeNil)
+	//	c.So(rs, shouldSlicesResemble, expectedInts(n))
+	//})
 
-	testPlinqLazyOpr(t, "Filter an int slice, and keep original order", taInts, func(q *Queryable) *Queryable {
+	testLazyOpr("Filter an int slice, and keep original order", t, taInts, func(q *Queryable) *Queryable {
 		return q.Where(filterFuncForConfusedOrder)
-	}, func(rs []interface{}, err error, n int) {
+	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
 		c.So(err, c.ShouldBeNil)
-		c.So(rs, shouldSlicesResemble, expectedInts(n))
+		//NOTE: don't keep the original order when output the channel
+		if chanAsOut {
+			c.So(len(rs), c.ShouldEqual, len(expectedInts(n)))
+		} else {
+			c.So(rs, shouldSlicesResemble, expectedInts(n))
+		}
 	})
 
-	testPlinqLazyOpr(t, "Filter an interface{} slice", taUsers, func(q *Queryable) *Queryable {
+	testLazyOpr("Filter an interface{} slice", t, taUsers, func(q *Queryable) *Queryable {
 		return q.Where(filterFunc)
-	}, func(rs []interface{}, err error, n int) {
+	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
 		c.So(err, c.ShouldBeNil)
-		c.So(rs, shouldSlicesResemble, expectedUsers(n))
+		//NOTE: don't keep the original order when output the channel
+		if chanAsOut {
+			c.So(len(rs), c.ShouldEqual, len(expectedUsers(n)))
+		} else {
+			c.So(rs, shouldSlicesResemble, expectedUsers(n))
+		}
 	})
 
 	test := func(size int) {
@@ -551,21 +563,21 @@ func TestSelect(t *testing.T) {
 		return v.(int) * 10
 	}
 
-	testPlinqLazyOpr("If the error appears in select function", t, taInts, func(q *Queryable) *Queryable {
+	testLazyOpr("If the error appears in select function", t, taInts, func(q *Queryable) *Queryable {
 		return q.Select(projectWithPanic)
-	}, func(rs []interface{}, err error, n int) {
+	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
 		c.So(err, c.ShouldNotBeNil)
 	})
 
-	testPlinqLazyOpr("If the error appears in previous operations", t, taInts, func(q *Queryable) *Queryable {
+	testLazyOpr("If the error appears in previous operations", t, taInts, func(q *Queryable) *Queryable {
 		return q.Where(filterWithPanic).Select(projectFunc)
-	}, func(rs []interface{}, err error, n int) {
+	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
 		c.So(err, c.ShouldNotBeNil)
 	})
 
-	testPlinqLazyOpr("Select an empty slice", t, taEmptys, func(q *Queryable) *Queryable {
+	testLazyOpr("Select an empty slice", t, taEmptys, func(q *Queryable) *Queryable {
 		return q.Where(filterWithPanic).Select(projectFunc)
-	}, func(rs []interface{}, err error, n int) {
+	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
 		c.So(len(rs), c.ShouldEqual, 0)
 		c.So(err, c.ShouldBeNil)
 	})
@@ -577,11 +589,16 @@ func TestSelect(t *testing.T) {
 		}
 		return ints
 	}
-	testPlinqLazyOpr("select an int slice, and keep original order", t, taInts, func(q *Queryable) *Queryable {
+	testLazyOpr("select an int slice, and keep original order", t, taInts, func(q *Queryable) *Queryable {
 		return q.Select(selectIntForConfusedOrder)
-	}, func(rs []interface{}, err error, n int) {
-		c.So(rs, shouldSlicesResemble, newInts(n))
+	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
 		c.So(err, c.ShouldBeNil)
+		//NOTE: don't keep the original order when output the channel
+		if chanAsOut {
+			c.So(len(rs), c.ShouldEqual, len(newInts(n)))
+		} else {
+			c.So(rs, shouldSlicesResemble, newInts(n))
+		}
 	})
 
 	newUsers := func(n int) []interface{} {
@@ -591,11 +608,16 @@ func TestSelect(t *testing.T) {
 		}
 		return users
 	}
-	testPlinqLazyOpr("Select an interface{} slice", t, taUsers, func(q *Queryable) *Queryable {
+	testLazyOpr("Select an interface{} slice", t, taUsers, func(q *Queryable) *Queryable {
 		return q.Select(projectFunc)
-	}, func(rs []interface{}, err error, n int) {
+	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
 		c.So(err, c.ShouldBeNil)
-		c.So(rs, shouldSlicesResemble, newUsers(n))
+		//NOTE: don't keep the original order when output the channel
+		if chanAsOut {
+			c.So(len(rs), c.ShouldEqual, len(newUsers(n)))
+		} else {
+			c.So(rs, shouldSlicesResemble, newUsers(n))
+		}
 	})
 
 	test := func(size int) {
@@ -677,12 +699,12 @@ func TestSelectMany(t *testing.T) {
 		return []interface{}{}
 	}
 
-	selectIntMany := func(v interface{}) []interface{} {
-		rs := make([]interface{}, 2)
-		rs[0] = v.(int) * 10
-		rs[1] = v.(int) + count
-		return rs
-	}
+	//selectIntMany := func(v interface{}) []interface{} {
+	//	rs := make([]interface{}, 2)
+	//	rs[0] = v.(int) * 10
+	//	rs[1] = v.(int) + count
+	//	return rs
+	//}
 
 	selectIntManyForConfusedOrder := func(v interface{}) []interface{} {
 		rand.Seed(10)
@@ -693,34 +715,39 @@ func TestSelectMany(t *testing.T) {
 		return rs
 	}
 
-	testPlinqLazyOpr("If the error appears in select function", t, taInts, func(q *Queryable) *Queryable {
+	testLazyOpr("If the error appears in select function", t, taInts, func(q *Queryable) *Queryable {
 		return q.SelectMany(selectManyWithPanic)
-	}, func(rs []interface{}, err error, n int) {
+	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
 		c.So(err, c.ShouldNotBeNil)
 	})
 
-	testPlinqLazyOpr("selectMany an empty slice", t, taEmptys, func(q *Queryable) *Queryable {
+	testLazyOpr("selectMany an empty slice", t, taEmptys, func(q *Queryable) *Queryable {
 		return q.SelectMany(selectManyWithPanic)
-	}, func(rs []interface{}, err error, n int) {
-			c.So(len(rs), c.ShouldEqual, 0)
-			c.So(err, c.ShouldBeNil)
+	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
+		c.So(len(rs), c.ShouldEqual, 0)
+		c.So(err, c.ShouldBeNil)
 	})
 
-	newInts := func(n int)[]interface{}{
-	ints := make([]interface{}, n*2)
-	for i := 0; i < n; i++ {
-		ints[2*i] = i * 10
-		ints[2*i+1] = i + n
+	newInts := func(n int) []interface{} {
+		ints := make([]interface{}, n*2)
+		for i := 0; i < n; i++ {
+			ints[2*i] = i * 10
+			ints[2*i+1] = i + count
+		}
+		return ints
 	}
-	return ints
-	}
-	testPlinqLazyOpr("selectMany an int slice, and keep original order", t, taInts, func(q *Queryable) *Queryable {
+	testLazyOpr("selectMany an int slice, and keep original order", t, taInts, func(q *Queryable) *Queryable {
 		return q.SelectMany(selectIntManyForConfusedOrder)
-	}, func(rs []interface{}, err error, n int) {
-			c.So(err, c.ShouldBeNil)
+	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
+		c.So(err, c.ShouldBeNil)
+		//NOTE: don't keep the original order when output the channel
+		if chanAsOut {
+			c.So(len(rs), c.ShouldEqual, len(newInts(n)))
+		} else {
 			c.So(rs, shouldSlicesResemble, newInts(n))
+		}
 	})
-	
+
 	test := func(size int) {
 		c.Convey("When passed nil function, error be returned", func() {
 			c.So(func() { From(tInts).SelectMany(nil) }, c.ShouldPanicWith, ErrNilAction)
@@ -783,16 +810,22 @@ func distinctUserPanic(v interface{}) interface{} {
 }
 
 func TestDistinct(t *testing.T) {
+	testLazyOpr("if the error appears in DistinctBy function", t, taInts, func(q *Queryable) *Queryable {
+		return q.DistinctBy(distinctUserPanic)
+	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
+		c.So(err, c.ShouldNotBeNil)
+	})
+
 	test := func(size int) {
 		defaultChunkSize = size
 		c.Convey("When passed nil function, error be returned", func() {
 			c.So(func() { From(tInts).DistinctBy(nil) }, c.ShouldPanicWith, ErrNilAction)
 		})
 
-		c.Convey("An error should be returned if the error appears in DistinctBy function", func() {
-			_, err := From(tRptUsers).DistinctBy(distinctUserPanic).Results()
-			c.So(err, c.ShouldNotBeNil)
-		})
+		//c.Convey("If the error appears in DistinctBy function", func() {
+		//	_, err := From(tRptUsers).DistinctBy(distinctUserPanic).Results()
+		//	c.So(err, c.ShouldNotBeNil)
+		//})
 
 		c.Convey("If the error appears in before operations", func() {
 			_, err := From(getChan(tRptUsers)).Select(projectWithPanic).DistinctBy(distinctUser).Results()
