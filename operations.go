@@ -244,7 +244,7 @@ func getDistinct(selector OneArgsFunc) stepAction {
 
 // Get the action function for GroupBy operation
 // note the groupby cannot keep order because the map cannot keep order
-func getGroupBy(selector OneArgsFunc, hashAsKey bool) stepAction {
+func getGroupBy(selector OneArgsFunc, returnMap bool) stepAction {
 	return stepAction(func(src DataSource, option *ParallelOption, first bool) (dst DataSource, keep bool, e error) {
 
 		var useDefHash uint32 = 0
@@ -278,7 +278,17 @@ func getGroupBy(selector OneArgsFunc, hashAsKey bool) stepAction {
 
 		//fmt.Println("groupKVs, return ===", groupKVs)
 		if errs == nil {
-			return newDataSource(groups), option.KeepOrder, nil
+			if returnMap {
+				return newDataSource(groups), option.KeepOrder, nil
+			} else {
+				kvs := make([]interface{}, len(groups))
+				i := 0
+				for k, v := range groups {
+					kvs[i] = &KeyValue{k, v}
+					i++
+				}
+				return newDataSource(kvs), option.KeepOrder, nil
+			}
 		} else {
 			return nil, option.KeepOrder, NewAggregateError("Group error", errs)
 		}
