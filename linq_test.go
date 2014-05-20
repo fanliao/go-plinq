@@ -323,7 +323,7 @@ func TestBasicOperations(t *testing.T) {
 //testingthe opretion returns the collecion
 func testPlinqLazyOpr(t *testing.T, desc string, srcs interface{},
 	opr func(q *Queryable) *Queryable,
-	assert func([]interface{}, error)) {
+	assert func([]interface{}, error, int)) {
 
 	getC := func(src interface{}) interface{} {
 		switch s := src.(type) {
@@ -336,50 +336,66 @@ func testPlinqLazyOpr(t *testing.T, desc string, srcs interface{},
 		}
 	}
 
+	getLen := func(src interface{}) int {
+		switch s := src.(type) {
+		case []interface{}:
+			return len(s)
+		case []int:
+			return len(s)
+		default:
+			return 0
+		}
+	}
+
 	test := func(src interface{}) {
+		n := getLen(src)
 		c.Convey("Test the slicer -> slicer", func() {
 			//fmt.Println("Test the slicer -> slicer", src)
 			rs, err := opr(From(src)).Results()
-			assert(rs, err)
+			assert(rs, err, n)
 		})
 
 		c.Convey("Test the channel -> slicer", func() {
 			//fmt.Println("Test the channel -> slicer", src)
 			rs, err := opr(From(getC(src))).Results()
-			assert(rs, err)
+			assert(rs, err, n)
 		})
 
 		c.Convey("Test the slicer -> channel", func() {
 			//fmt.Println("Test the slicer -> channel", src)
 			rsChan, errChan, err := opr(From(src)).ToChan()
 			if err != nil {
-				assert(nil, err)
+				assert(nil, err, n)
 				return
 			}
 			rs, err := getChanResult(rsChan, errChan)
-			assert(rs, err)
+			assert(rs, err, n)
 		})
 
 		c.Convey("Test the channel -> channel", func() {
 			//fmt.Println("Test the channel -> channel", src)
 			rsChan, errChan, err := opr(From(getC(src))).ToChan()
 			if err != nil {
-				assert(nil, err)
+				assert(nil, err, n)
 				return
 			}
 			rs, err := getChanResult(rsChan, errChan)
-			assert(rs, err)
+			assert(rs, err, n)
 		})
 		//})
 	}
 
 	switch ss := srcs.(type) {
 	case [][]int:
-		c.Convey(desc+" in seq mode", t, func() {
-			test(ss[0])
+		c.Convey(desc+" ", t, func() {
+			c.Convey("in seq mode", func() {
+				test(ss[0])
+			})
 		})
-		c.Convey(desc+" in parallel mode", t, func() {
-			test(ss[1])
+		c.Convey(desc+" ", t, func() {
+			c.Convey("in parallel mode", func() {
+				test(ss[1])
+			})
 		})
 	case [][]interface{}:
 		c.Convey(desc+" in seq", t, func() {
@@ -392,53 +408,60 @@ func testPlinqLazyOpr(t *testing.T, desc string, srcs interface{},
 }
 
 func TestWhere(t *testing.T) {
-	expectedInts := make([]interface{}, count/2)
-	for i := 0; i < count/2; i++ {
-		expectedInts[i] = i * 2
+	expectedInts := func(n int) []interface{} {
+		expecteds := make([]interface{}, n/2)
+		for i := 0; i < n/2; i++ {
+			expecteds[i] = i * 2
+		}
+		return expecteds
 	}
-	expectedUsers := make([]interface{}, count/2)
-	for i := 0; i < count/2; i++ {
-		expectedUsers[i] = user{i * 2, "user" + strconv.Itoa(i*2)}
+
+	expectedUsers := func(n int) []interface{} {
+		expecteds := make([]interface{}, n/2)
+		for i := 0; i < n/2; i++ {
+			expecteds[i] = user{i * 2, "user" + strconv.Itoa(i*2)}
+		}
+		return expecteds
 	}
 
 	testPlinqLazyOpr(t, "If the error appears in where function", taInts, func(q *Queryable) *Queryable {
 		return q.Where(filterWithPanic)
-	}, func(rs []interface{}, err error) {
+	}, func(rs []interface{}, err error, n int) {
 		c.So(err, c.ShouldNotBeNil)
 	})
 
 	testPlinqLazyOpr(t, "If the error appears in previous operation", taInts, func(q *Queryable) *Queryable {
 		return q.Select(projectWithPanic).Where(filterWithPanic)
-	}, func(rs []interface{}, err error) {
+	}, func(rs []interface{}, err error, n int) {
 		c.So(err, c.ShouldNotBeNil)
 	})
 
 	testPlinqLazyOpr(t, "Filter an empty slice", taEmptys, func(q *Queryable) *Queryable {
 		return q.Where(filterWithPanic)
-	}, func(rs []interface{}, err error) {
+	}, func(rs []interface{}, err error, n int) {
 		c.So(len(rs), c.ShouldEqual, 0)
 		c.So(err, c.ShouldBeNil)
 	})
 
 	testPlinqLazyOpr(t, "Filter an int slice", taInts, func(q *Queryable) *Queryable {
 		return q.Where(filterFunc)
-	}, func(rs []interface{}, err error) {
+	}, func(rs []interface{}, err error, n int) {
 		c.So(err, c.ShouldBeNil)
-		c.So(rs, shouldSlicesResemble, expectedInts)
+		c.So(rs, shouldSlicesResemble, expectedInts(n))
 	})
 
 	testPlinqLazyOpr(t, "Filter an int slice, and keep original order", taInts, func(q *Queryable) *Queryable {
 		return q.Where(filterFuncForConfusedOrder)
-	}, func(rs []interface{}, err error) {
+	}, func(rs []interface{}, err error, n int) {
 		c.So(err, c.ShouldBeNil)
-		c.So(rs, shouldSlicesResemble, expectedInts)
+		c.So(rs, shouldSlicesResemble, expectedInts(n))
 	})
 
-	testPlinqLazyOpr(t, "Filter an interface{} slice", taInts, func(q *Queryable) *Queryable {
+	testPlinqLazyOpr(t, "Filter an interface{} slice", taUsers, func(q *Queryable) *Queryable {
 		return q.Where(filterFunc)
-	}, func(rs []interface{}, err error) {
+	}, func(rs []interface{}, err error, n int) {
 		c.So(err, c.ShouldBeNil)
-		c.So(rs, shouldSlicesResemble, expectedUsers)
+		c.So(rs, shouldSlicesResemble, expectedUsers(n))
 	})
 
 	test := func(size int) {
