@@ -320,7 +320,7 @@ func TestBasicOperations(t *testing.T) {
 
 //全面测试所有的linq操作，包括串行和并行两种模式-------------------------------
 //testingthe opretion returns the collecion
-func testPlinqCollectionOpr(srcs []interface{},
+func testPlinqLazyOpr(srcs interface{},
 	opr func(q *Queryable) *Queryable,
 	assert func([]interface{}, error)) {
 
@@ -335,18 +335,24 @@ func testPlinqCollectionOpr(srcs []interface{},
 		}
 	}
 
-	test := func(src interface{}) {
-		c.Convey("Test the Slicer -> slicer", func() {
+	test := func(desc string, src interface{}) {
+		fmt.Println("Test the data~~~~~~~~~~~~~~~", src)
+		//c.Convey(desc, func() {
+		//fmt.Println("Test the data====", src)
+		c.Convey("Test the slicer -> slicer", func() {
+			fmt.Println("Test the slicer -> slicer", src)
 			rs, err := opr(From(src)).Results()
 			assert(rs, err)
 		})
 
 		c.Convey("Test the channel -> slicer", func() {
+			fmt.Println("Test the channel -> slicer", src)
 			rs, err := opr(From(getC(src))).Results()
 			assert(rs, err)
 		})
 
-		c.Convey("Test the Slicer -> channel", func() {
+		c.Convey("Test the slicer -> channel", func() {
+			fmt.Println("Test the slicer -> channel", src)
 			rsChan, errChan, err := opr(From(src)).ToChan()
 			if err != nil {
 				assert(nil, err)
@@ -357,6 +363,7 @@ func testPlinqCollectionOpr(srcs []interface{},
 		})
 
 		c.Convey("Test the channel -> channel", func() {
+			fmt.Println("Test the channel -> channel", src)
 			rsChan, errChan, err := opr(From(getC(src))).ToChan()
 			if err != nil {
 				assert(nil, err)
@@ -365,14 +372,28 @@ func testPlinqCollectionOpr(srcs []interface{},
 			rs, err := getChanResult(rsChan, errChan)
 			assert(rs, err)
 		})
+		//})
 	}
 
-	c.Convey("Test seq", func() {
-		test(srcs[0])
-	})
-	c.Convey("Test Parallel", func() {
-		test(srcs[1])
-	})
+	switch ss := srcs.(type) {
+	case [][]int:
+		c.Convey("Test seq", func() {
+			//	fmt.Println("Test seq")
+			test("Test seq~~~~~~", ss[0])
+			fmt.Println("seq done!!!!!!!!!!!!!!!")
+		})
+		c.Convey("Test parallel", func() {
+			//	fmt.Println("Test parallel")
+			test("Test parallel", ss[1])
+		})
+	case [][]interface{}:
+		//c.Convey("Test seq", func() {
+		test("Test seq", ss[0])
+		//})
+		//c.Convey("Test Parallel", func() {
+		test("Test Parallel", ss[1])
+		//})
+	}
 }
 
 func TestWhere(t *testing.T) {
@@ -384,6 +405,15 @@ func TestWhere(t *testing.T) {
 	for i := 0; i < count/2; i++ {
 		expectedUsers[i] = user{i * 2, "user" + strconv.Itoa(i*2)}
 	}
+
+	c.Convey("If the error appears in where function from list source", t, func() {
+		testPlinqLazyOpr(taInts, func(q *Queryable) *Queryable {
+			return q.Where(filterWithPanic)
+		}, func(rs []interface{}, err error) {
+			c.So(err, c.ShouldNotBeNil)
+		})
+	})
+
 	test := func(size int) {
 		defaultChunkSize = size
 		c.Convey("When passed nil function, error be returned", func() {
