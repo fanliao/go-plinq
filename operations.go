@@ -1264,8 +1264,8 @@ func splitToChunkChan(src DataSource, option *ParallelOption) (ch chan *Chunk) {
 	lenOfData := data.Len()
 
 	size := option.ChunkSize
-	if size < lenOfData/(numCPU*5) {
-		size = lenOfData / (numCPU * 5)
+	if size < lenOfData/(numCPU*2) {
+		size = lenOfData / (numCPU * 2)
 	}
 	ch = make(chan *Chunk, option.Degree)
 	if lenOfData == 0 {

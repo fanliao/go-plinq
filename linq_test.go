@@ -14,18 +14,34 @@ import (
 )
 
 const (
-	count    int = 20
-	rptCount int = 22
+	count     int = 20
+	rptCount  int = 22
+	countP    int = 1000
+	rptCountP int = 1000
 )
 
 var (
-	maxProcs  int
-	tUsers    []interface{}       = make([]interface{}, count, count)
-	tRptUsers []interface{}       = make([]interface{}, rptCount, rptCount)
-	tUsers2   []interface{}       = make([]interface{}, count, count)
-	tInts     []int               = make([]int, count, count)
-	tMap      map[int]interface{} = make(map[int]interface{}, count)
-	tRoles    []interface{}       = make([]interface{}, count, count)
+	maxProcs int
+
+	taUsers    = [][]interface{}{make([]interface{}, count), make([]interface{}, countP)}
+	taRptUsers = [][]interface{}{make([]interface{}, rptCount), make([]interface{}, rptCountP)}
+	taUsers2   = [][]interface{}{make([]interface{}, count), make([]interface{}, countP)}
+	taInts     = [][]int{make([]int, count), make([]int, countP)}
+	taRoles    = [][]interface{}{make([]interface{}, count), make([]interface{}, countP)}
+
+	tUsers    = taUsers[0]
+	tRptUsers = taRptUsers[0]
+	tUsers2   = taUsers2[0]
+	tInts     = taInts[0]
+	tRoles    = taRoles[0]
+
+	tUserPs    = taUsers[1]
+	tRptUserPs = taRptUsers[1]
+	tUsersP2   = taUsers2[1]
+	tIntPs     = taInts[1]
+	tRolePs    = taRoles[1]
+
+	tMap map[int]interface{} = make(map[int]interface{}, count)
 
 	sequentialChunkSize int = count
 	parallelChunkSize   int = count / 7
@@ -34,20 +50,32 @@ var (
 func init() {
 	maxProcs = numCPU
 	runtime.GOMAXPROCS(maxProcs)
-	for i := 0; i < count; i++ {
-		tInts[i] = i
-		tUsers[i] = user{i, "user" + strconv.Itoa(i)}
-		tRptUsers[i] = user{i, "user" + strconv.Itoa(i)}
-		tUsers2[i] = user{i + count/2, "user" + strconv.Itoa(i+count/2)}
-		tMap[i] = user{i, "user" + strconv.Itoa(i)}
+
+	fullTestDatas := func(seq int) {
+		size := len(taInts[seq])
+		rptSize := len(taRptUsers[seq])
+		for i := 0; i < size; i++ {
+			taInts[seq][i] = i
+			taUsers[seq][i] = user{i, "user" + strconv.Itoa(i)}
+			taRptUsers[seq][i] = user{i, "user" + strconv.Itoa(i)}
+			taUsers2[seq][i] = user{i + size/2, "user" + strconv.Itoa(i+size/2)}
+			//tMap[seq][i] = user{i, "user" + strconv.Itoa(i)}
+		}
+		for i := 0; i < rptSize-size; i++ {
+			taRptUsers[seq][size+i] = user{i, "user" + strconv.Itoa(size+i)}
+		}
+		for i := 0; i < size/2; i++ {
+			taRoles[seq][i*2] = role{i, "role" + strconv.Itoa(i)}
+			taRoles[seq][i*2+1] = role{i, "role" + strconv.Itoa(i+1)}
+		}
 	}
-	for i := 0; i < rptCount-count; i++ {
-		tRptUsers[count+i] = user{i, "user" + strconv.Itoa(count+i)}
-	}
-	for i := 0; i < count/2; i++ {
-		tRoles[i*2] = role{i, "role" + strconv.Itoa(i)}
-		tRoles[i*2+1] = role{i, "role" + strconv.Itoa(i+1)}
-	}
+
+	//full datas for testing sequential
+	fullTestDatas(0)
+
+	//full datas for testing parallel
+	fullTestDatas(1)
+
 }
 
 // The structs for testing----------------------------------------------------
@@ -291,6 +319,62 @@ func TestBasicOperations(t *testing.T) {
 }
 
 //全面测试所有的linq操作，包括串行和并行两种模式-------------------------------
+//testingthe opretion returns the collecion
+func testPlinqCollectionOpr(srcs []interface{},
+	opr func(q *Queryable) *Queryable,
+	assert func([]interface{}, error)) {
+
+	getC := func(src interface{}) interface{} {
+		switch s := src.(type) {
+		case []interface{}:
+			return getChan(s)
+		case []int:
+			return getIntChan(s)
+		default:
+			return nil
+		}
+	}
+
+	test := func(src interface{}) {
+		c.Convey("Test the Slicer -> slicer", func() {
+			rs, err := opr(From(src)).Results()
+			assert(rs, err)
+		})
+
+		c.Convey("Test the channel -> slicer", func() {
+			rs, err := opr(From(getC(src))).Results()
+			assert(rs, err)
+		})
+
+		c.Convey("Test the Slicer -> channel", func() {
+			rsChan, errChan, err := opr(From(src)).ToChan()
+			if err != nil {
+				assert(nil, err)
+				return
+			}
+			rs, err := getChanResult(rsChan, errChan)
+			assert(rs, err)
+		})
+
+		c.Convey("Test the channel -> channel", func() {
+			rsChan, errChan, err := opr(From(getC(src))).ToChan()
+			if err != nil {
+				assert(nil, err)
+				return
+			}
+			rs, err := getChanResult(rsChan, errChan)
+			assert(rs, err)
+		})
+	}
+
+	c.Convey("Test seq", func() {
+		test(srcs[0])
+	})
+	c.Convey("Test Parallel", func() {
+		test(srcs[1])
+	})
+}
+
 func TestWhere(t *testing.T) {
 	expectedInts := make([]interface{}, count/2)
 	for i := 0; i < count/2; i++ {
