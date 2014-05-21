@@ -335,7 +335,7 @@ func getJoinImpl(inner interface{},
 	return stepAction(func(src DataSource, option *ParallelOption, first bool) (dst DataSource, keep bool, e error) {
 		keep = option.KeepOrder
 		innerKVtask := promise.Start(func() (interface{}, error) {
-			if innerKVsDs, err := From(inner).hGroupBy(innerKeySelector).execute(); err == nil {
+			if innerKVsDs, err, _ := From(inner).hGroupBy(innerKeySelector).execute(); err == nil {
 				r := innerKVsDs.(*listSource).data.(*mapSlicer).data
 				//fmt.Println("r====", r)
 				return r, nil
@@ -876,13 +876,15 @@ func getChunkMatchResult(c *Chunk, findMatch func(c *Chunk, canceller promise.Ca
 }
 
 func (this *Queryable) singleValue(getVal func(DataSource, *ParallelOption) (result interface{}, found bool, err error)) (result interface{}, found bool, err error) {
-	if ds, e := this.execute(); e == nil {
+	ds, e, errChan := this.execute()
+	if e == nil {
 		//在Channel模式下，必须先取完全部的数据，否则stepErrs将死锁
-		//e将被丢弃，因为e会被send到errChan并在this.stepErrs()中返回
+		//e被丢弃，因为e会在this.stepErrs()中返回
 		result, found, err = getVal(ds, &(this.ParallelOption))
 	}
 
-	stepErrs := this.stepErrs()
+    //merge the error in getVal to AggregateError
+	stepErrs := this.stepErrs(errChan)
 	if !isNil(stepErrs) {
 		result, found = nil, false
 		if err != nil {

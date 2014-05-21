@@ -154,9 +154,8 @@ type ParallelOption struct {
 // All query functions will return Queryable.
 // For getting the result slice of the query, use Results(). use ToChan() can get a chan presents the result.
 type Queryable struct {
-	data    DataSource
-	steps   []step
-	errChan chan []error
+	data  DataSource
+	steps []step
 	ParallelOption
 }
 
@@ -202,13 +201,14 @@ func (this *Queryable) SetDataSource(data interface{}) (q *Queryable) {
 // Example:
 // 	results, err := From([]interface{}{"Jack", "Rock"}).Select(something).Results()
 func (this *Queryable) Results() (results []interface{}, err error) {
-	if ds, e := this.execute(); e == nil {
+	ds, e, errChan := this.execute()
+	if e == nil {
 		//在Channel模式下，必须先取到全部的数据，否则stepErrs将死锁
-		//e将被丢弃，因为e会被send到errChan并在this.stepErrs()中返回
+		//e将被丢弃，因为e会在this.stepErrs()中一起返回
 		results = ds.ToSlice(this.KeepOrder).ToInterfaces()
 	}
 
-	err = this.stepErrs()
+	err = this.stepErrs(errChan)
 	if !isNil(err) {
 		results = nil
 	} else {
@@ -223,20 +223,26 @@ func (this *Queryable) Results() (results []interface{}, err error) {
 // Example:
 // 	ch, errChan, err := From([]interface{}{"Jack", "Rock"}).Select(something).ToChan()
 func (this *Queryable) ToChan() (out chan interface{}, errChan chan error, err error) {
-	if ds, e := this.execute(); e == nil {
-		out = ds.ToChan()
-		errChan = make(chan error)
-		go func() {
-			err1 := this.stepErrs()
-			if !isNil(err1) {
-				errChan <- err1
-			}
+	ds, err, stepErrsChan := this.execute()
+
+	//make a channel to send the AggregateError
+	errChan = make(chan error, 1)
+	go func() {
+		aggErr := this.stepErrs(stepErrsChan)
+		if !isNil(aggErr) {
+			errChan <- aggErr
+		} else {
 			close(errChan)
-		}()
-		return
-	} else {
-		return nil, nil, e
-	}
+		}
+	}()
+
+	if err == nil {
+		out = ds.ToChan()
+		//return
+	} //else {
+	//	return nil, errChan, e
+	//}
+	return
 
 }
 
@@ -817,17 +823,25 @@ func (this *Queryable) hGroupBy(keySelector OneArgsFunc, chunkSizes ...int) *Que
 }
 
 // Executes the query and get latest data source
-func (this *Queryable) execute() (ds DataSource, err error) {
+func (this *Queryable) execute() (ds DataSource, err error, errChan chan []error) {
 	if len(this.steps) == 0 {
-		this.errChan = nil
-		return this.data, nil
+		ds = this.data
+		return
 	}
 
-	this.errChan = make(chan []error)
+	errChan = make(chan []error)
 
+	srcErr := newErrorWithStacks(errors.New("source error"))
 	//create a goroutines to collect the errors for the pipeline mode step
 	stepErrsChan := make(chan error)
 	go func() {
+		defer func() {
+			if e := recover(); e != nil {
+				err := newErrorWithStacks(e)
+				fmt.Println(err)
+				fmt.Println("From ------", srcErr)
+			}
+		}()
 		stepFutures := make([]error, 0, len(this.steps))
 
 		i := 0
@@ -837,7 +851,8 @@ func (this *Queryable) execute() (ds DataSource, err error) {
 			}
 			i++
 			if i >= len(this.steps) {
-				this.errChan <- stepFutures
+				//fmt.Println("send to errChan")
+				errChan <- stepFutures
 				return
 			}
 		}
@@ -883,7 +898,7 @@ func (this *Queryable) execute() (ds DataSource, err error) {
 		}
 
 		if err := executeStep(); err != nil {
-			return nil, err
+			return nil, err, errChan
 		}
 
 		//fmt.Println("step=", i, step1.Typ(), "data=", data, "type=", reflect.ValueOf(data).Elem())
@@ -893,15 +908,16 @@ func (this *Queryable) execute() (ds DataSource, err error) {
 		pOption.KeepOrder = keepOrder
 	}
 
-	return ds, nil
+	return ds, nil, errChan
 }
 
-func (this *Queryable) stepErrs() (err *AggregateError) {
-	if this.errChan != nil {
-		if errs := <-this.errChan; len(errs) > 0 {
+func (this *Queryable) stepErrs(errChan chan []error) (err *AggregateError) {
+	if errChan != nil {
+		if errs := <-errChan; len(errs) > 0 {
 			err = NewAggregateError("Aggregate errors", errs)
 		}
-		close(this.errChan)
+		//fmt.Println("close errchan")
+		close(errChan)
 	}
 	return
 }

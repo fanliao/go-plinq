@@ -362,8 +362,8 @@ func testLazyOpr(desc string, t *testing.T,
 			assert(nil, err, n, true)
 			return
 		}
-		rs, err := getChanResult(rsChan, errChan)
-		assert(rs, err, n, true)
+		rs, err1 := getChanResult(rsChan, errChan)
+		assert(rs, err1, n, true)
 	}
 
 	test := func(src interface{}) {
@@ -1338,6 +1338,21 @@ func TestAggregate(t *testing.T) {
 			c.So(err, c.ShouldNotBeNil)
 		})
 
+	testImmediateOpr("Aggregate an empty slice", t,
+		taEmptys, NewQuery(),
+		func(q *Queryable) {
+			_, err := q.Aggregate(Max())
+			c.So(err, c.ShouldNotBeNil)
+		})
+
+	testImmediateOpr("Aggregate an interface{} slice", t,
+		taUsers, NewQuery(),
+		func(q *Queryable) {
+			r, err := From(tUsers).Aggregate(myAgg)
+			c.So(err, c.ShouldBeNil)
+			_ = r
+		})
+
 	test := func(size int) {
 		defaultChunkSize = size
 		//c.Convey("When passed nil function, should use the default compare function", func() {
@@ -1352,28 +1367,27 @@ func TestAggregate(t *testing.T) {
 		//	c.So(err, c.ShouldNotBeNil)
 		//})
 
-		c.Convey("An error appears in previous operation", func() {
-			_, err := From(tUsers).Select(projectWithPanic).Aggregate(myAgg)
-			c.So(err, c.ShouldNotBeNil)
-		})
+		//c.Convey("An error appears in previous operation", func() {
+		//	_, err := From(tUsers).Select(projectWithPanic).Aggregate(myAgg)
+		//	c.So(err, c.ShouldNotBeNil)
+		//})
 
-		c.Convey("Aggregate an empty slice", func() {
-			_, err := From([]int{}).Aggregate(Max())
-			c.So(err, c.ShouldNotBeNil)
-		})
+		//c.Convey("Aggregate an empty slice", func() {
+		//	_, err := From([]int{}).Aggregate(Max())
+		//	c.So(err, c.ShouldNotBeNil)
+		//})
 
-		c.Convey("Aggregate an interface{} slice", func() {
-			r, err := From(tUsers).Aggregate(myAgg)
-			c.So(err, c.ShouldBeNil)
-			_ = r
-		})
+		//c.Convey("Aggregate an interface{} slice", func() {
+		//	r, err := From(tUsers).Aggregate(myAgg)
+		//	c.So(err, c.ShouldBeNil)
+		//	_ = r
+		//})
 
-		c.Convey("Aggregate an interface{} channel", func() {
-			r, err := From(getChan(tUsers)).Aggregate(myAgg)
-			//TODO: need test keep order
-			c.So(err, c.ShouldBeNil)
-			_ = r
-		})
+		//c.Convey("Aggregate an interface{} channel", func() {
+		//	r, err := From(getChan(tUsers)).Aggregate(myAgg)
+		//	c.So(err, c.ShouldBeNil)
+		//	_ = r
+		//})
 		defaultChunkSize = DEFAULTCHUNKSIZE
 	}
 	c.Convey("Test Aggregate Sequential", t, func() { test(sequentialChunkSize) })
