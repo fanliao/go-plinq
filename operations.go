@@ -267,7 +267,7 @@ func getGroupBy(selector OneArgsFunc, returnMap bool) stepAction {
 				list := v.([]interface{})
 				groups[k] = appendToSlice(list, kv.value)
 			}
-			//fmt.Println("groupKVs, ", k, v, groupKVs[k])
+			//fmt.Println("groupKVs, ", k, v, groups[k])
 		}
 
 		//reduce the keyValue map to get grouped slice
@@ -276,7 +276,7 @@ func getGroupBy(selector OneArgsFunc, returnMap bool) stepAction {
 			group(v)
 		}))
 
-		//fmt.Println("groupKVs, return ===", groupKVs)
+		//fmt.Println("groups, return ===", groups)
 		if errs == nil {
 			if returnMap {
 				return newDataSource(groups), option.KeepOrder, nil
@@ -336,8 +336,11 @@ func getJoinImpl(inner interface{},
 		keep = option.KeepOrder
 		innerKVtask := promise.Start(func() (interface{}, error) {
 			if innerKVsDs, err := From(inner).hGroupBy(innerKeySelector).execute(); err == nil {
-				return innerKVsDs.(*listSource).data.(*mapSlicer).data, nil
+				r := innerKVsDs.(*listSource).data.(*mapSlicer).data
+				//fmt.Println("r====", r)
+				return r, nil
 			} else {
+				//fmt.Println("err====", err)
 				return nil, err
 			}
 		})
