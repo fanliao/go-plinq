@@ -321,8 +321,98 @@ func TestBasicOperations(t *testing.T) {
 
 //全面测试所有的linq操作，包括串行和并行两种模式-------------------------------
 //testingthe opretion returns the collecion
-func testLazyOpr(desc string, t *testing.T, srcs interface{},
-	opr func(q *Queryable) *Queryable,
+//func testLazyOpr(desc string, t *testing.T, srcs interface{},
+//	opr func(q *Queryable) *Queryable,
+//	assert func([]interface{}, error, int, bool)) {
+//	defaultChunkSize = 20
+
+//	getC := func(src interface{}) interface{} {
+//		switch s := src.(type) {
+//		case []interface{}:
+//			return getChan(s)
+//		case []int:
+//			return getIntChan(s)
+//		default:
+//			return nil
+//		}
+//	}
+
+//	getLen := func(src interface{}) int {
+//		switch s := src.(type) {
+//		case []interface{}:
+//			return len(s)
+//		case []int:
+//			return len(s)
+//		default:
+//			return 0
+//		}
+//	}
+
+//	test := func(src interface{}) {
+//		n := getLen(src)
+//		c.Convey("Test the slicer -> slicer", func() {
+//			//fmt.Println("Test the slicer -> slicer", src)
+//			rs, err := opr(From(src)).Results()
+//			assert(rs, err, n, false)
+//		})
+
+//		c.Convey("Test the channel -> slicer", func() {
+//			//fmt.Println("Test the channel -> slicer", src)
+//			rs, err := opr(From(getC(src))).Results()
+//			assert(rs, err, n, false)
+//		})
+
+//		c.Convey("Test the slicer -> channel", func() {
+//			//fmt.Println("Test the slicer -> channel", src)
+//			rsChan, errChan, err := opr(From(src)).ToChan()
+//			if err != nil {
+//				assert(nil, err, n, true)
+//				return
+//			}
+//			rs, err := getChanResult(rsChan, errChan)
+//			assert(rs, err, n, true)
+//		})
+
+//		c.Convey("Test the channel -> channel", func() {
+//			//fmt.Println("Test the channel -> channel", src)
+//			rsChan, errChan, err := opr(From(getC(src))).ToChan()
+//			if err != nil {
+//				assert(nil, err, n, true)
+//				return
+//			}
+//			rs, err := getChanResult(rsChan, errChan)
+//			assert(rs, err, n, true)
+//		})
+//		//})
+//	}
+
+//	switch ss := srcs.(type) {
+//	case [][]int:
+//		c.Convey(desc+" ", t, func() {
+//			c.Convey("in seq mode", func() {
+//				test(ss[0])
+//			})
+//		})
+//		c.Convey(desc+" ", t, func() {
+//			c.Convey("in parallel mode", func() {
+//				test(ss[1])
+//			})
+//		})
+//	case [][]interface{}:
+//		c.Convey(desc+" in seq", t, func() {
+//			test(ss[0])
+//		})
+//		c.Convey(desc+" in Parallel", t, func() {
+//			test(ss[1])
+//		})
+//	}
+//	defaultChunkSize = DEFAULTCHUNKSIZE
+//}
+
+//testingthe opretion returns the collecion
+func testLazyOpr(desc string, t *testing.T,
+	srcs interface{},
+	qry *Queryable,
 	assert func([]interface{}, error, int, bool)) {
 	defaultChunkSize = 20
 
@@ -352,19 +442,19 @@ func testLazyOpr(desc string, t *testing.T, srcs interface{},
 		n := getLen(src)
 		c.Convey("Test the slicer -> slicer", func() {
 			//fmt.Println("Test the slicer -> slicer", src)
-			rs, err := opr(From(src)).Results()
+			rs, err := qry.SetDataSource(src).Results()
 			assert(rs, err, n, false)
 		})
 
 		c.Convey("Test the channel -> slicer", func() {
 			//fmt.Println("Test the channel -> slicer", src)
-			rs, err := opr(From(getC(src))).Results()
+			rs, err := qry.SetDataSource(getC(src)).Results()
 			assert(rs, err, n, false)
 		})
 
 		c.Convey("Test the slicer -> channel", func() {
 			//fmt.Println("Test the slicer -> channel", src)
-			rsChan, errChan, err := opr(From(src)).ToChan()
+			rsChan, errChan, err := qry.SetDataSource(src).ToChan()
 			if err != nil {
 				assert(nil, err, n, true)
 				return
@@ -375,7 +465,7 @@ func testLazyOpr(desc string, t *testing.T, srcs interface{},
 
 		c.Convey("Test the channel -> channel", func() {
 			//fmt.Println("Test the channel -> channel", src)
-			rsChan, errChan, err := opr(From(getC(src))).ToChan()
+			rsChan, errChan, err := qry.SetDataSource(getC(src)).ToChan()
 			if err != nil {
 				assert(nil, err, n, true)
 				return
@@ -426,28 +516,31 @@ func TestWhere(t *testing.T) {
 		return expecteds
 	}
 
-	testLazyOpr("If the error appears in where function", t, taInts, func(q *Queryable) *Queryable {
-		return q.Where(filterWithPanic)
-	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
+	testLazyOpr("If the error appears in where function", t,
+		taInts,
+		NewQuery().Where(filterWithPanic),
+		func(rs []interface{}, err error, n int, chanAsOut bool) {
+			c.So(err, c.ShouldNotBeNil)
+		})
+
+	testLazyOpr("If the error appears in previous operation", t, 
+	taInts, 
+	NewQuery().Select(projectWithPanic).Where(filterWithPanic), 
+	func(rs []interface{}, err error, n int, chanAsOut bool) {
 		c.So(err, c.ShouldNotBeNil)
 	})
 
-	testLazyOpr("If the error appears in previous operation", t, taInts, func(q *Queryable) *Queryable {
-		return q.Select(projectWithPanic).Where(filterWithPanic)
-	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
-		c.So(err, c.ShouldNotBeNil)
-	})
-
-	testLazyOpr("Filter an empty slice", t, taEmptys, func(q *Queryable) *Queryable {
-		return q.Where(filterWithPanic)
-	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
+	testLazyOpr("Filter an empty slice", t, 
+	taEmptys, 
+	NewQuery().Where(filterWithPanic),
+	 func(rs []interface{}, err error, n int, chanAsOut bool) {
 		c.So(len(rs), c.ShouldEqual, 0)
 		c.So(err, c.ShouldBeNil)
 	})
 
-	testLazyOpr("Filter an int slice, and keep original order", t, taInts, func(q *Queryable) *Queryable {
-		return q.Where(filterFuncForConfusedOrder)
-	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
+	testLazyOpr("Filter an int slice, and keep original order", t, 
+	taInts, NewQuery().Where(filterFuncForConfusedOrder),
+	 func(rs []interface{}, err error, n int, chanAsOut bool) {
 		c.So(err, c.ShouldBeNil)
 		//NOTE: don't keep the original order when output the channel
 		if chanAsOut {
@@ -457,9 +550,10 @@ func TestWhere(t *testing.T) {
 		}
 	})
 
-	testLazyOpr("Filter an interface{} slice", t, taUsers, func(q *Queryable) *Queryable {
-		return q.Where(filterFunc)
-	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
+	testLazyOpr("Filter an interface{} slice", t, 
+	taUsers, 
+	NewQuery().Where(filterFunc), 
+	func(rs []interface{}, err error, n int, chanAsOut bool) {
 		c.So(err, c.ShouldBeNil)
 		//NOTE: don't keep the original order when output the channel
 		if chanAsOut {
@@ -489,21 +583,21 @@ func TestSelect(t *testing.T) {
 		return v.(int) * 10
 	}
 
-	testLazyOpr("If the error appears in select function", t, taInts, func(q *Queryable) *Queryable {
-		return q.Select(projectWithPanic)
+	testLazyOpr("If the error appears in select function", t, 
+	taInts, NewQuery().Select(projectWithPanic)
+	, func(rs []interface{}, err error, n int, chanAsOut bool) {
+		c.So(err, c.ShouldNotBeNil)
+	})
+
+	testLazyOpr("If the error appears in previous operations", t, 
+	taInts, NewQuery().Where(filterWithPanic).Select(projectFunc)
 	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
 		c.So(err, c.ShouldNotBeNil)
 	})
 
-	testLazyOpr("If the error appears in previous operations", t, taInts, func(q *Queryable) *Queryable {
-		return q.Where(filterWithPanic).Select(projectFunc)
-	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
-		c.So(err, c.ShouldNotBeNil)
-	})
-
-	testLazyOpr("Select an empty slice", t, taEmptys, func(q *Queryable) *Queryable {
-		return q.Where(filterWithPanic).Select(projectFunc)
-	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
+	testLazyOpr("Select an empty slice", t, 
+	taEmptys, NewQuery().Where(filterWithPanic).Select(projectFunc)
+	, func(rs []interface{}, err error, n int, chanAsOut bool) {
 		c.So(len(rs), c.ShouldEqual, 0)
 		c.So(err, c.ShouldBeNil)
 	})
@@ -515,9 +609,9 @@ func TestSelect(t *testing.T) {
 		}
 		return ints
 	}
-	testLazyOpr("select an int slice, and keep original order", t, taInts, func(q *Queryable) *Queryable {
-		return q.Select(selectIntForConfusedOrder)
-	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
+	testLazyOpr("select an int slice, and keep original order", t, 
+	taInts, NewQuery().Select(selectIntForConfusedOrder)
+	, func(rs []interface{}, err error, n int, chanAsOut bool) {
 		c.So(err, c.ShouldBeNil)
 		//NOTE: don't keep the original order when output the channel
 		if chanAsOut {
@@ -534,9 +628,9 @@ func TestSelect(t *testing.T) {
 		}
 		return users
 	}
-	testLazyOpr("Select an interface{} slice", t, taUsers, func(q *Queryable) *Queryable {
-		return q.Select(projectFunc)
-	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
+	testLazyOpr("Select an interface{} slice", t, 
+	taUsers, NewQuery().Select(projectFunc)
+	, func(rs []interface{}, err error, n int, chanAsOut bool) {
 		c.So(err, c.ShouldBeNil)
 		//NOTE: don't keep the original order when output the channel
 		if chanAsOut {
@@ -569,15 +663,15 @@ func TestSelectMany(t *testing.T) {
 		return rs
 	}
 
-	testLazyOpr("If the error appears in select function", t, taInts, func(q *Queryable) *Queryable {
-		return q.SelectMany(selectManyWithPanic)
-	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
+	testLazyOpr("If the error appears in select function", t, 
+	taInts, NewQuery().SelectMany(selectManyWithPanic)
+	, func(rs []interface{}, err error, n int, chanAsOut bool) {
 		c.So(err, c.ShouldNotBeNil)
 	})
 
-	testLazyOpr("selectMany an empty slice", t, taEmptys, func(q *Queryable) *Queryable {
-		return q.SelectMany(selectManyWithPanic)
-	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
+	testLazyOpr("selectMany an empty slice", t, 
+	taEmptys, NewQuery().SelectMany(selectManyWithPanic)
+	, func(rs []interface{}, err error, n int, chanAsOut bool) {
 		c.So(len(rs), c.ShouldEqual, 0)
 		c.So(err, c.ShouldBeNil)
 	})
@@ -589,9 +683,9 @@ func TestSelectMany(t *testing.T) {
 		}
 		return ints
 	}
-	testLazyOpr("selectMany an int slice, and keep original order", t, taInts, func(q *Queryable) *Queryable {
-		return q.SelectMany(selectIntManyForConfusedOrder)
-	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
+	testLazyOpr("selectMany an int slice, and keep original order", t, 
+	taInts, NewQuery().SelectMany(selectIntManyForConfusedOrder)
+	, func(rs []interface{}, err error, n int, chanAsOut bool) {
 		c.So(err, c.ShouldBeNil)
 		//NOTE: don't keep the original order when output the channel
 		if chanAsOut {
@@ -615,28 +709,28 @@ func distinctUserPanic(v interface{}) interface{} {
 }
 
 func TestDistinct(t *testing.T) {
-	testLazyOpr("if the error appears in DistinctBy function", t, taInts, func(q *Queryable) *Queryable {
-		return q.Select(projectWithPanic).DistinctBy(distinctUser)
-	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
+	testLazyOpr("if the error appears in DistinctBy function", t, 
+	taInts, NewQuery().Select(projectWithPanic).DistinctBy(distinctUser)
+	, func(rs []interface{}, err error, n int, chanAsOut bool) {
 		c.So(err, c.ShouldNotBeNil)
 	})
 
-	testLazyOpr("If the error appears in before operations", t, taInts, func(q *Queryable) *Queryable {
-		return q.DistinctBy(distinctUserPanic)
-	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
+	testLazyOpr("If the error appears in before operations", t, 
+	taInts, NewQuery().DistinctBy(distinctUserPanic)
+	, func(rs []interface{}, err error, n int, chanAsOut bool) {
 		c.So(err, c.ShouldNotBeNil)
 	})
 
-	testLazyOpr("Distinct an empty slice", t, taEmptys, func(q *Queryable) *Queryable {
-		return q.Distinct()
-	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
+	testLazyOpr("Distinct an empty slice", t, 
+	taEmptys, NewQuery().Distinct()
+	, func(rs []interface{}, err error, n int, chanAsOut bool) {
 		c.So(len(rs), c.ShouldEqual, 0)
 		c.So(err, c.ShouldBeNil)
 	})
 
-	testLazyOpr("DistinctBy an interface{} slice", t, taRptUsers, func(q *Queryable) *Queryable {
-		return q.DistinctBy(distinctUser)
-	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
+	testLazyOpr("DistinctBy an interface{} slice", t, 
+	taRptUsers, NewQuery().DistinctBy(distinctUser)
+	, func(rs []interface{}, err error, n int, chanAsOut bool) {
 		if n == rptCount {
 			c.So(len(rs), c.ShouldEqual, count)
 		} else {
@@ -679,37 +773,36 @@ func TestGroupBy(t *testing.T) {
 		panic(errors.New("panic"))
 	}
 
-	testLazyOpr("If the error appears in previous operations", t, taUsers, func(q *Queryable) *Queryable {
-		return q.Select(projectWithPanic).GroupBy(groupUser)
-	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
+	testLazyOpr("If the error appears in previous operations", t, 
+	taUsers, NewQuery().Select(projectWithPanic).GroupBy(groupUser)
+	, func(rs []interface{}, err error, n int, chanAsOut bool) {
 		c.So(err, c.ShouldNotBeNil)
 	})
 
-	testLazyOpr("if the error appears in GroupBy function", t, taUsers, func(q *Queryable) *Queryable {
-		return q.GroupBy(groupUserPanic)
-	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
+	testLazyOpr("if the error appears in GroupBy function", t, 
+	taUsers, NewQuery().GroupBy(groupUserPanic)
+	, func(rs []interface{}, err error, n int, chanAsOut bool) {
 		c.So(err, c.ShouldNotBeNil)
 	})
 
-	testLazyOpr("GroupBy an empty slice", t, taEmptys, func(q *Queryable) *Queryable {
-		return q.GroupBy(groupUserPanic)
-	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
+	testLazyOpr("GroupBy an empty slice", t, 
+	taEmptys, NewQuery().GroupBy(groupUserPanic), func(rs []interface{}, err error, n int, chanAsOut bool) {
 		c.So(len(rs), c.ShouldEqual, 0)
 		c.So(err, c.ShouldBeNil)
 	})
 
-	testLazyOpr("GroupBy an int slice", t, taInts, func(q *Queryable) *Queryable {
-		return q.GroupBy(func(v interface{}) interface{} {
+	testLazyOpr("GroupBy an int slice", t, 
+	taInts, NewQuery().GroupBy(func(v interface{}) interface{} {
 			return v.(int) / 10
-		})
-	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
+		}), 
+		func(rs []interface{}, err error, n int, chanAsOut bool) {
 		c.So(err, c.ShouldBeNil)
 		c.So(len(rs), c.ShouldEqual, ceilChunkSize(n, 10))
 	})
 
-	testLazyOpr("groupBy an interface{} slice", t, taUsers, func(q *Queryable) *Queryable {
-		return q.GroupBy(groupUser)
-	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
+	testLazyOpr("groupBy an interface{} slice", t, 
+	taUsers, NewQuery().GroupBy(groupUser),
+	 func(rs []interface{}, err error, n int, chanAsOut bool) {
 		c.So(err, c.ShouldBeNil)
 		c.So(len(rs), c.ShouldEqual, ceilChunkSize(n, 10))
 	})
@@ -788,22 +881,22 @@ func TestJoin(t *testing.T) {
 		c.So(err, c.ShouldNotBeNil)
 	})
 
-	testLazyOpr("If the error appears in previous operations", t, taUsers, func(q *Queryable) *Queryable {
-		return q.Select(projectWithPanic).Join(tRoles, userSelector, roleSelector, resultSelector)
-	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
+	testLazyOpr("If the error appears in previous operations", t, 
+	taUsers, NewQuery().Select(projectWithPanic).Join(tRoles, userSelector, roleSelector, resultSelector),
+	func(rs []interface{}, err error, n int, chanAsOut bool) {
 		c.So(err, c.ShouldNotBeNil)
 	})
 
-	testLazyOpr("Join an empty slice as outer source", t, taEmptys, func(q *Queryable) *Queryable {
-		return q.Join(tUsers2, userSelector, roleSelector, resultSelector)
-	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
+	testLazyOpr("Join an empty slice as outer source", t, 
+	taEmptys, NewQuery().Join(tUsers2, userSelector, roleSelector, resultSelector),
+	 func(rs []interface{}, err error, n int, chanAsOut bool) {
 		c.So(err, c.ShouldBeNil)
 		c.So(len(rs), c.ShouldEqual, 0)
 	})
 
-	testLazyOpr("Join an empty slice as inner source", t, taUsers, func(q *Queryable) *Queryable {
-		return q.Join([]interface{}{}, userSelector, roleSelector, resultSelector)
-	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
+	testLazyOpr("Join an empty slice as inner source", t, 
+	taUsers, NewQuery().Join([]interface{}{}, userSelector, roleSelector, resultSelector),
+	 func(rs []interface{}, err error, n int, chanAsOut bool) {
 		c.So(len(rs), c.ShouldEqual, 0)
 		c.So(err, c.ShouldBeNil)
 	})
@@ -828,7 +921,6 @@ func TestJoin(t *testing.T) {
 		}
 	})
 
-	//
 	testLazyOpr("LeftJoin an empty slice as inner source", t, taUsers, func(q *Queryable) *Queryable {
 		return q.LeftJoin([]interface{}{}, userSelector, roleSelector, leftResultSelector)
 	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
@@ -856,52 +948,6 @@ func TestJoin(t *testing.T) {
 		}
 	})
 
-	//testLeftJoin := func(size int) {
-	//	defaultChunkSize = size
-	//	c.Convey("LeftJoin an empty slice as outer source", func() {
-	//		rs, err := From([]int{}).LeftJoin(tUsers2, userSelector, roleSelector, resultSelector).Results()
-	//		c.So(err, c.ShouldBeNil)
-	//		c.So(len(rs), c.ShouldEqual, 0)
-	//	})
-
-	//	c.Convey("LeftJoin an empty slice as inner source, but doesn't check if the inner is nil", func() {
-	//		rs, err := From(tUsers).LeftJoin([]interface{}{}, userSelector, roleSelector, resultSelector).Results()
-	//		//TODO: need test KeepOrder()
-	//		c.So(err, c.ShouldNotBeNil)
-	//		c.So(len(rs), c.ShouldEqual, 0)
-	//	})
-
-	//	c.Convey("LeftJoin an interface{} slice as inner source, but doesn't check if the inner is nil", func() {
-	//		rs, err := From(tUsers).LeftJoin(tRoles, userSelector, roleSelector, resultSelector).Results()
-	//		//TODO: need test KeepOrder()
-	//		c.So(err, c.ShouldNotBeNil)
-	//		c.So(rs, c.ShouldBeNil)
-	//		if err != nil {
-	//			//TODO:need check the error message (no error stack)
-	//			//fmt.Println("LeftJoin doesn't check if the inner is nil, get Err:", err)
-	//		}
-	//	})
-
-	//	c.Convey("LeftJoin an empty slice as inner source", func() {
-	//		rs, err := From(tUsers).LeftJoin([]interface{}{}, userSelector, roleSelector, leftResultSelector).Results()
-	//		//TODO: need test KeepOrder()
-	//		c.So(len(rs), c.ShouldEqual, count)
-	//		checkOrder(rs)
-	//		c.So(err, c.ShouldBeNil)
-	//	})
-
-	//	c.Convey("LeftJoin an interface{} slice as inner source", func() {
-	//		rs, err := From(tUsers).LeftJoin(tRoles, userSelector, roleSelector, leftResultSelector).Results()
-	//		//TODO: need test KeepOrder()
-	//		c.So(len(rs), c.ShouldEqual, count+count/2)
-	//		c.So(err, c.ShouldBeNil)
-	//		checkOrder(rs)
-	//	})
-	//	defaultChunkSize = DEFAULTCHUNKSIZE
-	//}
-	//c.Convey("Test LeftJoin Sequential", t, func() { testLeftJoin(30) })
-	//c.Convey("Test LeftJoin parallel", t, func() { testLeftJoin(7) })
-
 }
 
 func TestGroupJoin(t *testing.T) {
@@ -923,43 +969,46 @@ func TestGroupJoin(t *testing.T) {
 		panic(errors.New("panic"))
 	}
 
+	c.Convey("When passed nil inner, error be returned", t, func() {
+		c.So(func() { From(tUsers).GroupJoin(nil, nil, nil, nil) }, c.ShouldPanicWith, ErrJoinNilSource)
+		c.So(func() { From(tUsers).GroupJoin(tRoles, nil, nil, nil) }, c.ShouldPanicWith, ErrOuterKeySelector)
+		c.So(func() { From(tUsers).GroupJoin(tUsers2, userSelector, nil, nil) }, c.ShouldPanicWith, ErrInnerKeySelector)
+		c.So(func() {
+			From(tUsers).GroupJoin(tUsers2, userSelector, roleSelector, nil)
+		}, c.ShouldPanicWith, ErrResultSelector)
+	})
+
+	c.Convey("If the error appears in GroupJoin function", t, func() {
+		_, err := From(tUsers).GroupJoin(tRoles, userSelectorPanic, roleSelector, groupResultSelector).Results()
+		c.So(err, c.ShouldNotBeNil)
+
+		rs, err := From(tUsers).GroupJoin(tRoles, userSelector, roleSelectorPanic, groupResultSelector).Results()
+		//TODO: This case failed once, need more checking
+		if err == nil {
+			fmt.Println("/nif the error appears in GroupJoin function, return----", rs)
+		}
+		c.So(err, c.ShouldNotBeNil)
+
+		_, err = From(tUsers).GroupJoin(tRoles, userSelector, roleSelector, resultSelectorPanic).Results()
+		c.So(err, c.ShouldNotBeNil)
+	})
+
+	testLazyOpr("GroupJoin an empty slice as outer source", t, taEmptys, func(q *Queryable) *Queryable {
+		return q.GroupJoin(tUsers2, userSelector, roleSelector, groupResultSelector)
+	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
+		c.So(len(rs), c.ShouldEqual, 0)
+		c.So(err, c.ShouldBeNil)
+	})
+
+	testLazyOpr("GroupJoin an empty slice as inner source", t, taUsers, func(q *Queryable) *Queryable {
+		return q.GroupJoin([]interface{}{}, userSelector, roleSelector, groupResultSelector)
+	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
+		c.So(len(rs), c.ShouldEqual, 0)
+		c.So(err, c.ShouldBeNil)
+	})
+
 	testGroupJoin := func(size int) {
 		defaultChunkSize = size
-		c.Convey("When passed nil inner, error be returned", func() {
-			c.So(func() { From(tUsers).GroupJoin(nil, nil, nil, nil) }, c.ShouldPanicWith, ErrJoinNilSource)
-			c.So(func() { From(tUsers).GroupJoin(tRoles, nil, nil, nil) }, c.ShouldPanicWith, ErrOuterKeySelector)
-			c.So(func() { From(tUsers).GroupJoin(tUsers2, userSelector, nil, nil) }, c.ShouldPanicWith, ErrInnerKeySelector)
-			c.So(func() {
-				From(tUsers).GroupJoin(tUsers2, userSelector, roleSelector, nil)
-			}, c.ShouldPanicWith, ErrResultSelector)
-		})
-
-		c.Convey("An error should be returned if the error appears in GroupJoin function", func() {
-			_, err := From(tUsers).GroupJoin(tRoles, userSelectorPanic, roleSelector, groupResultSelector).Results()
-			c.So(err, c.ShouldNotBeNil)
-
-			rs, err := From(tUsers).GroupJoin(tRoles, userSelector, roleSelectorPanic, groupResultSelector).Results()
-			//TODO: This case failed once, need more checking
-			if err == nil {
-				fmt.Println("/nif the error appears in GroupJoin function, return----", rs)
-			}
-			c.So(err, c.ShouldNotBeNil)
-
-			_, err = From(tUsers).GroupJoin(tRoles, userSelector, roleSelector, resultSelectorPanic).Results()
-			c.So(err, c.ShouldNotBeNil)
-		})
-
-		c.Convey("GroupJoin an empty slice as outer source", func() {
-			rs, err := From([]int{}).GroupJoin(tUsers2, userSelector, roleSelector, groupResultSelector).Results()
-			c.So(len(rs), c.ShouldEqual, 0)
-			c.So(err, c.ShouldBeNil)
-		})
-
-		c.Convey("GroupJoin an empty slice as inner source", func() {
-			rs, err := From(tUsers).GroupJoin([]interface{}{}, userSelector, roleSelector, groupResultSelector).Results()
-			c.So(len(rs), c.ShouldEqual, 0)
-			c.So(err, c.ShouldBeNil)
-		})
 
 		c.Convey("GroupJoin an interface{} slice as inner source", func() {
 			rs, err := From(tUsers).GroupJoin(tRoles, userSelector, roleSelector, groupResultSelector).Results()

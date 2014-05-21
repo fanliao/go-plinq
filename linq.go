@@ -182,6 +182,20 @@ func From(src interface{}) (q *Queryable) {
 	return newQueryable(newDataSource(src))
 }
 
+func NewQuery() (q *Queryable) {
+	q = &Queryable{}
+	q.KeepOrder = true
+	q.steps = make([]step, 0, 4)
+	q.Degree = numCPU
+	q.ChunkSize = defaultChunkSize
+	return
+}
+
+func (this *Queryable) SetDataSource(data interface{}) (q *Queryable) {
+	this.data = newDataSource(data)
+	return this
+}
+
 // Results evaluates the query and returns the results as interface{} slice.
 // If the error occurred in during evaluation of the query, it will be returned.
 //
