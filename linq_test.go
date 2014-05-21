@@ -811,9 +811,29 @@ func distinctUserPanic(v interface{}) interface{} {
 
 func TestDistinct(t *testing.T) {
 	testLazyOpr("if the error appears in DistinctBy function", t, taInts, func(q *Queryable) *Queryable {
+		return q.Select(projectWithPanic).DistinctBy(distinctUser)
+	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
+		c.So(err, c.ShouldNotBeNil)
+	})
+
+	testLazyOpr("If the error appears in before operations", t, taInts, func(q *Queryable) *Queryable {
 		return q.DistinctBy(distinctUserPanic)
 	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
 		c.So(err, c.ShouldNotBeNil)
+	})
+
+	testLazyOpr("Distinct an empty slice", t, taEmptys, func(q *Queryable) *Queryable {
+		return q.Distinct()
+	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
+		c.So(len(rs), c.ShouldEqual, 0)
+		c.So(err, c.ShouldBeNil)
+	})
+
+	testLazyOpr("DistinctBy an interface{} slice", t, taRptUsers, func(q *Queryable) *Queryable {
+		return q.DistinctBy(distinctUser)
+	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
+		c.So(len(rs), c.ShouldEqual, n)
+		c.So(err, c.ShouldBeNil)
 	})
 
 	test := func(size int) {
@@ -827,16 +847,16 @@ func TestDistinct(t *testing.T) {
 		//	c.So(err, c.ShouldNotBeNil)
 		//})
 
-		c.Convey("If the error appears in before operations", func() {
-			_, err := From(getChan(tRptUsers)).Select(projectWithPanic).DistinctBy(distinctUser).Results()
-			c.So(err, c.ShouldNotBeNil)
-		})
+		//c.Convey("If the error appears in before operations", func() {
+		//	_, err := From(getChan(tRptUsers)).Select(projectWithPanic).DistinctBy(distinctUser).Results()
+		//	c.So(err, c.ShouldNotBeNil)
+		//})
 
-		c.Convey("Distinct an empty slice", func() {
-			rs, err := From([]int{}).Distinct().Results()
-			c.So(len(rs), c.ShouldEqual, 0)
-			c.So(err, c.ShouldBeNil)
-		})
+		//c.Convey("Distinct an empty slice", func() {
+		//	rs, err := From([]int{}).Distinct().Results()
+		//	c.So(len(rs), c.ShouldEqual, 0)
+		//	c.So(err, c.ShouldBeNil)
+		//})
 
 		rptInts := make([]int, count+2)
 		for i := 0; i < count; i++ {
@@ -851,10 +871,10 @@ func TestDistinct(t *testing.T) {
 			c.So(err, c.ShouldBeNil)
 		})
 
-		newUsers := make([]interface{}, count)
-		for i := 0; i < count; i++ {
-			newUsers[i] = strconv.Itoa(i) + "/" + "user" + strconv.Itoa(i)
-		}
+		//newUsers := make([]interface{}, count)
+		//for i := 0; i < count; i++ {
+		//	newUsers[i] = strconv.Itoa(i) + "/" + "user" + strconv.Itoa(i)
+		//}
 		c.Convey("DistinctBy an interface{} slice", func() {
 			rs, err := From(tRptUsers).DistinctBy(distinctUser).Results()
 			c.So(len(rs), c.ShouldEqual, len(tUsers))
@@ -867,17 +887,17 @@ func TestDistinct(t *testing.T) {
 			c.So(err, c.ShouldBeNil)
 		})
 
-		c.Convey("Distinct an interface{} channel", func() {
-			rs, err := From(getChan(tRptUsers)).DistinctBy(distinctUser).Results()
-			c.So(len(rs), c.ShouldEqual, len(tUsers))
-			c.So(err, c.ShouldBeNil)
-		})
+		//c.Convey("Distinct an interface{} channel", func() {
+		//	rs, err := From(getChan(tRptUsers)).DistinctBy(distinctUser).Results()
+		//	c.So(len(rs), c.ShouldEqual, len(tUsers))
+		//	c.So(err, c.ShouldBeNil)
+		//})
 
-		c.Convey("Distinct an int channel", func() {
-			rs, err := From(getIntChan(rptInts)).Distinct().Results()
-			c.So(len(rs), c.ShouldEqual, len(tInts))
-			c.So(err, c.ShouldBeNil)
-		})
+		//c.Convey("Distinct an int channel", func() {
+		//	rs, err := From(getIntChan(rptInts)).Distinct().Results()
+		//	c.So(len(rs), c.ShouldEqual, len(tInts))
+		//	c.So(err, c.ShouldBeNil)
+		//})
 
 		defaultChunkSize = DEFAULTCHUNKSIZE
 	}
@@ -893,6 +913,13 @@ func TestGroupBy(t *testing.T) {
 	groupUserPanic := func(v interface{}) interface{} {
 		panic(errors.New("panic"))
 	}
+	testLazyOpr("DistinctBy an interface{} slice", t, taRptUsers, func(q *Queryable) *Queryable {
+		return q.DistinctBy(distinctUser)
+	}, func(rs []interface{}, err error, n int, chanAsOut bool) {
+		c.So(len(rs), c.ShouldEqual, n)
+		c.So(err, c.ShouldBeNil)
+	})
+
 	test := func(size int) {
 		defaultChunkSize = size
 		c.Convey("When passed nil function, error be returned", func() {
