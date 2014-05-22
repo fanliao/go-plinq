@@ -178,7 +178,7 @@ type Queryable struct {
 // Note: if the source is a channel, the channel must be closed by caller of linq,
 // otherwise will be deadlock
 func From(src interface{}) (q *Queryable) {
-	return newQueryable(newDataSource(src))
+	return NewQuery().SetDataSource(src) // newQueryable(newDataSource(src))
 }
 
 func NewQuery() (q *Queryable) {
@@ -948,15 +948,15 @@ func newDataSource(data interface{}) (ds DataSource) {
 	return
 }
 
-func newQueryable(ds DataSource) (q *Queryable) {
-	q = &Queryable{}
-	q.KeepOrder = true
-	q.steps = make([]step, 0, 4)
-	q.Degree = numCPU
-	q.ChunkSize = defaultChunkSize
-	q.data = ds
-	return
-}
+//func newQueryable(ds DataSource) (q *Queryable) {
+//	q = &Queryable{}
+//	q.KeepOrder = true
+//	q.steps = make([]step, 0, 4)
+//	q.Degree = numCPU
+//	q.ChunkSize = defaultChunkSize
+//	q.data = ds
+//	return
+//}
 
 //The listsource and chanSource structs----------------------------------
 

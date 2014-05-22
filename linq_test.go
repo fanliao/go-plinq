@@ -403,16 +403,17 @@ func testLazyOpr(desc string, t *testing.T,
 func testImmediateOpr(desc string, t *testing.T,
 	srcs interface{},
 	qry *Queryable,
-	assert func(*Queryable)) {
+	assert func(*Queryable, int)) {
 	defaultChunkSize = 20
 
 	test := func(src interface{}) {
+		n := reflect.ValueOf(src).Len()
 		c.Convey("Test the slicer -> slicer", func() {
-			assert(qry.SetDataSource(src))
+			assert(qry.SetDataSource(src), n)
 		})
 
 		c.Convey("Test the channel -> slicer", func() {
-			assert(qry.SetDataSource(getChan(src)))
+			assert(qry.SetDataSource(getChan(src)), n)
 		})
 
 	}
@@ -1316,7 +1317,7 @@ func TestAggregate(t *testing.T) {
 
 	testImmediateOpr("When passed nil function", t,
 		taInts, NewQuery(),
-		func(q *Queryable) {
+		func(q *Queryable, n int) {
 			_, err := q.Aggregate(nil)
 			c.So(err, c.ShouldNotBeNil)
 
@@ -1326,29 +1327,29 @@ func TestAggregate(t *testing.T) {
 
 	testImmediateOpr("If the error appears in Aggregate function", t,
 		taInts, NewQuery(),
-		func(q *Queryable) {
+		func(q *Queryable, n int) {
 			_, err := q.Aggregate(&AggregateOperation{0, aggregatePanic, nil})
 			c.So(err, c.ShouldNotBeNil)
 		})
 
 	testImmediateOpr("An error appears in previous operation", t,
 		taInts, NewQuery(),
-		func(q *Queryable) {
+		func(q *Queryable, n int) {
 			_, err := q.Select(projectWithPanic).Aggregate(myAgg)
 			c.So(err, c.ShouldNotBeNil)
 		})
 
 	testImmediateOpr("Aggregate an empty slice", t,
 		taEmptys, NewQuery(),
-		func(q *Queryable) {
+		func(q *Queryable, n int) {
 			_, err := q.Aggregate(Max())
 			c.So(err, c.ShouldNotBeNil)
 		})
 
 	testImmediateOpr("Aggregate an interface{} slice", t,
 		taUsers, NewQuery(),
-		func(q *Queryable) {
-			r, err := From(tUsers).Aggregate(myAgg)
+		func(q *Queryable, n int) {
+			r, err := q.Aggregate(myAgg)
 			c.So(err, c.ShouldBeNil)
 			_ = r
 		})
@@ -1395,23 +1396,50 @@ func TestAggregate(t *testing.T) {
 }
 
 func TestSumCountAvgMaxMin(t *testing.T) {
+	testImmediateOpr("Max an int slice", t,
+		taInts, NewQuery(),
+		func(q *Queryable, n int) {
+			r, err := q.Max()
+			c.So(err, c.ShouldBeNil)
+			c.So(r, c.ShouldEqual, n-1)
+		})
+
+	testImmediateOpr("MaxBy an interface slice", t,
+		taUsers, NewQuery(),
+		func(q *Queryable, n int) {
+			r, err := q.Max(func(v interface{}) interface{} {
+				return v.(user).id
+			})
+			c.So(err, c.ShouldBeNil)
+			c.So(r, c.ShouldEqual, n-1)
+		})
+
+	testImmediateOpr("MaxBy an interface slice", t,
+		taUsers, NewQuery(),
+		func(q *Queryable, n int) {
+			r, err := q.Max(func(v interface{}) interface{} {
+				return v.(user).id
+			})
+			c.So(err, c.ShouldBeNil)
+			c.So(r, c.ShouldEqual, n-1)
+		})
 
 	test := func(size int) {
 		defaultChunkSize = size
-		c.Convey("Max an int slice", func() {
-			r, err := From(tInts).Max()
-			//TODO: need test keep order
-			c.So(err, c.ShouldBeNil)
-			c.So(r, c.ShouldEqual, count-1)
-		})
-		c.Convey("MaxBy an int slice", func() {
-			r, err := From(tUsers).Aggregate(Max(func(v interface{}) interface{} {
-				return v.(user).id
-			}))
-			//TODO: need test keep order
-			c.So(err, c.ShouldBeNil)
-			c.So(r, c.ShouldEqual, count-1)
-		})
+		//c.Convey("Max an int slice", func() {
+		//	r, err := From(tInts).Max()
+		//	//TODO: need test keep order
+		//	c.So(err, c.ShouldBeNil)
+		//	c.So(r, c.ShouldEqual, count-1)
+		//})
+		//c.Convey("MaxBy an int slice", func() {
+		//	r, err := From(tUsers).Aggregate(Max(func(v interface{}) interface{} {
+		//		return v.(user).id
+		//	}))
+		//	//TODO: need test keep order
+		//	c.So(err, c.ShouldBeNil)
+		//	c.So(r, c.ShouldEqual, count-1)
+		//})
 
 		c.Convey("Min an int slice", func() {
 			r, err := From(tInts).Min()
