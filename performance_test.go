@@ -185,7 +185,7 @@ func BenchmarkGoLinq_Distinct(b *testing.B) {
 //test join-----------------------------------------------------------------
 func BenchmarkGoPLinq_Join(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		dst, _ := From(bUsers).Join(bRoles, userId, roleUid, userIdAndRole).Results()
+		dst, _ := From(bUsers).Join(bRoles, getUserId, getRoleUid, getUserIdAndRole).Results()
 		if len(dst) != countForB {
 			b.Fail()
 			//b.Log("arr=", arr)
