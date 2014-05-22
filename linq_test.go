@@ -113,28 +113,29 @@ var (
 		_ = sum
 	}
 
-	//转化slice of interface{} 为chan of interface{}
-	getChan = func(src []interface{}) chan interface{} {
-		chanSrc := make(chan interface{})
-		go func() {
-			for _, v := range src {
-				chanSrc <- v
-			}
-			close(chanSrc)
-		}()
-		return chanSrc
-	}
-
-	//转化slice of int 为chan of int
-	getIntChan = func(src []int) chan int {
-		chanSrc := make(chan int)
-		go func() {
-			for _, v := range src {
-				chanSrc <- v
-			}
-			close(chanSrc)
-		}()
-		return chanSrc
+	getChan = func(src interface{}) interface{} {
+		switch s := src.(type) {
+		case []interface{}:
+			chanSrc := make(chan interface{})
+			go func() {
+				for _, v := range s {
+					chanSrc <- v
+				}
+				close(chanSrc)
+			}()
+			return chanSrc
+		case []int:
+			chanSrc := make(chan int)
+			go func() {
+				for _, v := range s {
+					chanSrc <- v
+				}
+				close(chanSrc)
+			}()
+			return chanSrc
+		default:
+			return nil
+		}
 	}
 
 	//将在最后一个数据抛出错误的过滤函数，用于测试错误处理
@@ -259,13 +260,13 @@ func TestFrom(t *testing.T) {
 //	})
 
 //	c.Convey("Test where then select the channel of int", t, func() {
-//		rs, err := From(getIntChan(tInts)).Where(filterFunc).Select(projectFunc).Results()
+//		rs, err := From(getChan(tInts)).Where(filterFunc).Select(projectFunc).Results()
 //		c.So(err, c.ShouldBeNil)
 //		c.So(rs, shouldSlicesResemble, expectedInts)
 //	})
 
 //	c.Convey("Test where then select, and use channel as output", t, func() {
-//		rsChan, errChan, err := From(getIntChan(tInts)).Where(filterFunc).Select(projectFunc).ToChan()
+//		rsChan, errChan, err := From(getChan(tInts)).Where(filterFunc).Select(projectFunc).ToChan()
 //		c.So(err, c.ShouldBeNil)
 //		rs, stepErr := getChanResult(rsChan, errChan)
 //		c.So(stepErr, c.ShouldBeNil)
@@ -342,28 +343,6 @@ func testLazyOpr(desc string, t *testing.T,
 	assert func([]interface{}, error, int, bool)) {
 	defaultChunkSize = 20
 
-	getC := func(src interface{}) interface{} {
-		switch s := src.(type) {
-		case []interface{}:
-			return getChan(s)
-		case []int:
-			return getIntChan(s)
-		default:
-			return nil
-		}
-	}
-
-	getLen := func(src interface{}) int {
-		switch s := src.(type) {
-		case []interface{}:
-			return len(s)
-		case []int:
-			return len(s)
-		default:
-			return 0
-		}
-	}
-
 	var getQry func() *Queryable
 	if q, ok := qry.(func() *Queryable); ok {
 		getQry = q
@@ -373,68 +352,82 @@ func testLazyOpr(desc string, t *testing.T,
 		}
 	}
 
+	testResults := func(src interface{}, n int) {
+		rs, err := getQry().SetDataSource(src).Results()
+		assert(rs, err, n, false)
+	}
+	testToChan := func(src interface{}, n int) {
+		rsChan, errChan, err := getQry().SetDataSource(src).ToChan()
+		if err != nil {
+			assert(nil, err, n, true)
+			return
+		}
+		rs, err := getChanResult(rsChan, errChan)
+		assert(rs, err, n, true)
+	}
+
 	test := func(src interface{}) {
-		n := getLen(src)
+		n := reflect.ValueOf(src).Len()
 		c.Convey("Test the slicer -> slicer", func() {
-			//fmt.Println("Test the slicer -> slicer", src)
-			rs, err := getQry().SetDataSource(src).Results()
-			assert(rs, err, n, false)
+			testResults(src, n)
 		})
 
 		c.Convey("Test the channel -> slicer", func() {
-			//fmt.Println("Test the channel -> slicer", src)
-			rs, err := getQry().SetDataSource(getC(src)).Results()
-			assert(rs, err, n, false)
+			testResults(getChan(src), n)
 		})
 
 		c.Convey("Test the slicer -> channel", func() {
-			//fmt.Println("Test the slicer -> channel", src)
-			rsChan, errChan, err := getQry().SetDataSource(src).ToChan()
-			if err != nil {
-				assert(nil, err, n, true)
-				return
-			}
-			rs, err := getChanResult(rsChan, errChan)
-			assert(rs, err, n, true)
+			testToChan(src, n)
 		})
 
 		c.Convey("Test the channel -> channel", func() {
-			//fmt.Println("Test the channel -> channel", src)
-			rsChan, errChan, err := getQry().SetDataSource(getC(src)).ToChan()
-			if err != nil {
-				assert(nil, err, n, true)
-				return
-			}
-			rs, err := getChanResult(rsChan, errChan)
-			assert(rs, err, n, true)
+			testToChan(getChan(src), n)
 		})
-		//})
 	}
 
-	switch ss := srcs.(type) {
-	case [][]int:
-		c.Convey(desc+" ", t, func() {
-			c.Convey("in seq mode", func() {
-				test(ss[0])
-			})
+	v := reflect.ValueOf(srcs)
+	c.Convey(desc, t, func() {
+		c.Convey("in seq mode", func() {
+			test(v.Index(0).Interface())
 		})
-		c.Convey(desc+" ", t, func() {
-			c.Convey("in parallel mode", func() {
-				test(ss[1])
-			})
+	})
+	c.Convey(desc, t, func() {
+		c.Convey("in parallel mode", func() {
+			test(v.Index(1).Interface())
 		})
-	case [][]interface{}:
-		c.Convey(desc+" in seq", t, func() {
-			c.Convey("in seq mode", func() {
-				test(ss[0])
-			})
+	})
+	defaultChunkSize = DEFAULTCHUNKSIZE
+}
+
+//testingthe opretion returns the collecion
+func testImmediateOpr(desc string, t *testing.T,
+	srcs interface{},
+	qry *Queryable,
+	assert func(*Queryable)) {
+	defaultChunkSize = 20
+
+	test := func(src interface{}) {
+		c.Convey("Test the slicer -> slicer", func() {
+			assert(qry.SetDataSource(src))
 		})
-		c.Convey(desc+" in Parallel", t, func() {
-			c.Convey("in parallel mode", func() {
-				test(ss[1])
-			})
+
+		c.Convey("Test the channel -> slicer", func() {
+			assert(qry.SetDataSource(getChan(src)))
 		})
+
 	}
+
+	v := reflect.ValueOf(srcs)
+	c.Convey(desc, t, func() {
+		c.Convey("in seq mode", func() {
+			test(v.Index(0).Interface())
+		})
+	})
+	c.Convey(desc, t, func() {
+		c.Convey("in parallel mode", func() {
+			test(v.Index(1).Interface())
+		})
+	})
 	defaultChunkSize = DEFAULTCHUNKSIZE
 }
 
@@ -1037,10 +1030,10 @@ func TestUnion(t *testing.T) {
 		NewQuery().Union(tUsers2),
 		func(rs []interface{}, err error, n int, chanAsOut bool) {
 			c.So(err, c.ShouldBeNil)
-			if n == count{
-			c.So(len(rs), c.ShouldEqual, n+n/2)
+			if n == count {
+				c.So(len(rs), c.ShouldEqual, n+n/2)
 			} else {
-			c.So(len(rs), c.ShouldEqual, n)
+				c.So(len(rs), c.ShouldEqual, n)
 			}
 		})
 
@@ -1051,10 +1044,10 @@ func TestUnion(t *testing.T) {
 		},
 		func(rs []interface{}, err error, n int, chanAsOut bool) {
 			c.So(err, c.ShouldBeNil)
-			if n == count{
-			c.So(len(rs), c.ShouldEqual, n+n/2)
+			if n == count {
+				c.So(len(rs), c.ShouldEqual, n+n/2)
 			} else {
-			c.So(len(rs), c.ShouldEqual, n)
+				c.So(len(rs), c.ShouldEqual, n)
 			}
 		})
 
@@ -1098,7 +1091,7 @@ func TestConcat(t *testing.T) {
 
 	testLazyOpr("Concat an interface{} slice as secondary source", t,
 		taUsers,
-		func()*Queryable{
+		func() *Queryable {
 			return NewQuery().Concat(getChan(tUsers2))
 		},
 		func(rs []interface{}, err error, n int, chanAsOut bool) {
@@ -1106,10 +1099,9 @@ func TestConcat(t *testing.T) {
 			c.So(len(rs), c.ShouldEqual, n+count)
 		})
 
-		c.Convey("When passed nil source, error be returned", t, func() {
-			c.So(func() { From(tUsers).Concat(nil) }, c.ShouldPanicWith, ErrConcatNilSource)
-		})
-
+	c.Convey("When passed nil source, error be returned", t, func() {
+		c.So(func() { From(tUsers).Concat(nil) }, c.ShouldPanicWith, ErrConcatNilSource)
+	})
 
 }
 
@@ -1142,31 +1134,30 @@ func TestInterest(t *testing.T) {
 		NewQuery().Intersect(tUsers2),
 		func(rs []interface{}, err error, n int, chanAsOut bool) {
 			c.So(err, c.ShouldBeNil)
-			if n == count{
-			c.So(len(rs), c.ShouldEqual, n/2)
+			if n == count {
+				c.So(len(rs), c.ShouldEqual, n/2)
 			} else {
-			c.So(len(rs), c.ShouldEqual, count)
+				c.So(len(rs), c.ShouldEqual, count)
 			}
 		})
 
 	testLazyOpr("Interest an interface{} channel as secondary source", t,
 		taUsers,
-		func() *Queryable{
+		func() *Queryable {
 			return NewQuery().Intersect(getChan(tUsers2))
 		},
 		func(rs []interface{}, err error, n int, chanAsOut bool) {
 			c.So(err, c.ShouldBeNil)
-			if n == count{
-			c.So(len(rs), c.ShouldEqual, n/2)
+			if n == count {
+				c.So(len(rs), c.ShouldEqual, n/2)
 			} else {
-			c.So(len(rs), c.ShouldEqual, count)
+				c.So(len(rs), c.ShouldEqual, count)
 			}
 		})
 
 	c.Convey("When passed nil source, error be returned", t, func() {
 		c.So(func() { From(tUsers).Intersect(nil) }, c.ShouldPanicWith, ErrInterestNilSource)
 	})
-
 
 }
 
@@ -1199,31 +1190,30 @@ func TestExcept(t *testing.T) {
 		NewQuery().Except(tUsers2),
 		func(rs []interface{}, err error, n int, chanAsOut bool) {
 			c.So(err, c.ShouldBeNil)
-			if n == count{
-			c.So(len(rs), c.ShouldEqual, n/2)
+			if n == count {
+				c.So(len(rs), c.ShouldEqual, n/2)
 			} else {
-			c.So(len(rs), c.ShouldEqual, n-count)
+				c.So(len(rs), c.ShouldEqual, n-count)
 			}
 		})
 
 	testLazyOpr("Except an interface{} channel as secondary source", t,
 		taUsers,
-		func() *Queryable{
+		func() *Queryable {
 			return NewQuery().Except(getChan(tUsers2))
 		},
 		func(rs []interface{}, err error, n int, chanAsOut bool) {
 			c.So(err, c.ShouldBeNil)
-			if n == count{
-			c.So(len(rs), c.ShouldEqual, n/2)
+			if n == count {
+				c.So(len(rs), c.ShouldEqual, n/2)
 			} else {
-			c.So(len(rs), c.ShouldEqual, n-count)
+				c.So(len(rs), c.ShouldEqual, n-count)
 			}
 		})
-		
-		c.Convey("When passed nil source, error be returned", t, func() {
-			c.So(func() { From(tUsers).Except(nil) }, c.ShouldPanicWith, ErrExceptNilSource)
-		})
 
+	c.Convey("When passed nil source, error be returned", t, func() {
+		c.So(func() { From(tUsers).Except(nil) }, c.ShouldPanicWith, ErrExceptNilSource)
+	})
 
 }
 
@@ -1283,43 +1273,30 @@ func TestOrderBy(t *testing.T) {
 }
 
 func TestReverse(t *testing.T) {
-	test := func(size int) {
-		defaultChunkSize = size
-		c.Convey("An error appears in before operation", func() {
-			_, err := From(getChan(tRptUsers)).Select(projectWithPanic).Reverse().Results()
+	testLazyOpr("An error appears in previous operation", t,
+		taUsers,
+		NewQuery().Select(projectWithPanic).Reverse(),
+		func(rs []interface{}, err error, n int, chanAsOut bool) {
 			c.So(err, c.ShouldNotBeNil)
 		})
 
-		c.Convey("Reverse an interface{} slice", func() {
-			rs, err := From(tRptUsers).OrderBy(orderUserById).Reverse().Results()
-			c.So(len(rs), c.ShouldEqual, len(tRptUsers))
+	testLazyOpr("Reverse an interface{} slice", t,
+		taUsers,
+		NewQuery().OrderBy(orderUserById).Reverse(),
+		func(rs []interface{}, err error, n int, chanAsOut bool) {
+			c.So(len(rs), c.ShouldEqual, n)
 			c.So(err, c.ShouldBeNil)
 
-			id := 1000000
-			for _, v := range rs {
-				u := v.(user)
-				c.So(u.id, c.ShouldBeLessThanOrEqualTo, id)
-				id = u.id
+			if !chanAsOut {
+				id := 1000000
+				for _, v := range rs {
+					u := v.(user)
+					c.So(u.id, c.ShouldBeLessThanOrEqualTo, id)
+					id = u.id
+				}
 			}
 		})
 
-		//TODO: OrderBy will always return list, this case must be updated
-		c.Convey("Reverse an interface{} chan", func() {
-			rs, err := From(getChan(tRptUsers)).OrderBy(orderUserById).Reverse().Results()
-			c.So(err, c.ShouldBeNil)
-			c.So(len(rs), c.ShouldEqual, len(tRptUsers))
-
-			id := 1000000
-			for _, v := range rs {
-				u := v.(user)
-				c.So(u.id, c.ShouldBeLessThanOrEqualTo, id)
-				id = u.id
-			}
-		})
-		defaultChunkSize = DEFAULTCHUNKSIZE
-	}
-	c.Convey("Test Reverse Sequential", t, func() { test(sequentialChunkSize) })
-	c.Convey("Test Reverse parallel", t, func() { test(parallelChunkSize) })
 }
 
 func aggregatePanic(v interface{}, summary interface{}) interface{} {
@@ -1337,19 +1314,43 @@ func TestAggregate(t *testing.T) {
 		},
 	}
 
-	test := func(size int) {
-		defaultChunkSize = size
-		c.Convey("When passed nil function, should use the default compare function", func() {
-			_, err := From([]int{4, 2, 3, 1}).Aggregate(nil)
+	testImmediateOpr("When passed nil function", t,
+		taInts, NewQuery(),
+		func(q *Queryable) {
+			_, err := q.Aggregate(nil)
 			c.So(err, c.ShouldNotBeNil)
-			_, err = From([]int{4, 2, 3, 1}).Aggregate(([]*AggregateOperation{})...)
+
+			_, err = q.Aggregate(([]*AggregateOperation{})...)
 			c.So(err, c.ShouldNotBeNil)
 		})
 
-		c.Convey("If the error appears in Aggregate function", func() {
-			_, err := From([]int{4, 2, 3, 1}).Aggregate(&AggregateOperation{0, aggregatePanic, nil})
+	testImmediateOpr("If the error appears in Aggregate function", t,
+		taInts, NewQuery(),
+		func(q *Queryable) {
+			_, err := q.Aggregate(&AggregateOperation{0, aggregatePanic, nil})
 			c.So(err, c.ShouldNotBeNil)
 		})
+
+	testImmediateOpr("An error appears in previous operation", t,
+		taInts, NewQuery(),
+		func(q *Queryable) {
+			_, err := q.Select(projectWithPanic).Aggregate(myAgg)
+			c.So(err, c.ShouldNotBeNil)
+		})
+
+	test := func(size int) {
+		defaultChunkSize = size
+		//c.Convey("When passed nil function, should use the default compare function", func() {
+		//	_, err := From([]int{4, 2, 3, 1}).Aggregate(nil)
+		//	c.So(err, c.ShouldNotBeNil)
+		//	_, err = From([]int{4, 2, 3, 1}).Aggregate(([]*AggregateOperation{})...)
+		//	c.So(err, c.ShouldNotBeNil)
+		//})
+
+		//c.Convey("If the error appears in Aggregate function", func() {
+		//	_, err := From([]int{4, 2, 3, 1}).Aggregate(&AggregateOperation{0, aggregatePanic, nil})
+		//	c.So(err, c.ShouldNotBeNil)
+		//})
 
 		c.Convey("An error appears in previous operation", func() {
 			_, err := From(tUsers).Select(projectWithPanic).Aggregate(myAgg)
@@ -2041,39 +2042,39 @@ func TestAnyAndAll(t *testing.T) {
 
 	c.Convey("Test Any and All in channel", t, func() {
 		c.Convey("Predicate with panic an error", func() {
-			_, err := From(getIntChan(tInts)).Any(func(v interface{}) bool {
+			_, err := From(getChan(tInts)).Any(func(v interface{}) bool {
 				panic(errors.New("!error"))
 			})
 			c.So(err, c.ShouldNotBeNil)
 		})
 		c.Convey("If an error appears in before operation", func() {
-			_, err := From(getIntChan(tInts)).Select(projectWithPanic).Any(func(v interface{}) bool {
+			_, err := From(getChan(tInts)).Select(projectWithPanic).Any(func(v interface{}) bool {
 				return v.(int) == -1
 			})
 			c.So(err, c.ShouldNotBeNil)
 		})
 		c.Convey("Any and All nothing", func() {
-			found, err := From(getIntChan(tInts)).Any(func(v interface{}) bool {
+			found, err := From(getChan(tInts)).Any(func(v interface{}) bool {
 				return v.(int) == -1
 			})
 			c.So(err, c.ShouldBeNil)
 			c.So(found, c.ShouldEqual, false)
 
-			found, err = From(getIntChan(tInts)).All(func(v interface{}) bool {
+			found, err = From(getChan(tInts)).All(func(v interface{}) bool {
 				return v.(int) == -1
 			})
 			c.So(err, c.ShouldBeNil)
 			c.So(found, c.ShouldEqual, false)
 		})
 		c.Convey("Find any int == 12", func() {
-			found, err := From(getIntChan(tInts)).Any(func(v interface{}) bool {
+			found, err := From(getChan(tInts)).Any(func(v interface{}) bool {
 				return v.(int) == 12
 			})
 			c.So(err, c.ShouldBeNil)
 			c.So(found, c.ShouldEqual, true)
 		})
 		c.Convey("Find all int >= 0", func() {
-			found, err := From(getIntChan(tInts)).Any(func(v interface{}) bool {
+			found, err := From(getChan(tInts)).Any(func(v interface{}) bool {
 				return v.(int) >= 0
 			})
 			c.So(err, c.ShouldBeNil)
@@ -2205,7 +2206,7 @@ func TestToChannel(t *testing.T) {
 		})
 
 		c.Convey("no error appears from chan source", func() {
-			out, errChan, err := From(getIntChan(tInts)).Where(filterFunc, parallelChunkSize).Select(projectFunc, parallelChunkSize).ToChan()
+			out, errChan, err := From(getChan(tInts)).Where(filterFunc, parallelChunkSize).Select(projectFunc, parallelChunkSize).ToChan()
 			c.So(err, c.ShouldBeNil)
 			rs, stepErr := getChanResult(out, errChan)
 			c.So(stepErr, c.ShouldBeNil)
@@ -2216,7 +2217,7 @@ func TestToChannel(t *testing.T) {
 		})
 
 		c.Convey("When error appears in last chunk from chan source", func() {
-			out, errChan, err := From(getIntChan(tInts)).Where(filterWithPanic, parallelChunkSize).Select(projectFunc, parallelChunkSize).ToChan()
+			out, errChan, err := From(getChan(tInts)).Where(filterWithPanic, parallelChunkSize).Select(projectFunc, parallelChunkSize).ToChan()
 			c.So(err, c.ShouldBeNil)
 			_, stepErr := getChanResult(out, errChan)
 			c.So(stepErr, c.ShouldNotBeNil)
