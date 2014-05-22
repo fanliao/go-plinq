@@ -221,6 +221,19 @@ var (
 	orderUserByIdPanic = func(v1 interface{}, v2 interface{}) int {
 		panic(errors.New("panic"))
 	}
+
+	userSelector = func(v interface{}) interface{} {
+		return v.(user).id
+	}
+
+	roleSelector = func(v interface{}) interface{} {
+		r := v.(role)
+		return r.uid
+	}
+
+	resultSelector = func(u interface{}, v interface{}) interface{} {
+		return strconv.Itoa(u.(user).id) + "-" + v.(role).role
+	}
 )
 
 // Testing functions----------------------------------------------------------
@@ -335,102 +348,139 @@ func TestFrom(t *testing.T) {
 //	})
 //}
 
-//全面测试所有的linq操作，包括串行和并行两种模式-------------------------------
-//testingthe opretion returns the collecion
-func testLazyOpr(desc string, t *testing.T,
-	srcs interface{},
-	qry interface{},
-	assert func([]interface{}, error, int, bool)) {
-	defaultChunkSize = 20
+var (
+	//全面测试所有的linq操作，包括串行和并行两种模式-------------------------------
+	//testingthe opretion returns the collecion
+	testLazyOpr = func(desc string, t *testing.T,
+		srcs interface{},
+		qry interface{},
+		assert func([]interface{}, error, int, bool)) {
+		defaultChunkSize = 20
 
-	var getQry func() *Queryable
-	if q, ok := qry.(func() *Queryable); ok {
-		getQry = q
-	} else if q, ok := qry.(*Queryable); ok {
-		getQry = func() *Queryable {
-			return q
+		var getQry func() *Queryable
+		if q, ok := qry.(func() *Queryable); ok {
+			getQry = q
+		} else if q, ok := qry.(*Queryable); ok {
+			getQry = func() *Queryable {
+				return q
+			}
+		}
+
+		testResults := func(src interface{}, n int) {
+			rs, err := getQry().SetDataSource(src).Results()
+			assert(rs, err, n, false)
+		}
+		testToChan := func(src interface{}, n int) {
+			rsChan, errChan, err := getQry().SetDataSource(src).ToChan()
+			if err != nil {
+				assert(nil, err, n, true)
+				return
+			}
+			rs, err1 := getChanResult(rsChan, errChan)
+			assert(rs, err1, n, true)
+		}
+
+		test := func(src interface{}) {
+			n := reflect.ValueOf(src).Len()
+			c.Convey("Test the slicer -> slicer", func() {
+				testResults(src, n)
+			})
+
+			c.Convey("Test the channel -> slicer", func() {
+				testResults(getChan(src), n)
+			})
+
+			c.Convey("Test the slicer -> channel", func() {
+				testToChan(src, n)
+			})
+
+			c.Convey("Test the channel -> channel", func() {
+				testToChan(getChan(src), n)
+			})
+		}
+
+		v := reflect.ValueOf(srcs)
+		c.Convey(desc, t, func() {
+			c.Convey("in seq mode", func() {
+				test(v.Index(0).Interface())
+			})
+		})
+		c.Convey(desc, t, func() {
+			c.Convey("in parallel mode", func() {
+				test(v.Index(1).Interface())
+			})
+		})
+		defaultChunkSize = DEFAULTCHUNKSIZE
+	}
+
+	//testingthe immediate opretion
+	testImmediateOpr = func(desc string, t *testing.T,
+		srcs interface{},
+		qry *Queryable,
+		assert func(*Queryable, int)) {
+		defaultChunkSize = 20
+
+		test := func(src interface{}) {
+			n := reflect.ValueOf(src).Len()
+			c.Convey("Test the slicer -> slicer", func() {
+				assert(qry.SetDataSource(src), n)
+			})
+
+			c.Convey("Test the channel -> slicer", func() {
+				assert(qry.SetDataSource(getChan(src)), n)
+			})
+
+		}
+
+		v := reflect.ValueOf(srcs)
+		c.Convey(desc, t, func() {
+			c.Convey("in seq mode", func() {
+				test(v.Index(0).Interface())
+			})
+		})
+		c.Convey(desc, t, func() {
+			c.Convey("in parallel mode", func() {
+				test(v.Index(1).Interface())
+			})
+		})
+		defaultChunkSize = DEFAULTCHUNKSIZE
+
+	}
+
+	//functions for valid the lazy operation result
+	expectErr = func(rs []interface{}, err error, n int, chanAsOut bool) {
+		c.So(err, c.ShouldNotBeNil)
+	}
+
+	expectEmptySlice = func(rs []interface{}, err error, n int, chanAsOut bool) {
+		c.So(len(rs), c.ShouldEqual, 0)
+		c.So(err, c.ShouldBeNil)
+	}
+
+	expectSliceSize = func(size func(int) int) func(rs []interface{}, err error, n int, chanAsOut bool) {
+		return func(rs []interface{}, err error, n int, chanAsOut bool) {
+			c.So(err, c.ShouldBeNil)
+			c.So(len(rs), c.ShouldEqual, size(n))
 		}
 	}
 
-	testResults := func(src interface{}, n int) {
-		rs, err := getQry().SetDataSource(src).Results()
-		assert(rs, err, n, false)
+	expectSliceSizeEqualsN = func(rs []interface{}, err error, n int, chanAsOut bool) {
+		c.So(err, c.ShouldBeNil)
+		c.So(len(rs), c.ShouldEqual, n)
 	}
-	testToChan := func(src interface{}, n int) {
-		rsChan, errChan, err := getQry().SetDataSource(src).ToChan()
-		if err != nil {
-			assert(nil, err, n, true)
-			return
+
+	expectSlice = func(expected func(n int) []interface{}) func(rs []interface{}, err error, n int, chanAsOut bool) {
+		return func(rs []interface{}, err error, n int, chanAsOut bool) {
+			c.So(err, c.ShouldBeNil)
+			//NOTE: don't keep the original order when output the channel
+			if chanAsOut {
+				c.So(len(rs), c.ShouldEqual, len(expected(n)))
+			} else {
+				c.So(rs, shouldSlicesResemble, expected(n))
+			}
 		}
-		rs, err1 := getChanResult(rsChan, errChan)
-		assert(rs, err1, n, true)
 	}
-
-	test := func(src interface{}) {
-		n := reflect.ValueOf(src).Len()
-		c.Convey("Test the slicer -> slicer", func() {
-			testResults(src, n)
-		})
-
-		c.Convey("Test the channel -> slicer", func() {
-			testResults(getChan(src), n)
-		})
-
-		c.Convey("Test the slicer -> channel", func() {
-			testToChan(src, n)
-		})
-
-		c.Convey("Test the channel -> channel", func() {
-			testToChan(getChan(src), n)
-		})
-	}
-
-	v := reflect.ValueOf(srcs)
-	c.Convey(desc, t, func() {
-		c.Convey("in seq mode", func() {
-			test(v.Index(0).Interface())
-		})
-	})
-	c.Convey(desc, t, func() {
-		c.Convey("in parallel mode", func() {
-			test(v.Index(1).Interface())
-		})
-	})
-	defaultChunkSize = DEFAULTCHUNKSIZE
-}
-
-//testingthe opretion returns the collecion
-func testImmediateOpr(desc string, t *testing.T,
-	srcs interface{},
-	qry *Queryable,
-	assert func(*Queryable, int)) {
-	defaultChunkSize = 20
-
-	test := func(src interface{}) {
-		n := reflect.ValueOf(src).Len()
-		c.Convey("Test the slicer -> slicer", func() {
-			assert(qry.SetDataSource(src), n)
-		})
-
-		c.Convey("Test the channel -> slicer", func() {
-			assert(qry.SetDataSource(getChan(src)), n)
-		})
-
-	}
-
-	v := reflect.ValueOf(srcs)
-	c.Convey(desc, t, func() {
-		c.Convey("in seq mode", func() {
-			test(v.Index(0).Interface())
-		})
-	})
-	c.Convey(desc, t, func() {
-		c.Convey("in parallel mode", func() {
-			test(v.Index(1).Interface())
-		})
-	})
-	defaultChunkSize = DEFAULTCHUNKSIZE
-}
+)
 
 func TestWhere(t *testing.T) {
 	expectedInts := func(n int) []interface{} {
@@ -449,58 +499,41 @@ func TestWhere(t *testing.T) {
 		return expecteds
 	}
 
-	testLazyOpr("If the error appears in where function", t,
-		taInts,
-		NewQuery().Where(filterWithPanic),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldNotBeNil)
-		})
-
-	testLazyOpr("If the error appears in previous operation", t,
-		taInts,
-		NewQuery().Select(projectWithPanic).Where(filterWithPanic),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldNotBeNil)
-		})
-
-	testLazyOpr("Filter an empty slice", t,
-		taEmptys,
-		NewQuery().Where(filterWithPanic),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(len(rs), c.ShouldEqual, 0)
-			c.So(err, c.ShouldBeNil)
-		})
-
-	testLazyOpr("Filter an int slice, and keep original order", t,
-		taInts, NewQuery().Where(filterFuncForConfusedOrder),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
-			//NOTE: don't keep the original order when output the channel
-			if chanAsOut {
-				c.So(len(rs), c.ShouldEqual, len(expectedInts(n)))
-			} else {
-				c.So(rs, shouldSlicesResemble, expectedInts(n))
-			}
-		})
-
-	testLazyOpr("Filter an interface{} slice", t,
-		taUsers,
-		NewQuery().Where(filterFunc),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
-			//NOTE: don't keep the original order when output the channel
-			if chanAsOut {
-				c.So(len(rs), c.ShouldEqual, len(expectedUsers(n)))
-			} else {
-				c.So(rs, shouldSlicesResemble, expectedUsers(n))
-			}
-		})
-
 	c.Convey("When passed nil function, error be returned", t, func() {
 		c.So(func() { From(tInts).Where(nil) }, c.ShouldPanicWith, ErrNilAction)
 	})
 
-	//TODO: still have bugs
+	testLazyOpr("If the error appears in where function", t,
+		taInts,
+		NewQuery().Where(filterWithPanic),
+		expectErr,
+	)
+
+	testLazyOpr("If the error appears in previous operation", t,
+		taInts,
+		NewQuery().Select(projectWithPanic).Where(filterWithPanic),
+		expectErr,
+	)
+
+	testLazyOpr("Filter an empty slice", t,
+		taEmptys,
+		NewQuery().Where(filterWithPanic),
+		expectEmptySlice,
+	)
+
+	testLazyOpr("Filter an int slice, and keep original order", t,
+		taInts,
+		NewQuery().Where(filterFuncForConfusedOrder),
+		expectSlice(expectedInts),
+	)
+
+	testLazyOpr("Filter an interface{} slice", t,
+		taUsers,
+		NewQuery().Where(filterFunc),
+		expectSlice(expectedUsers),
+	)
+
+	//TODO: still have bugs, so don't support Map as DataSource now.
 	//c.Convey("Filter a map", func() {
 	//	rs, err := From(tMap).Where(filterMap).Results()
 	//	c.So(len(rs), c.ShouldEqual, count/2)
@@ -509,33 +542,35 @@ func TestWhere(t *testing.T) {
 }
 
 func TestSelect(t *testing.T) {
+	c.Convey("When passed nil function, error be returned", t, func() {
+		c.So(func() { From(tInts).Select(nil) }, c.ShouldPanicWith, ErrNilAction)
+	})
+
 	//插入随机的计算来打乱原始的顺序，测试结果是否可以保持顺序
 	selectIntForConfusedOrder := func(v interface{}) interface{} {
-		rand.Seed(10)
 		confusedOrder()
 		return v.(int) * 10
 	}
 
 	testLazyOpr("If the error appears in select function", t,
-		taInts, NewQuery().Select(projectWithPanic),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldNotBeNil)
-		})
+		taInts,
+		NewQuery().Select(projectWithPanic),
+		expectErr,
+	)
 
 	testLazyOpr("If the error appears in previous operations", t,
-		taInts, NewQuery().Where(filterWithPanic).Select(projectFunc),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldNotBeNil)
-		})
+		taInts,
+		NewQuery().Where(filterWithPanic).Select(projectFunc),
+		expectErr,
+	)
 
 	testLazyOpr("Select an empty slice", t,
-		taEmptys, NewQuery().Where(filterWithPanic).Select(projectFunc),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(len(rs), c.ShouldEqual, 0)
-			c.So(err, c.ShouldBeNil)
-		})
+		taEmptys,
+		NewQuery().Where(filterWithPanic).Select(projectFunc),
+		expectEmptySlice,
+	)
 
-	newInts := func(n int) []interface{} {
+	expectedInts := func(n int) []interface{} {
 		ints := make([]interface{}, n)
 		for i := 0; i < n; i++ {
 			ints[i] = i * 10
@@ -544,17 +579,10 @@ func TestSelect(t *testing.T) {
 	}
 	testLazyOpr("select an int slice, and keep original order", t,
 		taInts, NewQuery().Select(selectIntForConfusedOrder),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
-			//NOTE: don't keep the original order when output the channel
-			if chanAsOut {
-				c.So(len(rs), c.ShouldEqual, len(newInts(n)))
-			} else {
-				c.So(rs, shouldSlicesResemble, newInts(n))
-			}
-		})
+		expectSlice(expectedInts),
+	)
 
-	newUsers := func(n int) []interface{} {
+	expectedUsers := func(n int) []interface{} {
 		users := make([]interface{}, n)
 		for i := 0; i < n; i++ {
 			users[i] = strconv.Itoa(i) + "/" + "user" + strconv.Itoa(i)
@@ -562,74 +590,56 @@ func TestSelect(t *testing.T) {
 		return users
 	}
 	testLazyOpr("Select an interface{} slice", t,
-		taUsers, NewQuery().Select(projectFunc), func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
-			//NOTE: don't keep the original order when output the channel
-			if chanAsOut {
-				c.So(len(rs), c.ShouldEqual, len(newUsers(n)))
-			} else {
-				c.So(rs, shouldSlicesResemble, newUsers(n))
-			}
-		})
-
-	c.Convey("When passed nil function, error be returned", t, func() {
-		c.So(func() { From(tInts).Select(nil) }, c.ShouldPanicWith, ErrNilAction)
-	})
+		taUsers,
+		NewQuery().Select(projectFunc),
+		expectSlice(expectedUsers),
+	)
 }
 
 func TestSelectMany(t *testing.T) {
+	c.Convey("When passed nil function, error be returned", t, func() {
+		c.So(func() { From(tInts).SelectMany(nil) }, c.ShouldPanicWith, ErrNilAction)
+	})
+
 	selectManyWithPanic := func(v interface{}) []interface{} {
 		if v.(int) == count-1 {
-			var s []interface{}
-			_ = s[2]
+			panic("force an error")
 		}
 		return []interface{}{}
 	}
 
 	selectIntManyForConfusedOrder := func(v interface{}) []interface{} {
-		rand.Seed(10)
 		confusedOrder()
 		rs := make([]interface{}, 2)
-		rs[0] = v.(int) * 10
-		rs[1] = v.(int) + count
+		rs[0], rs[1] = v.(int)*10, v.(int)+count
 		return rs
 	}
 
-	testLazyOpr("If the error appears in select function", t,
-		taInts, NewQuery().SelectMany(selectManyWithPanic),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldNotBeNil)
-		})
-
-	testLazyOpr("selectMany an empty slice", t,
-		taEmptys, NewQuery().SelectMany(selectManyWithPanic),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(len(rs), c.ShouldEqual, 0)
-			c.So(err, c.ShouldBeNil)
-		})
-
-	newInts := func(n int) []interface{} {
+	expectedInts := func(n int) []interface{} {
 		ints := make([]interface{}, n*2)
 		for i := 0; i < n; i++ {
 			ints[2*i], ints[2*i+1] = i*10, i+count
 		}
 		return ints
 	}
-	testLazyOpr("selectMany an int slice, and keep original order", t,
-		taInts, NewQuery().SelectMany(selectIntManyForConfusedOrder),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
-			//NOTE: don't keep the original order when output the channel
-			if chanAsOut {
-				c.So(len(rs), c.ShouldEqual, len(newInts(n)))
-			} else {
-				c.So(rs, shouldSlicesResemble, newInts(n))
-			}
-		})
 
-	c.Convey("When passed nil function, error be returned", t, func() {
-		c.So(func() { From(tInts).SelectMany(nil) }, c.ShouldPanicWith, ErrNilAction)
-	})
+	testLazyOpr("If the error appears in select function", t,
+		taInts,
+		NewQuery().SelectMany(selectManyWithPanic),
+		expectErr,
+	)
+
+	testLazyOpr("selectMany an empty slice", t,
+		taEmptys,
+		NewQuery().SelectMany(selectManyWithPanic),
+		expectEmptySlice,
+	)
+
+	testLazyOpr("selectMany an int slice, and keep original order", t,
+		taInts,
+		NewQuery().SelectMany(selectIntManyForConfusedOrder),
+		expectSlice(expectedInts),
+	)
 
 }
 
@@ -641,27 +651,29 @@ func distinctUserPanic(v interface{}) interface{} {
 }
 
 func TestDistinct(t *testing.T) {
+	c.Convey("When passed nil function, error be returned", t, func() {
+		c.So(func() { From(tInts).DistinctBy(nil) }, c.ShouldPanicWith, ErrNilAction)
+	})
+
 	testLazyOpr("if the error appears in DistinctBy function", t,
-		taInts, NewQuery().Select(projectWithPanic).DistinctBy(distinctUser),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldNotBeNil)
-		})
+		taInts,
+		NewQuery().Select(projectWithPanic).DistinctBy(distinctUser),
+		expectErr,
+	)
 
 	testLazyOpr("If the error appears in before operations", t,
 		taInts, NewQuery().DistinctBy(distinctUserPanic),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldNotBeNil)
-		})
+		expectErr,
+	)
 
 	testLazyOpr("Distinct an empty slice", t,
 		taEmptys, NewQuery().Distinct(),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(len(rs), c.ShouldEqual, 0)
-			c.So(err, c.ShouldBeNil)
-		})
+		expectEmptySlice,
+	)
 
 	testLazyOpr("DistinctBy an interface{} slice", t,
-		taRptUsers, NewQuery().DistinctBy(distinctUser),
+		taRptUsers,
+		NewQuery().DistinctBy(distinctUser),
 		func(rs []interface{}, err error, n int, chanAsOut bool) {
 			if n == rptCount {
 				c.So(len(rs), c.ShouldEqual, count)
@@ -671,30 +683,6 @@ func TestDistinct(t *testing.T) {
 			c.So(err, c.ShouldBeNil)
 		})
 
-	c.Convey("When passed nil function, error be returned", t, func() {
-		c.So(func() { From(tInts).DistinctBy(nil) }, c.ShouldPanicWith, ErrNilAction)
-	})
-
-	test := func(size int) {
-		defaultChunkSize = size
-		rptInts := make([]int, count+2)
-		for i := 0; i < count; i++ {
-			rptInts[i] = i
-		}
-		rptInts[count] = 0
-		rptInts[count+1] = 1
-
-		c.Convey("Distinct an int slice", func() {
-			rs, err := From(rptInts).Distinct().Results()
-			c.So(len(rs), c.ShouldEqual, len(tInts))
-			c.So(err, c.ShouldBeNil)
-		})
-
-		defaultChunkSize = DEFAULTCHUNKSIZE
-	}
-
-	c.Convey("Test Distinct Sequential", t, func() { test(sequentialChunkSize) })
-	c.Convey("Test Distinct parallel", t, func() { test(parallelChunkSize) })
 }
 
 func TestGroupBy(t *testing.T) {
@@ -705,61 +693,49 @@ func TestGroupBy(t *testing.T) {
 		panic(errors.New("panic"))
 	}
 
+	c.Convey("When passed nil function, error be returned", t, func() {
+		c.So(func() { From(tInts).GroupBy(nil) }, c.ShouldPanicWith, ErrNilAction)
+	})
+
 	testLazyOpr("If the error appears in previous operations", t,
-		taUsers, NewQuery().Select(projectWithPanic).GroupBy(groupUser),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldNotBeNil)
-		})
+		taUsers,
+		NewQuery().Select(projectWithPanic).GroupBy(groupUser),
+		expectErr,
+	)
 
 	testLazyOpr("if the error appears in GroupBy function", t,
-		taUsers, NewQuery().GroupBy(groupUserPanic),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldNotBeNil)
-		})
+		taUsers,
+		NewQuery().GroupBy(groupUserPanic),
+		expectErr,
+	)
 
 	testLazyOpr("GroupBy an empty slice", t,
-		taEmptys, NewQuery().GroupBy(groupUserPanic),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(len(rs), c.ShouldEqual, 0)
-			c.So(err, c.ShouldBeNil)
-		})
+		taEmptys,
+		NewQuery().GroupBy(groupUserPanic),
+		expectEmptySlice,
+	)
 
 	testLazyOpr("GroupBy an int slice", t,
 		taInts,
 		NewQuery().GroupBy(func(v interface{}) interface{} {
 			return v.(int) / 10
 		}),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
-			c.So(len(rs), c.ShouldEqual, ceilChunkSize(n, 10))
-		})
+		expectSliceSize(func(n int) int {
+			return ceilChunkSize(n, 10)
+		}),
+	)
 
 	testLazyOpr("groupBy an interface{} slice", t,
-		taUsers, NewQuery().GroupBy(groupUser),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
-			c.So(len(rs), c.ShouldEqual, ceilChunkSize(n, 10))
-		})
+		taUsers,
+		NewQuery().GroupBy(groupUser),
+		expectSliceSize(func(n int) int {
+			return ceilChunkSize(n, 10)
+		}),
+	)
 
-	c.Convey("When passed nil function, error be returned", t, func() {
-		c.So(func() { From(tInts).GroupBy(nil) }, c.ShouldPanicWith, ErrNilAction)
-	})
 }
 
 //test functions for Join operation-------------------------------
-func userSelector(v interface{}) interface{} {
-	return v.(user).id
-}
-
-func roleSelector(v interface{}) interface{} {
-	r := v.(role)
-	return r.uid
-}
-
-func resultSelector(u interface{}, v interface{}) interface{} {
-	return strconv.Itoa(u.(user).id) + "-" + v.(role).role
-}
-
 func resultSelectorForConfusedOrder(u interface{}, v interface{}) interface{} {
 	confusedOrder()
 	return strconv.Itoa(u.(user).id) + "-" + v.(role).role
@@ -793,6 +769,13 @@ func TestJoin(t *testing.T) {
 		}
 
 	}
+	expectOrdered := func(rs []interface{}, err error, n int, chanAsOut bool) {
+		c.So(err, c.ShouldBeNil)
+		c.So(len(rs), c.ShouldEqual, count)
+		if !chanAsOut {
+			checkOrder(rs)
+		}
+	}
 
 	c.Convey("When passed nil inner, error be returned", t, func() {
 		c.So(func() { From(tUsers).Join(nil, nil, nil, nil) }, c.ShouldPanicWith, ErrJoinNilSource)
@@ -816,55 +799,40 @@ func TestJoin(t *testing.T) {
 	})
 
 	testLazyOpr("If the error appears in previous operations", t,
-		taUsers, NewQuery().Select(projectWithPanic).Join(tRoles, userSelector, roleSelector, resultSelector),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldNotBeNil)
-		})
+		taUsers,
+		NewQuery().Select(projectWithPanic).Join(tRoles, userSelector, roleSelector, resultSelector),
+		expectErr,
+	)
 
 	testLazyOpr("Join an empty slice as outer source", t,
 		taEmptys, NewQuery().Join(tUsers2, userSelector, roleSelector, resultSelector),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
-			c.So(len(rs), c.ShouldEqual, 0)
-		})
+		expectEmptySlice,
+	)
 
 	testLazyOpr("Join an empty slice as inner source", t,
 		taUsers, NewQuery().Join([]interface{}{}, userSelector, roleSelector, resultSelector),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(len(rs), c.ShouldEqual, 0)
-			c.So(err, c.ShouldBeNil)
-		})
+		expectEmptySlice,
+	)
 
 	testLazyOpr("Join an interface{} slice as inner source, and keep original order", t,
 		taUsers,
 		NewQuery().Join(tRoles, userSelector, roleSelector, resultSelectorForConfusedOrder),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
-			c.So(len(rs), c.ShouldEqual, count)
-			if !chanAsOut {
-				checkOrder(rs)
-			}
-		})
+		expectOrdered,
+	)
 
 	testLazyOpr("Join an interface{} channel as inner source, and keep original order", t,
 		taUsers,
 		func() *Queryable {
 			return NewQuery().Join(getChan(tRoles), userSelector, roleSelector, resultSelectorForConfusedOrder)
 		},
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
-			c.So(len(rs), c.ShouldEqual, count)
-			if !chanAsOut {
-				checkOrder(rs)
-			}
-		})
+		expectOrdered,
+	)
 
 	testLazyOpr("LeftJoin an empty slice as inner source", t,
-		taUsers, NewQuery().LeftJoin([]interface{}{}, userSelector, roleSelector, leftResultSelector),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(len(rs), c.ShouldEqual, n)
-			c.So(err, c.ShouldBeNil)
-		})
+		taUsers,
+		NewQuery().LeftJoin([]interface{}{}, userSelector, roleSelector, leftResultSelector),
+		expectSliceSizeEqualsN,
+	)
 
 	testLazyOpr("LeftJoin an interface{} slice as inner source", t,
 		taUsers,
@@ -1354,45 +1322,6 @@ func TestAggregate(t *testing.T) {
 			_ = r
 		})
 
-	test := func(size int) {
-		defaultChunkSize = size
-		//c.Convey("When passed nil function, should use the default compare function", func() {
-		//	_, err := From([]int{4, 2, 3, 1}).Aggregate(nil)
-		//	c.So(err, c.ShouldNotBeNil)
-		//	_, err = From([]int{4, 2, 3, 1}).Aggregate(([]*AggregateOperation{})...)
-		//	c.So(err, c.ShouldNotBeNil)
-		//})
-
-		//c.Convey("If the error appears in Aggregate function", func() {
-		//	_, err := From([]int{4, 2, 3, 1}).Aggregate(&AggregateOperation{0, aggregatePanic, nil})
-		//	c.So(err, c.ShouldNotBeNil)
-		//})
-
-		//c.Convey("An error appears in previous operation", func() {
-		//	_, err := From(tUsers).Select(projectWithPanic).Aggregate(myAgg)
-		//	c.So(err, c.ShouldNotBeNil)
-		//})
-
-		//c.Convey("Aggregate an empty slice", func() {
-		//	_, err := From([]int{}).Aggregate(Max())
-		//	c.So(err, c.ShouldNotBeNil)
-		//})
-
-		//c.Convey("Aggregate an interface{} slice", func() {
-		//	r, err := From(tUsers).Aggregate(myAgg)
-		//	c.So(err, c.ShouldBeNil)
-		//	_ = r
-		//})
-
-		//c.Convey("Aggregate an interface{} channel", func() {
-		//	r, err := From(getChan(tUsers)).Aggregate(myAgg)
-		//	c.So(err, c.ShouldBeNil)
-		//	_ = r
-		//})
-		defaultChunkSize = DEFAULTCHUNKSIZE
-	}
-	c.Convey("Test Aggregate Sequential", t, func() { test(sequentialChunkSize) })
-	c.Convey("Test Aggregate parallel", t, func() { test(parallelChunkSize) })
 }
 
 func TestSumCountAvgMaxMin(t *testing.T) {
@@ -1414,666 +1343,66 @@ func TestSumCountAvgMaxMin(t *testing.T) {
 			c.So(r, c.ShouldEqual, n-1)
 		})
 
-	testImmediateOpr("MaxBy an interface slice", t,
+	testImmediateOpr("Min an interface slice", t,
+		taInts, NewQuery(),
+		func(q *Queryable, n int) {
+			r, err := q.Min()
+			c.So(err, c.ShouldBeNil)
+			c.So(r, c.ShouldEqual, 0)
+		})
+
+	testImmediateOpr("MinBy an interface slice", t,
 		taUsers, NewQuery(),
 		func(q *Queryable, n int) {
-			r, err := q.Max(func(v interface{}) interface{} {
+			r, err := q.Min(func(v interface{}) interface{} {
 				return v.(user).id
 			})
-			c.So(err, c.ShouldBeNil)
-			c.So(r, c.ShouldEqual, n-1)
-		})
-
-	test := func(size int) {
-		defaultChunkSize = size
-		//c.Convey("Max an int slice", func() {
-		//	r, err := From(tInts).Max()
-		//	//TODO: need test keep order
-		//	c.So(err, c.ShouldBeNil)
-		//	c.So(r, c.ShouldEqual, count-1)
-		//})
-		//c.Convey("MaxBy an int slice", func() {
-		//	r, err := From(tUsers).Aggregate(Max(func(v interface{}) interface{} {
-		//		return v.(user).id
-		//	}))
-		//	//TODO: need test keep order
-		//	c.So(err, c.ShouldBeNil)
-		//	c.So(r, c.ShouldEqual, count-1)
-		//})
-
-		c.Convey("Min an int slice", func() {
-			r, err := From(tInts).Min()
-			//TODO: need test keep order
-			c.So(err, c.ShouldBeNil)
-			c.So(r, c.ShouldEqual, 0)
-		})
-		c.Convey("MinBy an int slice", func() {
-			r, err := From(tUsers).Aggregate(Min(func(v interface{}) interface{} {
-				return v.(user).id
-			}))
-			//TODO: need test keep order
 			c.So(err, c.ShouldBeNil)
 			c.So(r, c.ShouldEqual, 0)
 		})
 
-		c.Convey("Sum an int slice", func() {
-			r, err := From(tInts).Sum()
-			//TODO: need test keep order
+	testImmediateOpr("Sum an interface slice", t,
+		taInts, NewQuery(),
+		func(q *Queryable, n int) {
+			r, err := q.Sum()
 			c.So(err, c.ShouldBeNil)
-			c.So(r, c.ShouldEqual, (count-1)*(count/2))
+			c.So(r, c.ShouldEqual, (n-1)*(n/2))
 		})
-		c.Convey("SumBy an int slice", func() {
-			r, err := From(tUsers).Aggregate(Sum(func(v interface{}) interface{} {
+
+	testImmediateOpr("SumBy an interface slice", t,
+		taUsers, NewQuery(),
+		func(q *Queryable, n int) {
+			r, err := q.Sum(func(v interface{}) interface{} {
 				return v.(user).id
-			}))
-			//TODO: need test keep order
-			c.So(err, c.ShouldBeNil)
-			c.So(r, c.ShouldEqual, (count-1)*(count/2))
-		})
-
-		c.Convey("Count an int slice", func() {
-			r, err := From(tInts).Count()
-			//TODO: need test keep order
-			c.So(err, c.ShouldBeNil)
-			c.So(r, c.ShouldEqual, count)
-		})
-		c.Convey("Count an interface{} slice", func() {
-			r, err := From(tUsers).Count()
-			//TODO: need test keep order
-			c.So(err, c.ShouldBeNil)
-			c.So(r, c.ShouldEqual, count)
-		})
-		c.Convey("CountBy an interface{} slice", func() {
-			r, err := From(tUsers).Count(filterFunc)
-			//TODO: need test keep order
-			c.So(err, c.ShouldBeNil)
-			c.So(r, c.ShouldEqual, count/2)
-		})
-		c.Convey("send a nil predicate to CountBy", func() {
-			r, err := From(tUsers).Count(nil)
-			//TODO: need test keep order
-			c.So(err, c.ShouldBeNil)
-			c.So(r, c.ShouldEqual, count)
-		})
-		c.Convey("Average an int slice", func() {
-			r, err := From(tInts).Average()
-			//TODO: need test keep order
-			c.So(err, c.ShouldBeNil)
-			c.So(r, c.ShouldEqual, float32(count-1)/float32(2))
-		})
-		defaultChunkSize = DEFAULTCHUNKSIZE
-	}
-	c.Convey("Test Sum/Count/Avg/Max/Min Sequential", t, func() { test(sequentialChunkSize) })
-	c.Convey("Test Sum/Count/Avg/Max/Min parallel", t, func() { test(parallelChunkSize) })
-}
-
-//获取0到4所有的组合, 用于测试随机顺序下Skip/Take/ElementAt/FirstBy等操作是否正确
-func getIndexses(countOfSkipTestData int) (indexses [][]int) {
-	for i := 0; i < countOfSkipTestData; i++ {
-		//开始创建一个随机组合
-		for j := 0; j < countOfSkipTestData; j++ {
-			if j == i {
-				continue
-			}
-			for k := 0; k < countOfSkipTestData; k++ {
-				if k == j || k == i {
-					continue
-				}
-				for m := 0; m < countOfSkipTestData; m++ {
-					if m == k || m == j || m == i {
-						continue
-					}
-					for n := 0; n < countOfSkipTestData; n++ {
-						if n == k || n == j || n == i || n == m {
-							continue
-						}
-						indexs := []int{i, j, k, m, n}
-						indexses = append(indexses, indexs)
-					}
-				}
-			}
-		}
-	}
-	return
-}
-
-var countOfSkipTestData int = 5
-
-func getChunkByi(i int, ints []interface{}) *Chunk {
-	size := count / countOfSkipTestData
-	return &Chunk{NewSlicer(ints[i*size : (i+1)*size]), i, 0}
-}
-
-//根据指定的顺序发送chunk到channel
-func getCChunkSrc(indexs []int, ints []interface{}) chan *Chunk {
-	chunkSrc := make(chan *Chunk)
-	go func() {
-		//indexs := []int{3, 0, 1, 4, 2}
-		defer func() {
-			if e := recover(); e != nil {
-				_ = e
-			}
-		}()
-		//fmt.Println("\nsend----------------")
-		for _, i := range indexs {
-			//fmt.Println("\nsend", getChunkByi(i))
-			chunkSrc <- getChunkByi(i, ints)
-		}
-		close(chunkSrc)
-	}()
-	return chunkSrc
-}
-
-///TODO: outstanding testing item:
-// 1. SkipWhile/TakeWhile after Union operation
-// 2. if the data source includes the count of match item are more than one.
-func TestSkipAndTake(t *testing.T) {
-	ints := make([]interface{}, count)
-	for i := 0; i < count; i++ {
-		ints[i] = i
-	}
-
-	indexses := getIndexses(countOfSkipTestData)
-	//indexses := [][]int{[]int{0, 1, 3, 2, 4}}
-
-	getSkipResult := func(i int) []interface{} {
-		r := make([]interface{}, count-i)
-		for j := 0; j < count-i; j++ {
-			r[j] = j + i
-		}
-		return r
-	}
-
-	getTakeResult := func(i int) []interface{} {
-		r := make([]interface{}, i)
-		for j := 0; j < i; j++ {
-			r[j] = j
-		}
-		return r
-	}
-
-	_ = getTakeResult
-
-	test := func(size int) {
-		defaultChunkSize = size
-		//test list source -----------------------------------------------
-		c.Convey("Test Skip in list", func() {
-			c.Convey("Skip nothing", func() {
-				r, err := From(ints).Skip(-1).Results()
-				//TODO: need test keep order
-				c.So(err, c.ShouldBeNil)
-				c.So(r, shouldSlicesResemble, ints)
-			})
-			c.Convey("Skip all", func() {
-				r, err := From(ints).Skip(100).Results()
-				//TODO: need test keep order
-				c.So(err, c.ShouldBeNil)
-				c.So(r, shouldSlicesResemble, []interface{}{})
-			})
-			c.Convey("Skip 12", func() {
-				r, err := From(ints).Skip(12).Results()
-				c.So(err, c.ShouldBeNil)
-				c.So(r, shouldSlicesResemble, getSkipResult(12))
-			})
-		})
-
-		c.Convey("Test SkipWhile in list", func() {
-			c.Convey("SkipWhile with nil predicateFunc", func() {
-				c.So(func() { From(ints).SkipWhile(nil).Results() }, c.ShouldPanicWith, ErrNilAction)
-			})
-
-			c.Convey("SkipWhile using a predicate func with panic error", func() {
-				_, err := From(ints).SkipWhile(filterWithPanic).Results()
-				c.So(err, c.ShouldNotBeNil)
-			})
-
-			c.Convey("SkipWhile nothing", func() {
-				//fmt.Println("SkipWhile nothing")
-				r, err := From(ints).SkipWhile(func(v interface{}) bool {
-					return v.(int) < -1
-				}).Results()
-				//TODO: need test keep order
-				c.So(err, c.ShouldBeNil)
-				c.So(r, shouldSlicesResemble, ints)
-			})
-
-			c.Convey("SkipWhile all", func() {
-				//fmt.Println("SkipWhile all")
-				r, err := From(ints).SkipWhile(func(v interface{}) bool {
-					return v.(int) < 100
-				}).Results()
-				//TODO: need test keep order
-				c.So(err, c.ShouldBeNil)
-				c.So(r, shouldSlicesResemble, []interface{}{})
-			})
-
-			c.Convey("SkipWhile 12", func() {
-				//fmt.Println("SkipWhile 12")
-				r, err := From(ints).SkipWhile(func(v interface{}) bool {
-					return v.(int) < 12
-				}).Results()
-				c.So(err, c.ShouldBeNil)
-				c.So(r, shouldSlicesResemble, getSkipResult(12))
-			})
-		})
-
-		c.Convey("Test Take in list", func() {
-			c.Convey("Take nothing", func() {
-				r, err := From(ints).Take(-1).Results()
-				//TODO: need test keep order
-				c.So(err, c.ShouldBeNil)
-				c.So(r, shouldSlicesResemble, []interface{}{})
-			})
-			c.Convey("Take all", func() {
-				r, err := From(ints).Take(100).Results()
-				//TODO: need test keep order
-				c.So(err, c.ShouldBeNil)
-				c.So(r, shouldSlicesResemble, ints)
-			})
-			c.Convey("Take 12", func() {
-				r, err := From(ints).Take(12).Results()
-				c.So(err, c.ShouldBeNil)
-				c.So(r, shouldSlicesResemble, getTakeResult(12))
-			})
-		})
-
-		c.Convey("Test TakeWhile in list", func() {
-			c.Convey("TakeWhile using nil predicateFunc", func() {
-				c.So(func() { From(ints).TakeWhile(nil).Results() }, c.ShouldPanicWith, ErrNilAction)
-			})
-
-			c.Convey("TakeWhile using a predicate func with panic error", func() {
-				_, err := From(ints).TakeWhile(filterWithPanic).Results()
-				c.So(err, c.ShouldNotBeNil)
-			})
-
-			c.Convey("TakeWhile nothing", func() {
-				//fmt.Println("TakeWhile nothing")
-				r, err := From(ints).TakeWhile(func(v interface{}) bool {
-					return v.(int) < -1
-				}).Results()
-				//TODO: need test keep order
-				c.So(err, c.ShouldBeNil)
-				c.So(r, shouldSlicesResemble, []interface{}{})
-			})
-
-			c.Convey("TakeWhile all", func() {
-				//fmt.Println("TakeWhile all")
-				r, err := From(ints).TakeWhile(func(v interface{}) bool {
-					return v.(int) < 100
-				}).Results()
-				//TODO: need test keep order
-				c.So(err, c.ShouldBeNil)
-				c.So(r, shouldSlicesResemble, ints)
-			})
-
-			c.Convey("TakeWhile 12", func() {
-				//fmt.Println("TakeWhile 12")
-				r, err := From(ints).TakeWhile(func(v interface{}) bool {
-					return v.(int) < 12
-				}).Results()
-				c.So(err, c.ShouldBeNil)
-				c.So(r, shouldSlicesResemble, getTakeResult(12))
-			})
-		})
-
-		//--------------------------------------------------------
-		c.Convey("Test Skip in channel", func() {
-			c.Convey("Skip nothing", func() {
-				for _, v := range indexses {
-					r, err := From(getCChunkSrc(v, ints)).Skip(-1).Results()
-					//TODO: need test keep order
-					c.So(err, c.ShouldBeNil)
-					if shouldSlicesResemble(r, ints) != "" {
-						fmt.Println("skip -1 for", v, "return", r)
-					}
-					c.So(r, shouldSlicesResemble, ints)
-				}
-			})
-			c.Convey("Skip all", func() {
-				for _, v := range indexses {
-					r, err := From(getCChunkSrc(v, ints)).Skip(100).Results()
-					//TODO: need test keep order
-					c.So(err, c.ShouldBeNil)
-					if shouldSlicesResemble(r, []interface{}{}) != "" {
-						fmt.Println("skip 100 for", v, "return", r)
-					}
-					c.So(r, shouldSlicesResemble, []interface{}{})
-				}
-			})
-			c.Convey("Skip 12", func() {
-				for _, v := range indexses {
-					r, err := From(getCChunkSrc(v, ints)).Skip(12).Results()
-					c.So(err, c.ShouldBeNil)
-					if shouldSlicesResemble(r, getSkipResult(12)) != "" {
-						fmt.Println("skip 12 for", v, "return", r)
-					}
-					c.So(r, shouldSlicesResemble, getSkipResult(12))
-				}
-			})
-		})
-
-		c.Convey("Test SkipWhile in channel", func() {
-			c.Convey("TakeWhile using a predicate func with panic error", func() {
-				_, err := From(getChan(ints)).SkipWhile(filterWithPanic).Results()
-				c.So(err, c.ShouldNotBeNil)
-			})
-
-			c.Convey("If an error appears in before operation", func() {
-				_, err := From(getChan(ints)).Select(projectWithPanic).SkipWhile(filterWithPanic).Results()
-				c.So(err, c.ShouldNotBeNil)
-			})
-
-			c.Convey("SkipWhile nothing", func() {
-				for _, v := range indexses {
-					r, err := From(getCChunkSrc(v, ints)).SkipWhile(func(v interface{}) bool {
-						return v.(int) < -1
-					}).Results()
-					//TODO: need test keep order
-					c.So(err, c.ShouldBeNil)
-					if shouldSlicesResemble(r, ints) != "" {
-						fmt.Println("SkipWhile -1 for", v, "return", r)
-					}
-					c.So(r, shouldSlicesResemble, ints)
-				}
-			})
-			c.Convey("SkipWhile all", func() {
-				for _, v := range indexses {
-					r, err := From(getCChunkSrc(v, ints)).SkipWhile(func(v interface{}) bool {
-						return v.(int) < 100
-					}).Results()
-					//TODO: need test keep order
-					c.So(err, c.ShouldBeNil)
-					if shouldSlicesResemble(r, []interface{}{}) != "" {
-						fmt.Println("SkipWhile 100 for", v, "return", r)
-					}
-					c.So(r, shouldSlicesResemble, []interface{}{})
-				}
-			})
-			c.Convey("SkipWhile 12", func() {
-				for _, v := range indexses {
-					//fmt.Println("\nSkipWhile 12 for", v)
-					r, err := From(getCChunkSrc(v, ints)).SkipWhile(func(v interface{}) bool {
-						return v.(int) < 12
-					}).Results()
-					c.So(err, c.ShouldBeNil)
-					if shouldSlicesResemble(r, getSkipResult(12)) != "" {
-						fmt.Println("!!!!!!!SkipWhile 12 for", v, "return", r)
-					}
-					c.So(r, shouldSlicesResemble, getSkipResult(12))
-				}
-			})
-		})
-
-		c.Convey("Test Take in channel", func() {
-			c.Convey("Take nothing", func() {
-				for _, v := range indexses {
-					r, err := From(getCChunkSrc(v, ints)).Take(-1).Results()
-					//TODO: need test keep order
-					c.So(err, c.ShouldBeNil)
-					c.So(r, shouldSlicesResemble, []interface{}{})
-				}
-			})
-			c.Convey("Take all", func() {
-				for _, v := range indexses {
-					r, err := From(getCChunkSrc(v, ints)).Take(100).Results()
-					//TODO: need test keep order
-					c.So(err, c.ShouldBeNil)
-					c.So(r, shouldSlicesResemble, ints)
-				}
-			})
-			c.Convey("Take 12", func() {
-				for _, v := range indexses {
-					r, err := From(getCChunkSrc(v, ints)).Take(12).Results()
-					c.So(err, c.ShouldBeNil)
-					if shouldSlicesResemble(r, getTakeResult(12)) != "" {
-						fmt.Println("take 12 for", v, "return", r)
-					}
-					c.So(r, shouldSlicesResemble, getTakeResult(12))
-				}
-			})
-		})
-
-		c.Convey("Test TakeWhile in channel", func() {
-			c.Convey("TakeWhile using a predicate func with panic error", func() {
-				_, err := From(getChan(ints)).TakeWhile(filterWithPanic).Results()
-				c.So(err, c.ShouldNotBeNil)
-			})
-
-			c.Convey("TakeWhile using a predicate func with panic error after a where operation with panic error", func() {
-				_, err := From(getChan(ints)).Where(filterWithPanic).TakeWhile(filterWithPanic).Results()
-				c.So(err, c.ShouldNotBeNil)
-			})
-
-			c.Convey("TakeWhile nothing", func() {
-				for _, v := range indexses {
-					r, err := From(getCChunkSrc(v, ints)).TakeWhile(func(v interface{}) bool {
-						return v.(int) < -1
-					}).Results()
-					//TODO: need test keep order
-					c.So(err, c.ShouldBeNil)
-					if shouldSlicesResemble(r, []interface{}{}) != "" {
-						fmt.Println("TakeWhile -1 for", v, "return", r)
-					}
-					c.So(r, shouldSlicesResemble, []interface{}{})
-				}
-			})
-			c.Convey("TakeWhile all", func() {
-				for _, v := range indexses {
-					r, err := From(getCChunkSrc(v, ints)).TakeWhile(func(v interface{}) bool {
-						return v.(int) < 100
-					}).Results()
-					//TODO: need test keep order
-					c.So(err, c.ShouldBeNil)
-					if shouldSlicesResemble(r, ints) != "" {
-						fmt.Println("TakeWhile 100 for", v, "return", r)
-					}
-					c.So(r, shouldSlicesResemble, ints)
-				}
-			})
-			c.Convey("TakeWhile 12", func() {
-				//fmt.Println("\nTakeWhile 12")
-				for _, v := range indexses {
-					r, err := From(getCChunkSrc(v, ints)).TakeWhile(func(v interface{}) bool {
-						return v.(int) < 12
-					}).Results()
-					c.So(err, c.ShouldBeNil)
-					if shouldSlicesResemble(r, getTakeResult(12)) != "" {
-						fmt.Println("TakeWhile 12 for", v, "return", r)
-					}
-					c.So(r, shouldSlicesResemble, getTakeResult(12))
-				}
-			})
-		})
-		defaultChunkSize = DEFAULTCHUNKSIZE
-	}
-	c.Convey("Test Skip and Take Sequential", t, func() { test(sequentialChunkSize) })
-	c.Convey("Test Skip and Take parallel", t, func() { test(parallelChunkSize) })
-}
-
-func TestElementAt(t *testing.T) {
-	ints := make([]interface{}, count)
-	for i := 0; i < count; i++ {
-		ints[i] = i
-	}
-
-	indexses := getIndexses(countOfSkipTestData)
-
-	c.Convey("Test ElementAt in channel", t, func() {
-		c.Convey("ElementAt nothing", func() {
-			for _, v := range indexses {
-				_, found, err := From(getCChunkSrc(v, ints)).ElementAt(-1)
-				c.So(err, c.ShouldBeNil)
-				c.So(found, c.ShouldEqual, false)
-			}
-		})
-		c.Convey("ElementAt nothing", func() {
-			for _, v := range indexses {
-				_, found, err := From(getCChunkSrc(v, ints)).ElementAt(100)
-				c.So(err, c.ShouldBeNil)
-				c.So(found, c.ShouldEqual, false)
-			}
-		})
-		c.Convey("If an error appears in before operation", func() {
-			for _, v := range indexses {
-				_, _, err := From(getCChunkSrc(v, ints)).Select(projectWithPanic).ElementAt(100)
-				c.So(err, c.ShouldNotBeNil)
-			}
-		})
-
-		c.Convey("ElementAt 12", func() {
-			for _, v := range indexses {
-				//_ = indexses
-				r, found, err := From(getCChunkSrc(v, ints)).ElementAt(12)
-				c.So(err, c.ShouldBeNil)
-				c.So(r, c.ShouldEqual, 12)
-				if !found {
-					fmt.Println("found is", found, ", r=", r)
-				}
-				c.So(found, c.ShouldEqual, true)
-			}
-		})
-	})
-
-	c.Convey("Test ElementAt in list", t, func() {
-		c.Convey("ElementAt nothing", func() {
-			_, found, err := From(tInts).ElementAt(-1)
-			c.So(err, c.ShouldBeNil)
-			c.So(found, c.ShouldEqual, false)
-		})
-		c.Convey("ElementAt nothing", func() {
-			_, found, err := From(tInts).ElementAt(100)
-			c.So(err, c.ShouldBeNil)
-			c.So(found, c.ShouldEqual, false)
-		})
-		c.Convey("ElementAt 12", func() {
-			r, found, err := From(tInts).ElementAt(12)
-			c.So(err, c.ShouldBeNil)
-			c.So(r, c.ShouldEqual, 12)
-			c.So(found, c.ShouldEqual, true)
-		})
-	})
-}
-
-func TestFirstBy(t *testing.T) {
-	ints := make([]interface{}, count)
-	for i := 0; i < count; i++ {
-		ints[i] = i
-	}
-
-	indexses := getIndexses(countOfSkipTestData)
-
-	c.Convey("Test FirstBy in channel", t, func() {
-		c.Convey("FirstBy with panic an error", func() {
-			for _, v := range indexses {
-				_, found, err := From(getCChunkSrc(v, ints)).FirstBy(func(v interface{}) bool {
-					panic(errors.New("!error"))
-				})
-				c.So(err, c.ShouldNotBeNil)
-				c.So(found, c.ShouldEqual, false)
-			}
-		})
-		c.Convey("If an error appears in before operation", func() {
-			for _, v := range indexses {
-				_, _, err := From(getCChunkSrc(v, ints)).Select(projectWithPanic).FirstBy(func(v interface{}) bool {
-					return v.(int) == -1
-				})
-				c.So(err, c.ShouldNotBeNil)
-			}
-		})
-		c.Convey("FirstBy nothing", func() {
-			for _, v := range indexses {
-				_, found, err := From(getCChunkSrc(v, ints)).FirstBy(func(v interface{}) bool {
-					return v.(int) == -1
-				})
-				c.So(err, c.ShouldBeNil)
-				c.So(found, c.ShouldEqual, false)
-			}
-		})
-		c.Convey("FirstBy nothing", func() {
-			for _, v := range indexses {
-				_, found, err := From(getCChunkSrc(v, ints)).FirstBy(func(v interface{}) bool {
-					return v.(int) == count
-				})
-				c.So(err, c.ShouldBeNil)
-				c.So(found, c.ShouldEqual, false)
-			}
-		})
-		c.Convey("FirstBy 12", func() {
-			for _, v := range indexses {
-				r, found, err := From(getCChunkSrc(v, ints)).FirstBy(func(v interface{}) bool {
-					return v.(int) == 12
-				})
-				c.So(err, c.ShouldBeNil)
-				c.So(r, c.ShouldEqual, 12)
-				c.So(found, c.ShouldEqual, true)
-			}
-		})
-	})
-
-	c.Convey("Test FirstBy in list", t, func() {
-		c.Convey("FirstBy with panic an error", func() {
-			_, found, err := From(tInts).FirstBy(func(v interface{}) bool {
-				panic(errors.New("!error"))
-			})
-			c.So(err, c.ShouldNotBeNil)
-			c.So(found, c.ShouldEqual, false)
-		})
-		c.Convey("FirstBy nothing", func() {
-			_, found, err := From(tInts).FirstBy(func(v interface{}) bool {
-				return v.(int) == -1
 			})
 			c.So(err, c.ShouldBeNil)
-			c.So(found, c.ShouldEqual, false)
+			c.So(r, c.ShouldEqual, (n-1)*(n/2))
 		})
-		c.Convey("FirstBy nothing", func() {
-			_, found, err := From(tInts).FirstBy(func(v interface{}) bool {
-				return v.(int) == 100
-			})
-			c.So(err, c.ShouldBeNil)
-			c.So(found, c.ShouldEqual, false)
-		})
-		c.Convey("FirstBy 12", func() {
-			r, found, err := From(tInts).FirstBy(func(v interface{}) bool {
-				return v.(int) == 12
-			})
-			c.So(err, c.ShouldBeNil)
-			c.So(r, c.ShouldEqual, 12)
-			c.So(found, c.ShouldEqual, true)
-		})
-	})
 
-	c.Convey("Test FirstBy after where", t, func() {
-		c.Convey("FirstBy with panic an error in both two operations", func() {
-			_, found, err := From(tInts).Where(filterWithPanic, parallelChunkSize).FirstBy(func(v interface{}) bool {
-				panic(errors.New("!error"))
-			})
-			c.So(err, c.ShouldNotBeNil)
-			c.So(found, c.ShouldEqual, false)
-		})
-		c.Convey("FirstBy nothing with panic an error in where operations", func() {
-			_, found, err := From(tInts).Where(filterWithPanic, parallelChunkSize).FirstBy(func(v interface{}) bool {
-				return v.(int) == -1
-			})
-			c.So(err, c.ShouldNotBeNil)
-			c.So(found, c.ShouldEqual, false)
-		})
-		c.Convey("FirstBy nothing", func() {
-			_, found, err := From(tInts).Where(filterFunc, parallelChunkSize).FirstBy(func(v interface{}) bool {
-				return v.(int) == 100
-			})
+	testImmediateOpr("Count an interface slice", t,
+		taInts, NewQuery(),
+		func(q *Queryable, n int) {
+			r, err := q.Count()
 			c.So(err, c.ShouldBeNil)
-			c.So(found, c.ShouldEqual, false)
+			c.So(r, c.ShouldEqual, n)
 		})
-		c.Convey("FirstBy 12", func() {
-			r, found, err := From(tInts).Where(filterFunc, parallelChunkSize).FirstBy(func(v interface{}) bool {
-				return v.(int) == 12
-			})
+
+	testImmediateOpr("CountBy an interface slice", t,
+		taUsers, NewQuery(),
+		func(q *Queryable, n int) {
+			r, err := q.Count(filterFunc)
 			c.So(err, c.ShouldBeNil)
-			c.So(r, c.ShouldEqual, 12)
-			c.So(found, c.ShouldEqual, true)
+			c.So(r, c.ShouldEqual, (n / 2))
 		})
-	})
+
+	testImmediateOpr("Average an interface slice", t,
+		taInts, NewQuery(),
+		func(q *Queryable, n int) {
+			r, err := q.Average()
+			c.So(err, c.ShouldBeNil)
+			c.So(r, c.ShouldEqual, float32(n-1)/float32(2))
+		})
+
 }
 
 func TestAnyAndAll(t *testing.T) {
@@ -2082,89 +1411,323 @@ func TestAnyAndAll(t *testing.T) {
 		ints[i] = i
 	}
 
-	c.Convey("Test Any and All in channel", t, func() {
-		c.Convey("Predicate with panic an error", func() {
-			_, err := From(getChan(tInts)).Any(func(v interface{}) bool {
+	testImmediateOpr("Predicate with panic an error", t,
+		taInts, NewQuery(),
+		func(q *Queryable, n int) {
+			_, err := q.Any(func(v interface{}) bool {
 				panic(errors.New("!error"))
 			})
 			c.So(err, c.ShouldNotBeNil)
 		})
-		c.Convey("If an error appears in before operation", func() {
-			_, err := From(getChan(tInts)).Select(projectWithPanic).Any(func(v interface{}) bool {
+
+	testImmediateOpr("If an error appears in previous operation", t,
+		taInts, NewQuery().Select(projectWithPanic),
+		func(q *Queryable, n int) {
+			_, err := q.Any(func(v interface{}) bool {
 				return v.(int) == -1
 			})
 			c.So(err, c.ShouldNotBeNil)
 		})
-		c.Convey("Any and All nothing", func() {
-			found, err := From(getChan(tInts)).Any(func(v interface{}) bool {
+
+	testImmediateOpr("Any and All nothing", t,
+		taInts, NewQuery(),
+		func(q *Queryable, n int) {
+			found, err := q.Any(func(v interface{}) bool {
 				return v.(int) == -1
 			})
 			c.So(err, c.ShouldBeNil)
 			c.So(found, c.ShouldEqual, false)
 
-			found, err = From(getChan(tInts)).All(func(v interface{}) bool {
-				return v.(int) == -1
+		})
+
+	testImmediateOpr("All nothing", t,
+		taInts, NewQuery(),
+		func(q *Queryable, n int) {
+			found, err := q.All(func(v interface{}) bool {
+				r := v.(int) == -1
+				//fmt.Println("r=", r, "; ")
+				return r
 			})
+			fmt.Println()
 			c.So(err, c.ShouldBeNil)
 			c.So(found, c.ShouldEqual, false)
 		})
-		c.Convey("Find any int == 12", func() {
-			found, err := From(getChan(tInts)).Any(func(v interface{}) bool {
+
+	testImmediateOpr("Find any int == 12", t,
+		taInts, NewQuery(),
+		func(q *Queryable, n int) {
+			found, err := q.Any(func(v interface{}) bool {
 				return v.(int) == 12
 			})
 			c.So(err, c.ShouldBeNil)
 			c.So(found, c.ShouldEqual, true)
 		})
-		c.Convey("Find all int >= 0", func() {
-			found, err := From(getChan(tInts)).Any(func(v interface{}) bool {
+
+	testImmediateOpr("Find any int >= 100000", t,
+		taInts, NewQuery(),
+		func(q *Queryable, n int) {
+			found, err := q.Any(func(v interface{}) bool {
+				return v.(int) >= 100000
+			})
+			c.So(err, c.ShouldBeNil)
+			c.So(found, c.ShouldEqual, false)
+		})
+
+	testImmediateOpr("Find all int >= 0", t,
+		taInts, NewQuery(),
+		func(q *Queryable, n int) {
+			found, err := q.All(func(v interface{}) bool {
 				return v.(int) >= 0
 			})
 			c.So(err, c.ShouldBeNil)
 			c.So(found, c.ShouldEqual, true)
 		})
+
+	testImmediateOpr("Find all int >= 2", t,
+		taInts, NewQuery(),
+		func(q *Queryable, n int) {
+			found, err := q.All(func(v interface{}) bool {
+				return v.(int) >= 2
+			})
+			c.So(err, c.ShouldBeNil)
+			c.So(found, c.ShouldEqual, false)
+		})
+
+}
+
+func TestSkipAndTake(t *testing.T) {
+	c.Convey("SkipWhile with nil predicateFunc", t, func() {
+		c.So(func() { From(tInts).SkipWhile(nil).Results() }, c.ShouldPanicWith, ErrNilAction)
 	})
 
-	c.Convey("Test Any in slice", t, func() {
-		c.Convey("Any with panic an error", func() {
-			_, err := From(tInts).Any(func(v interface{}) bool {
+	c.Convey("TakeWhile with nil predicateFunc", t, func() {
+		c.So(func() { From(tInts).SkipWhile(nil).Results() }, c.ShouldPanicWith, ErrNilAction)
+	})
+
+	testLazyOpr("If skip nothing", t,
+		taInts,
+		NewQuery().Skip(-1),
+		func(rs []interface{}, err error, n int, chanAsOut bool) {
+			c.So(err, c.ShouldBeNil)
+			c.So(len(rs), c.ShouldEqual, (n))
+		})
+
+	testLazyOpr("If skip all", t,
+		taInts,
+		NewQuery().Skip(10000),
+		func(rs []interface{}, err error, n int, chanAsOut bool) {
+			c.So(err, c.ShouldBeNil)
+			c.So(len(rs), c.ShouldEqual, 0)
+		})
+
+	testLazyOpr("If skip 12", t,
+		taInts,
+		NewQuery().Skip(12),
+		func(rs []interface{}, err error, n int, chanAsOut bool) {
+			c.So(err, c.ShouldBeNil)
+			c.So(len(rs), c.ShouldEqual, (n - 12))
+		})
+
+	testLazyOpr("SkipWhile using a predicate func with panic error", t,
+		taInts,
+		NewQuery().SkipWhile(filterWithPanic),
+		func(rs []interface{}, err error, n int, chanAsOut bool) {
+			c.So(err, c.ShouldNotBeNil)
+		})
+
+	testLazyOpr("If skip while item be less than zero", t,
+		taInts,
+		NewQuery().SkipWhile(func(v interface{}) bool {
+			return v.(int) < -1
+		}),
+		func(rs []interface{}, err error, n int, chanAsOut bool) {
+			c.So(err, c.ShouldBeNil)
+			c.So(len(rs), c.ShouldEqual, n)
+		})
+
+	testLazyOpr("If skip while item be less than 10000", t,
+		taInts,
+		NewQuery().SkipWhile(func(v interface{}) bool {
+			return v.(int) < 10000
+		}),
+		func(rs []interface{}, err error, n int, chanAsOut bool) {
+			c.So(err, c.ShouldBeNil)
+			c.So(len(rs), c.ShouldEqual, 0)
+		})
+
+	testLazyOpr("If skip while item mod 50 be less than 12", t,
+		taInts,
+		NewQuery().SkipWhile(func(v interface{}) bool {
+			return v.(int)%50 < 12
+		}),
+		func(rs []interface{}, err error, n int, chanAsOut bool) {
+			c.So(err, c.ShouldBeNil)
+			c.So(len(rs), c.ShouldEqual, (n - 12))
+		})
+
+	testLazyOpr("If take nothing", t,
+		taInts,
+		NewQuery().Take(-1),
+		func(rs []interface{}, err error, n int, chanAsOut bool) {
+			c.So(err, c.ShouldBeNil)
+			c.So(len(rs), c.ShouldEqual, 0)
+		})
+
+	testLazyOpr("If take all", t,
+		taInts,
+		NewQuery().Take(10000),
+		func(rs []interface{}, err error, n int, chanAsOut bool) {
+			c.So(err, c.ShouldBeNil)
+			c.So(len(rs), c.ShouldEqual, n)
+		})
+
+	testLazyOpr("If take 12", t,
+		taInts,
+		NewQuery().Take(12),
+		func(rs []interface{}, err error, n int, chanAsOut bool) {
+			c.So(err, c.ShouldBeNil)
+			c.So(len(rs), c.ShouldEqual, 12)
+		})
+
+	testLazyOpr("TakeWhile using a predicate func with panic error", t,
+		taInts,
+		NewQuery().TakeWhile(filterWithPanic),
+		func(rs []interface{}, err error, n int, chanAsOut bool) {
+			c.So(err, c.ShouldNotBeNil)
+		})
+
+	testLazyOpr("If take while item be less than zero", t,
+		taInts,
+		NewQuery().TakeWhile(func(v interface{}) bool {
+			return v.(int) < -1
+		}),
+		func(rs []interface{}, err error, n int, chanAsOut bool) {
+			c.So(err, c.ShouldBeNil)
+			c.So(len(rs), c.ShouldEqual, 0)
+		})
+
+	testLazyOpr("If take while item be less than 10000", t,
+		taInts,
+		NewQuery().TakeWhile(func(v interface{}) bool {
+			return v.(int) < 10000
+		}),
+		func(rs []interface{}, err error, n int, chanAsOut bool) {
+			c.So(err, c.ShouldBeNil)
+			c.So(len(rs), c.ShouldEqual, n)
+		})
+
+	testLazyOpr("If take while item mod 50 be less than 12", t,
+		taInts,
+		NewQuery().TakeWhile(func(v interface{}) bool {
+			return v.(int)%50 < 12
+		}),
+		func(rs []interface{}, err error, n int, chanAsOut bool) {
+			c.So(err, c.ShouldBeNil)
+			c.So(len(rs), c.ShouldEqual, 12)
+		})
+}
+
+func TestElementAt(t *testing.T) {
+	testImmediateOpr("ElementAt -1", t,
+		taInts,
+		NewQuery(),
+		func(q *Queryable, n int) {
+			_, found, err := q.ElementAt(-1)
+			c.So(err, c.ShouldBeNil)
+			c.So(found, c.ShouldEqual, false)
+		})
+
+	testImmediateOpr("ElementAt 10000", t,
+		taInts,
+		NewQuery(),
+		func(q *Queryable, n int) {
+			_, found, err := q.ElementAt(10000)
+			c.So(err, c.ShouldBeNil)
+			c.So(found, c.ShouldEqual, false)
+		})
+
+	testImmediateOpr("ElementAt 12", t,
+		taInts,
+		NewQuery(),
+		func(q *Queryable, n int) {
+			r, found, err := q.ElementAt(12)
+			c.So(err, c.ShouldBeNil)
+			c.So(r, c.ShouldEqual, 12)
+			c.So(found, c.ShouldEqual, true)
+		})
+
+}
+
+func TestFirstBy(t *testing.T) {
+	expectErr := func(r interface{}, found bool, err error) {
+		c.So(err, c.ShouldNotBeNil)
+		c.So(found, c.ShouldEqual, false)
+	}
+
+	expectNotFound := func(r interface{}, found bool, err error) {
+		c.So(err, c.ShouldBeNil)
+		c.So(found, c.ShouldEqual, false)
+	}
+
+	expectBe12 := func(r interface{}, found bool, err error) {
+		c.So(err, c.ShouldBeNil)
+		c.So(r, c.ShouldEqual, 12)
+		c.So(found, c.ShouldEqual, true)
+	}
+
+	testImmediateOpr("FirstBy with panic an error", t,
+		taInts,
+		NewQuery(),
+		func(q *Queryable, n int) {
+			expectErr(q.FirstBy(func(v interface{}) bool {
 				panic(errors.New("!error"))
-			})
-			c.So(err, c.ShouldNotBeNil)
+			}))
 		})
-		c.Convey("If an error appears in before operation", func() {
-			_, err := From(tInts).Select(projectWithPanic).Any(func(v interface{}) bool {
-				return v.(int) == -1
-			})
-			c.So(err, c.ShouldNotBeNil)
-		})
-		c.Convey("Any nothing", func() {
-			found, err := From(tInts).Any(func(v interface{}) bool {
-				return v.(int) == -1
-			})
-			c.So(err, c.ShouldBeNil)
-			c.So(found, c.ShouldEqual, false)
 
-			found, err = From(tInts).All(func(v interface{}) bool {
+	testImmediateOpr("FirstBy item equals -1", t,
+		taInts,
+		NewQuery(),
+		func(q *Queryable, n int) {
+			expectNotFound(q.FirstBy(func(v interface{}) bool {
 				return v.(int) == -1
-			})
-			c.So(err, c.ShouldBeNil)
-			c.So(found, c.ShouldEqual, false)
+			}))
 		})
-		c.Convey("Find any int == 12", func() {
-			found, err := From(tInts).Any(func(v interface{}) bool {
-				return v.(int) == 12
-			})
-			c.So(err, c.ShouldBeNil)
-			c.So(found, c.ShouldEqual, true)
+
+	testImmediateOpr("FirstBy item equals 10000", t,
+		taInts,
+		NewQuery(),
+		func(q *Queryable, n int) {
+			expectNotFound(q.FirstBy(func(v interface{}) bool {
+				return v.(int) == 10000
+			}))
 		})
-		c.Convey("Find all int >= 0", func() {
-			found, err := From(tInts).Any(func(v interface{}) bool {
-				return v.(int) >= 0
-			})
-			c.So(err, c.ShouldBeNil)
-			c.So(found, c.ShouldEqual, true)
+
+	testImmediateOpr("FirstBy item mod 100 equals 12", t,
+		taInts,
+		NewQuery(),
+		func(q *Queryable, n int) {
+			expectBe12(q.FirstBy(func(v interface{}) bool {
+				return v.(int)%100 == 12
+			}))
 		})
-	})
+
+	testImmediateOpr("If panic an error in previous operation", t,
+		taInts,
+		NewQuery().Where(filterWithPanic),
+		func(q *Queryable, n int) {
+			expectErr(q.FirstBy(func(v interface{}) bool {
+				return v.(int) == -1
+			}))
+		})
+
+	testImmediateOpr("Filter then FirstBy item mod 100 equals 12", t,
+		taInts,
+		NewQuery().Where(filterFunc),
+		func(q *Queryable, n int) {
+			expectBe12(q.FirstBy(func(v interface{}) bool {
+				return v.(int)%100 == 12
+			}))
+		})
 
 }
 

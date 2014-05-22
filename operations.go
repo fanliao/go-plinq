@@ -593,10 +593,10 @@ func getAggregate(src DataSource, aggregateFuncs []*AggregateOperation, option *
 		r = &Chunk{aggregateSlice(c.Data, aggregateFuncs, false, true), c.Order, c.StartIndex}
 		return
 	}
-	mapOut, e := parallelMap(src, nil, mapChunk, option)
-	if e != nil {
-		return
-	}
+	//NOTE: must use channel as map output,
+	//because the logic of chunk is different with other operation,
+	//these chunks cannot be merged to a slice
+	mapOut := parallelMapToChan(src, nil, mapChunk, option)
 
 	//reduce the keyValue map to get grouped slice
 	//get key with group values values
@@ -883,7 +883,7 @@ func (this *Queryable) singleValue(getVal func(DataSource, *ParallelOption) (res
 		result, found, err = getVal(ds, &(this.ParallelOption))
 	}
 
-    //merge the error in getVal to AggregateError
+	//merge the error in getVal to AggregateError
 	stepErrs := this.stepErrs(errChan)
 	if !isNil(stepErrs) {
 		result, found = nil, false

@@ -1103,10 +1103,14 @@ func getMinOpr(convert OneArgsFunc) *AggregateOperation {
 }
 
 func getMaxOpr(convert OneArgsFunc) *AggregateOperation {
-	fun := func(a interface{}, b interface{}) interface{} {
+	fun1 := func(a interface{}, b interface{}) interface{} {
 		return minMaxOpr(a, b, false)
 	}
-	return &AggregateOperation{nil, getAggByFunc(fun, convert), fun}
+	fun2 := func(a interface{}, b interface{}) interface{} {
+		//fmt.Print(a, b, minMaxOpr(a, b, false))
+		return minMaxOpr(a, b, false)
+	}
+	return &AggregateOperation{nil, getAggByFunc(fun1, convert), fun2}
 }
 
 func getCountByOpr(predicate PredicateFunc) *AggregateOperation {
