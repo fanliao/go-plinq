@@ -48,7 +48,7 @@ func init() {
 
 func BenchmarkGoPLinq_Where(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		dst, _ := From(bUsers).Where(filterFunc).Results()
+		dst, _ := From(bUsers).Where(idIsEven).Results()
 		if len(dst) != countForB/2 {
 			b.Fail()
 			b.Error("size is ", len(dst))
@@ -77,7 +77,7 @@ func BenchmarkGoLinq_Where(b *testing.B) {
 
 func BenchmarkGoPLinq_Select(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		dst, _ := From(bUsers).Select(projectFunc).Results()
+		dst, _ := From(bUsers).Select(userToStr).Results()
 		if len(dst) != countForB {
 			b.Fail()
 			//b.Log("arr=", arr)
@@ -185,7 +185,7 @@ func BenchmarkGoLinq_Distinct(b *testing.B) {
 //test join-----------------------------------------------------------------
 func BenchmarkGoPLinq_Join(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		dst, _ := From(bUsers).Join(bRoles, userSelector, roleSelector, resultSelector).Results()
+		dst, _ := From(bUsers).Join(bRoles, userId, roleUid, userIdAndRole).Results()
 		if len(dst) != countForB {
 			b.Fail()
 			//b.Log("arr=", arr)
@@ -251,7 +251,7 @@ func BenchmarkGoLinq_Union(b *testing.B) {
 ////test union--------------------------------------------------------------------
 func BenchmarkGoPLinq_UnionSelect(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		dst, _ := From(bUsers).Union(bUsers2, largeChunkSize).Select(projectFunc).Results()
+		dst, _ := From(bUsers).Union(bUsers2, largeChunkSize).Select(userToStr).Results()
 		if len(dst) != countForB+countForB/2 {
 			b.Fail()
 			//b.Log("arr=", arr)

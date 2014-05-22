@@ -36,12 +36,6 @@ var (
 	tInts     = taInts[0]
 	tRoles    = taRoles[0]
 
-	tUserPs    = taUsers[1]
-	tRptUserPs = taRptUsers[1]
-	tUsersP2   = taUsers2[1]
-	tIntPs     = taInts[1]
-	tRolePs    = taRoles[1]
-
 	tMap map[int]interface{} = make(map[int]interface{}, count)
 
 	sequentialChunkSize int = count
@@ -103,7 +97,7 @@ var (
 	}
 
 	//随机运算，用于打乱次序
-	confusedOrder = func() {
+	outOfOrder = func() {
 		rand.Seed(10)
 		j := rand.Intn(50000)
 		var sum float64 = 0
@@ -155,21 +149,21 @@ var (
 	}
 
 	//测试用的过滤函数
-	filterFunc = func(v interface{}) bool {
+	isEven = func(v interface{}) bool {
 		computerTask()
-		switch val := v.(type) {
-		case int:
-			return val%2 == 0
-		case user:
-			return strconv.Itoa(val.id%2) == "0"
-		}
-		panic(errors.New("error!"))
+		return v.(int)%2 == 0
+	}
+
+	//测试用的过滤函数
+	idIsEven = func(v interface{}) bool {
+		computerTask()
+		return strconv.Itoa(v.(user).id%2) == "0"
 	}
 
 	//测试用的过滤函数，加入随机运算来打乱返回的顺序
-	filterFuncForConfusedOrder = func(v interface{}) bool {
+	isEvenWithOutOfOrder = func(v interface{}) bool {
 		i := v.(int)
-		confusedOrder()
+		outOfOrder()
 		return i%2 == 0
 	}
 
@@ -191,15 +185,15 @@ var (
 	}
 
 	//测试用的转换函数
-	projectFunc = func(v interface{}) interface{} {
+	multiply10 = func(v interface{}) interface{} {
 		computerTask()
-		switch val := v.(type) {
-		case int:
-			return val * 10
-		case user:
-			return strconv.Itoa(val.id) + "/" + val.name
-		}
-		panic(errors.New(fmt.Sprintf("error!, %v", v)))
+		return v.(int) * 10
+	}
+
+	userToStr = func(v interface{}) interface{} {
+		computerTask()
+		val := v.(user)
+		return strconv.Itoa(val.id) + "/" + val.name
 	}
 
 	distinctUser = func(v interface{}) interface{} {
@@ -222,16 +216,16 @@ var (
 		panic(errors.New("panic"))
 	}
 
-	userSelector = func(v interface{}) interface{} {
+	userId = func(v interface{}) interface{} {
 		return v.(user).id
 	}
 
-	roleSelector = func(v interface{}) interface{} {
+	roleUid = func(v interface{}) interface{} {
 		r := v.(role)
 		return r.uid
 	}
 
-	resultSelector = func(u interface{}, v interface{}) interface{} {
+	userIdAndRole = func(u interface{}, v interface{}) interface{} {
 		return strconv.Itoa(u.(user).id) + "-" + v.(role).role
 	}
 )
@@ -249,7 +243,7 @@ func TestFrom(t *testing.T) {
 		ints := make([]int, len(tInts))
 		_ = copy(ints, tInts)
 		pSrc := &ints
-		q := From(pSrc).Select(projectFunc)
+		q := From(pSrc).Select(multiply10)
 
 		for i := count; i < count+10; i++ {
 			ints = append(ints, i)
@@ -260,93 +254,93 @@ func TestFrom(t *testing.T) {
 	})
 }
 
-////对常见操作进行基本的测试
-//func TestBasicOperations(t *testing.T) {
-//	expectedInts := make([]interface{}, count/2)
-//	for i := 0; i < count/2; i++ {
-//		expectedInts[i] = i * 2 * 10
-//	}
-//	c.Convey("Test where then select the slice of int", t, func() {
-//		rs, err := From(tInts).Where(filterFunc).Select(projectFunc).Results()
-//		c.So(err, c.ShouldBeNil)
-//		c.So(rs, shouldSlicesResemble, expectedInts)
-//	})
+//对常见操作进行基本的测试
+func TestBasicOperations(t *testing.T) {
+	expectedInts := make([]interface{}, count/2)
+	for i := 0; i < count/2; i++ {
+		expectedInts[i] = multiply10(i * 2).(int)
+	}
+	c.Convey("Test where then select the slice of int", t, func() {
+		rs, err := From(tInts).Where(isEven).Select(multiply10).Results()
+		c.So(err, c.ShouldBeNil)
+		c.So(rs, shouldSlicesResemble, expectedInts)
+	})
 
-//	c.Convey("Test where then select the channel of int", t, func() {
-//		rs, err := From(getChan(tInts)).Where(filterFunc).Select(projectFunc).Results()
-//		c.So(err, c.ShouldBeNil)
-//		c.So(rs, shouldSlicesResemble, expectedInts)
-//	})
+	c.Convey("Test where then select the channel of int", t, func() {
+		rs, err := From(getChan(tInts)).Where(isEven).Select(multiply10).Results()
+		c.So(err, c.ShouldBeNil)
+		c.So(rs, shouldSlicesResemble, expectedInts)
+	})
 
-//	c.Convey("Test where then select, and use channel as output", t, func() {
-//		rsChan, errChan, err := From(getChan(tInts)).Where(filterFunc).Select(projectFunc).ToChan()
-//		c.So(err, c.ShouldBeNil)
-//		rs, stepErr := getChanResult(rsChan, errChan)
-//		c.So(stepErr, c.ShouldBeNil)
-//		c.So(rs, shouldSlicesResemble, expectedInts)
-//	})
+	c.Convey("Test where then select, and use channel as output", t, func() {
+		rsChan, errChan, err := From(getChan(tInts)).Where(isEven).Select(multiply10).ToChan()
+		c.So(err, c.ShouldBeNil)
+		rs, stepErr := getChanResult(rsChan, errChan)
+		c.So(stepErr, c.ShouldBeNil)
+		c.So(rs, shouldSlicesResemble, expectedInts)
+	})
 
-//	c.Convey("DistinctBy a slice of interface{}", t, func() {
-//		rs, err := From(tRptUsers).DistinctBy(distinctUser).Results()
-//		c.So(err, c.ShouldBeNil)
-//		c.So(len(rs), c.ShouldEqual, len(tUsers))
-//	})
+	c.Convey("DistinctBy a slice of interface{}", t, func() {
+		rs, err := From(tRptUsers).DistinctBy(distinctUser).Results()
+		c.So(err, c.ShouldBeNil)
+		c.So(len(rs), c.ShouldEqual, len(tUsers))
+	})
 
-//	c.Convey("groupBy a slice of int", t, func() {
-//		rs, err := From(tInts).GroupBy(func(v interface{}) interface{} {
-//			return v.(int) / 10
-//		}).Results()
-//		c.So(err, c.ShouldBeNil)
-//		c.So(len(rs), c.ShouldEqual, len(tInts)/10)
-//	})
+	c.Convey("groupBy a slice of int", t, func() {
+		rs, err := From(tInts).GroupBy(func(v interface{}) interface{} {
+			return v.(int) / 10
+		}).Results()
+		c.So(err, c.ShouldBeNil)
+		c.So(len(rs), c.ShouldEqual, len(tInts)/10)
+	})
 
-//	c.Convey("OrderBy a slice of interface{} ", t, func() {
-//		rs, err := From(tRptUsers).OrderBy(orderUserById).Results()
-//		c.So(len(rs), c.ShouldEqual, len(tRptUsers))
-//		c.So(err, c.ShouldBeNil)
+	c.Convey("OrderBy a slice of interface{} ", t, func() {
+		rs, err := From(tRptUsers).OrderBy(orderUserById).Results()
+		c.So(len(rs), c.ShouldEqual, len(tRptUsers))
+		c.So(err, c.ShouldBeNil)
 
-//		id := 0
-//		for _, v := range rs {
-//			u := v.(user)
-//			c.So(u.id, c.ShouldBeGreaterThanOrEqualTo, id)
-//			id = u.id
-//		}
-//	})
+		id := 0
+		for _, v := range rs {
+			u := v.(user)
+			c.So(u.id, c.ShouldBeGreaterThanOrEqualTo, id)
+			id = u.id
+		}
+	})
 
-//	c.Convey("Join a slice of interface{} as inner source", t, func() {
-//		rs, err := From(tUsers).Join(tRoles, userSelector, roleSelector, resultSelector).Results()
-//		c.So(len(rs), c.ShouldEqual, count)
-//		c.So(err, c.ShouldBeNil)
-//	})
+	c.Convey("Join a slice of interface{} as inner source", t, func() {
+		rs, err := From(tUsers).Join(tRoles, userId, roleUid, userIdAndRole).Results()
+		c.So(len(rs), c.ShouldEqual, count)
+		c.So(err, c.ShouldBeNil)
+	})
 
-//	c.Convey("Union a  slice of interface{} as secondary source", t, func() {
-//		rs, err := From(tUsers).Union(tUsers2).Results()
-//		c.So(len(rs), c.ShouldEqual, count+count/2)
-//		c.So(err, c.ShouldBeNil)
-//	})
+	c.Convey("Union a  slice of interface{} as secondary source", t, func() {
+		rs, err := From(tUsers).Union(tUsers2).Results()
+		c.So(len(rs), c.ShouldEqual, count+count/2)
+		c.So(err, c.ShouldBeNil)
+	})
 
-//	c.Convey("SkipWhile all", t, func() {
-//		r, err := From(tInts).SkipWhile(func(v interface{}) bool {
-//			return v.(int) < count
-//		}).Results()
-//		c.So(err, c.ShouldBeNil)
-//		c.So(r, shouldSlicesResemble, []interface{}{})
-//	})
+	c.Convey("SkipWhile all", t, func() {
+		r, err := From(tInts).SkipWhile(func(v interface{}) bool {
+			return v.(int) < count
+		}).Results()
+		c.So(err, c.ShouldBeNil)
+		c.So(r, shouldSlicesResemble, []interface{}{})
+	})
 
-//	c.Convey("Average a slice of int", t, func() {
-//		r, err := From(tInts).Average()
-//		c.So(err, c.ShouldBeNil)
-//		c.So(r, c.ShouldEqual, float32(count-1)/float32(2))
-//	})
+	c.Convey("Average a slice of int", t, func() {
+		r, err := From(tInts).Average()
+		c.So(err, c.ShouldBeNil)
+		c.So(r, c.ShouldEqual, float32(count-1)/float32(2))
+	})
 
-//	c.Convey("Executes two aggregate funcs once", t, func() {
-//		r, err := From(tInts).Aggregate(Max(), Min())
-//		c.So(err, c.ShouldBeNil)
-//		rs := r.([]interface{})
-//		c.So(rs[0], c.ShouldEqual, count-1)
-//		c.So(rs[1], c.ShouldEqual, 0)
-//	})
-//}
+	c.Convey("Executes two aggregate funcs once", t, func() {
+		r, err := From(tInts).Aggregate(Max(), Min())
+		c.So(err, c.ShouldBeNil)
+		rs := r.([]interface{})
+		c.So(rs[0], c.ShouldEqual, count-1)
+		c.So(rs[1], c.ShouldEqual, 0)
+	})
+}
 
 var (
 	//全面测试所有的linq操作，包括串行和并行两种模式-------------------------------
@@ -530,13 +524,13 @@ func TestWhere(t *testing.T) {
 
 	testLazyOpr("Filter an int slice, and keep original order", t,
 		taInts,
-		NewQuery().Where(filterFuncForConfusedOrder),
+		NewQuery().Where(isEvenWithOutOfOrder),
 		expectSlice(expectedInts),
 	)
 
 	testLazyOpr("Filter an interface{} slice", t,
 		taUsers,
-		NewQuery().Where(filterFunc),
+		NewQuery().Where(idIsEven),
 		expectSlice(expectedUsers),
 	)
 
@@ -555,8 +549,8 @@ func TestSelect(t *testing.T) {
 
 	//插入随机的计算来打乱原始的顺序，测试结果是否可以保持顺序
 	selectIntForConfusedOrder := func(v interface{}) interface{} {
-		confusedOrder()
-		return v.(int) * 10
+		outOfOrder()
+		return multiply10(v)
 	}
 
 	testLazyOpr("If the error appears in select function", t,
@@ -567,20 +561,20 @@ func TestSelect(t *testing.T) {
 
 	testLazyOpr("If the error appears in previous operations", t,
 		taInts,
-		NewQuery().Where(filterWithPanic).Select(projectFunc),
+		NewQuery().Where(filterWithPanic).Select(multiply10),
 		expectErr,
 	)
 
 	testLazyOpr("Select an empty slice", t,
 		taEmptys,
-		NewQuery().Where(filterWithPanic).Select(projectFunc),
+		NewQuery().Where(filterWithPanic).Select(multiply10),
 		expectEmptySlice,
 	)
 
 	expectedInts := func(n int) []interface{} {
 		ints := make([]interface{}, n)
 		for i := 0; i < n; i++ {
-			ints[i] = i * 10
+			ints[i] = multiply10(i).(int)
 		}
 		return ints
 	}
@@ -598,7 +592,7 @@ func TestSelect(t *testing.T) {
 	}
 	testLazyOpr("Select an interface{} slice", t,
 		taUsers,
-		NewQuery().Select(projectFunc),
+		NewQuery().Select(userToStr),
 		expectSlice(expectedUsers),
 	)
 }
@@ -616,7 +610,7 @@ func TestSelectMany(t *testing.T) {
 	}
 
 	selectIntManyForConfusedOrder := func(v interface{}) []interface{} {
-		confusedOrder()
+		outOfOrder()
 		rs := make([]interface{}, 2)
 		rs[0], rs[1] = v.(int)*10, v.(int)+count
 		return rs
@@ -752,7 +746,7 @@ func TestGroupBy(t *testing.T) {
 
 //test functions for Join operation-------------------------------
 func resultSelectorForConfusedOrder(u interface{}, v interface{}) interface{} {
-	confusedOrder()
+	outOfOrder()
 	return strconv.Itoa(u.(user).id) + "-" + v.(role).role
 }
 
@@ -795,63 +789,63 @@ func TestJoin(t *testing.T) {
 	c.Convey("When passed nil inner, error be returned", t, func() {
 		c.So(func() { From(tUsers).Join(nil, nil, nil, nil) }, c.ShouldPanicWith, ErrJoinNilSource)
 		c.So(func() { From(tUsers).Join(tRoles, nil, nil, nil) }, c.ShouldPanicWith, ErrOuterKeySelector)
-		c.So(func() { From(tUsers).Join(tUsers2, userSelector, nil, nil) }, c.ShouldPanicWith, ErrInnerKeySelector)
-		c.So(func() { From(tUsers).Join(tUsers2, userSelector, roleSelector, nil) }, c.ShouldPanicWith, ErrResultSelector)
+		c.So(func() { From(tUsers).Join(tUsers2, userId, nil, nil) }, c.ShouldPanicWith, ErrInnerKeySelector)
+		c.So(func() { From(tUsers).Join(tUsers2, userId, roleUid, nil) }, c.ShouldPanicWith, ErrResultSelector)
 	})
 
 	c.Convey("An error should be returned if the error appears in Join function", t, func() {
-		_, err := From(tUsers).Join(tRoles, userSelectorPanic, roleSelector, resultSelector).Results()
+		_, err := From(tUsers).Join(tRoles, userSelectorPanic, roleUid, userIdAndRole).Results()
 		c.So(err, c.ShouldNotBeNil)
 
-		_, err = From(tUsers).Join(tRoles, userSelector, roleSelectorPanic, resultSelector).Results()
+		_, err = From(tUsers).Join(tRoles, userId, roleSelectorPanic, userIdAndRole).Results()
 		if err == nil {
 			fmt.Println("\nJoin An error should be returned:", err)
 		}
 		c.So(err, c.ShouldNotBeNil)
 
-		_, err = From(tUsers).Join(tRoles, userSelector, roleSelector, resultSelectorPanic).Results()
+		_, err = From(tUsers).Join(tRoles, userId, roleUid, resultSelectorPanic).Results()
 		c.So(err, c.ShouldNotBeNil)
 	})
 
 	testLazyOpr("If the error appears in previous operations", t,
 		taUsers,
-		NewQuery().Select(projectWithPanic).Join(tRoles, userSelector, roleSelector, resultSelector),
+		NewQuery().Select(projectWithPanic).Join(tRoles, userId, roleUid, userIdAndRole),
 		expectErr,
 	)
 
 	testLazyOpr("Join an empty slice as outer source", t,
-		taEmptys, NewQuery().Join(tUsers2, userSelector, roleSelector, resultSelector),
+		taEmptys, NewQuery().Join(tUsers2, userId, roleUid, userIdAndRole),
 		expectEmptySlice,
 	)
 
 	testLazyOpr("Join an empty slice as inner source", t,
-		taUsers, NewQuery().Join([]interface{}{}, userSelector, roleSelector, resultSelector),
+		taUsers, NewQuery().Join([]interface{}{}, userId, roleUid, userIdAndRole),
 		expectEmptySlice,
 	)
 
 	testLazyOpr("Join an interface{} slice as inner source, and keep original order", t,
 		taUsers,
-		NewQuery().Join(tRoles, userSelector, roleSelector, resultSelectorForConfusedOrder),
+		NewQuery().Join(tRoles, userId, roleUid, resultSelectorForConfusedOrder),
 		expectOrdered,
 	)
 
 	testLazyOpr("Join an interface{} channel as inner source, and keep original order", t,
 		taUsers,
 		func() *Queryable {
-			return NewQuery().Join(getChan(tRoles), userSelector, roleSelector, resultSelectorForConfusedOrder)
+			return NewQuery().Join(getChan(tRoles), userId, roleUid, resultSelectorForConfusedOrder)
 		},
 		expectOrdered,
 	)
 
 	testLazyOpr("LeftJoin an empty slice as inner source", t,
 		taUsers,
-		NewQuery().LeftJoin([]interface{}{}, userSelector, roleSelector, leftResultSelector),
+		NewQuery().LeftJoin([]interface{}{}, userId, roleUid, leftResultSelector),
 		expectSliceSizeEqualsN,
 	)
 
 	testLazyOpr("LeftJoin an interface{} slice as inner source", t,
 		taUsers,
-		NewQuery().LeftJoin(tRoles, userSelector, roleSelector, leftResultSelector),
+		NewQuery().LeftJoin(tRoles, userId, roleUid, leftResultSelector),
 		func(rs []interface{}, err error, n int, chanAsOut bool) {
 			c.So(err, c.ShouldBeNil)
 			c.So(len(rs), c.ShouldEqual, n+count/2)
@@ -863,7 +857,7 @@ func TestJoin(t *testing.T) {
 	testLazyOpr("LeftJoin an interface{} channel as inner source", t,
 		taUsers,
 		func() *Queryable {
-			return NewQuery().LeftJoin(getChan(tRoles), userSelector, roleSelector, leftResultSelector)
+			return NewQuery().LeftJoin(getChan(tRoles), userId, roleUid, leftResultSelector)
 		},
 		func(rs []interface{}, err error, n int, chanAsOut bool) {
 			c.So(err, c.ShouldBeNil)
@@ -897,42 +891,42 @@ func TestGroupJoin(t *testing.T) {
 	c.Convey("When passed nil inner, error be returned", t, func() {
 		c.So(func() { From(tUsers).GroupJoin(nil, nil, nil, nil) }, c.ShouldPanicWith, ErrJoinNilSource)
 		c.So(func() { From(tUsers).GroupJoin(tRoles, nil, nil, nil) }, c.ShouldPanicWith, ErrOuterKeySelector)
-		c.So(func() { From(tUsers).GroupJoin(tUsers2, userSelector, nil, nil) }, c.ShouldPanicWith, ErrInnerKeySelector)
+		c.So(func() { From(tUsers).GroupJoin(tUsers2, userId, nil, nil) }, c.ShouldPanicWith, ErrInnerKeySelector)
 		c.So(func() {
-			From(tUsers).GroupJoin(tUsers2, userSelector, roleSelector, nil)
+			From(tUsers).GroupJoin(tUsers2, userId, roleUid, nil)
 		}, c.ShouldPanicWith, ErrResultSelector)
 	})
 
 	c.Convey("If the error appears in GroupJoin function", t, func() {
-		_, err := From(tUsers).GroupJoin(tRoles, userSelectorPanic, roleSelector, groupResultSelector).Results()
+		_, err := From(tUsers).GroupJoin(tRoles, userSelectorPanic, roleUid, groupResultSelector).Results()
 		c.So(err, c.ShouldNotBeNil)
 
-		rs, err := From(tUsers).GroupJoin(tRoles, userSelector, roleSelectorPanic, groupResultSelector).Results()
+		rs, err := From(tUsers).GroupJoin(tRoles, userId, roleSelectorPanic, groupResultSelector).Results()
 		//TODO: This case failed once, need more checking
 		if err == nil {
 			fmt.Println("/nif the error appears in GroupJoin function, return----", rs)
 		}
 		c.So(err, c.ShouldNotBeNil)
 
-		_, err = From(tUsers).GroupJoin(tRoles, userSelector, roleSelector, resultSelectorPanic).Results()
+		_, err = From(tUsers).GroupJoin(tRoles, userId, roleUid, resultSelectorPanic).Results()
 		c.So(err, c.ShouldNotBeNil)
 	})
 
 	testLazyOpr("GroupJoin an empty slice as outer source", t,
 		taEmptys,
-		NewQuery().GroupJoin(tUsers2, userSelector, roleSelector, groupResultSelector),
+		NewQuery().GroupJoin(tUsers2, userId, roleUid, groupResultSelector),
 		expectEmptySlice,
 	)
 
 	testLazyOpr("GroupJoin an empty slice as inner source", t,
 		taUsers,
-		NewQuery().GroupJoin([]interface{}{}, userSelector, roleSelector, groupResultSelector),
+		NewQuery().GroupJoin([]interface{}{}, userId, roleUid, groupResultSelector),
 		expectEmptySlice,
 	)
 
 	testLazyOpr("GroupJoin an interface{} slice as inner source", t,
 		taUsers,
-		NewQuery().GroupJoin(tRoles, userSelector, roleSelector, groupResultSelector),
+		NewQuery().GroupJoin(tRoles, userId, roleUid, groupResultSelector),
 		func(rs []interface{}, err error, n int, chanAsOut bool) {
 			c.So(err, c.ShouldBeNil)
 			c.So(len(rs), c.ShouldEqual, count/2)
@@ -945,7 +939,7 @@ func TestGroupJoin(t *testing.T) {
 	testLazyOpr("GroupJoin an interface{} channel as inner source", t,
 		taUsers,
 		func() *Queryable {
-			return NewQuery().GroupJoin(getChan(tRoles), userSelector, roleSelector, groupResultSelector)
+			return NewQuery().GroupJoin(getChan(tRoles), userId, roleUid, groupResultSelector)
 		},
 		func(rs []interface{}, err error, n int, chanAsOut bool) {
 			c.So(err, c.ShouldBeNil)
@@ -958,19 +952,19 @@ func TestGroupJoin(t *testing.T) {
 
 	testLazyOpr("LeftGroupJoin an empty slice as outer source", t,
 		taEmptys,
-		NewQuery().LeftGroupJoin(tUsers2, userSelector, roleSelector, groupResultSelector),
+		NewQuery().LeftGroupJoin(tUsers2, userId, roleUid, groupResultSelector),
 		expectEmptySlice,
 	)
 
 	testLazyOpr("LeftGroupJoin an empty slice as inner source", t,
 		taUsers,
-		NewQuery().LeftGroupJoin([]interface{}{}, userSelector, roleSelector, groupResultSelector),
+		NewQuery().LeftGroupJoin([]interface{}{}, userId, roleUid, groupResultSelector),
 		expectSliceSizeEqualsN,
 	)
 
 	testLazyOpr("LeftGroupJoin an interface{} slice as inner source", t,
 		taUsers,
-		NewQuery().LeftGroupJoin([]interface{}{}, userSelector, roleSelector, groupResultSelector),
+		NewQuery().LeftGroupJoin([]interface{}{}, userId, roleUid, groupResultSelector),
 		expectSliceSizeEqualsN,
 	)
 
@@ -1367,7 +1361,7 @@ func TestSumCountAvgMaxMin(t *testing.T) {
 	testImmediateOpr("CountBy an interface slice", t,
 		taUsers, NewQuery(),
 		func(q *Queryable, n int) {
-			expectEqual(n / 2)(q.Count(filterFunc))
+			expectEqual(n / 2)(q.Count(idIsEven))
 		})
 
 	testImmediateOpr("Average an interface slice", t,
@@ -1673,7 +1667,7 @@ func TestFirstBy(t *testing.T) {
 
 	testImmediateOpr("Filter then FirstBy item mod 100 equals 12", t,
 		taInts,
-		NewQuery().Where(filterFunc),
+		NewQuery().Where(isEven),
 		func(q *Queryable, n int) {
 			expectBe12(q.FirstBy(func(v interface{}) bool {
 				return v.(int)%100 == 12
@@ -1719,7 +1713,7 @@ func TestToChannel(t *testing.T) {
 		})
 
 		c.Convey("For channel", func() {
-			out, _, err := From(tInts).Where(filterFunc).ToChan()
+			out, _, err := From(tInts).Where(isEven).ToChan()
 			c.So(err, c.ShouldBeNil)
 			rs := chanToSlice(out)
 			//ToChan cannot keep original order
@@ -1744,7 +1738,7 @@ func TestToChannel(t *testing.T) {
 
 	c.Convey("Test error handling for ToChan", t, func() {
 		c.Convey("no error appears from list source", func() {
-			out, errChan, err := From(tInts).Where(filterFunc, parallelChunkSize).Select(projectFunc, parallelChunkSize).ToChan()
+			out, errChan, err := From(tInts).Where(isEven, parallelChunkSize).Select(multiply10, parallelChunkSize).ToChan()
 			c.So(err, c.ShouldBeNil)
 			rs, stepErr := getChanResult(out, errChan)
 			c.So(stepErr, c.ShouldBeNil)
@@ -1755,14 +1749,14 @@ func TestToChannel(t *testing.T) {
 		})
 
 		c.Convey("When error appears in last chunk from list source", func() {
-			out, errChan, err := From(tInts).Where(filterWithPanic, parallelChunkSize).Select(projectFunc, parallelChunkSize).ToChan()
+			out, errChan, err := From(tInts).Where(filterWithPanic, parallelChunkSize).Select(multiply10, parallelChunkSize).ToChan()
 			c.So(err, c.ShouldBeNil)
 			_, stepErr := getChanResult(out, errChan)
 			c.So(stepErr, c.ShouldNotBeNil)
 		})
 
 		c.Convey("no error appears from chan source", func() {
-			out, errChan, err := From(getChan(tInts)).Where(filterFunc, parallelChunkSize).Select(projectFunc, parallelChunkSize).ToChan()
+			out, errChan, err := From(getChan(tInts)).Where(isEven, parallelChunkSize).Select(multiply10, parallelChunkSize).ToChan()
 			c.So(err, c.ShouldBeNil)
 			rs, stepErr := getChanResult(out, errChan)
 			c.So(stepErr, c.ShouldBeNil)
@@ -1773,7 +1767,7 @@ func TestToChannel(t *testing.T) {
 		})
 
 		c.Convey("When error appears in last chunk from chan source", func() {
-			out, errChan, err := From(getChan(tInts)).Where(filterWithPanic, parallelChunkSize).Select(projectFunc, parallelChunkSize).ToChan()
+			out, errChan, err := From(getChan(tInts)).Where(filterWithPanic, parallelChunkSize).Select(multiply10, parallelChunkSize).ToChan()
 			c.So(err, c.ShouldBeNil)
 			_, stepErr := getChanResult(out, errChan)
 			c.So(stepErr, c.ShouldNotBeNil)
