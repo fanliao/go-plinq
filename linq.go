@@ -190,9 +190,9 @@ func NewQuery() (q *Queryable) {
 	return
 }
 
-func (this *Queryable) SetDataSource(data interface{}) (q *Queryable) {
-	this.data = newDataSource(data)
-	return this
+func (q *Queryable) SetDataSource(data interface{}) *Queryable {
+	q.data = newDataSource(data)
+	return q
 }
 
 // Results evaluates the query and returns the results as interface{} slice.
@@ -200,15 +200,15 @@ func (this *Queryable) SetDataSource(data interface{}) (q *Queryable) {
 //
 // Example:
 // 	results, err := From([]interface{}{"Jack", "Rock"}).Select(something).Results()
-func (this *Queryable) Results() (results []interface{}, err error) {
-	ds, e, errChan := this.execute()
+func (q *Queryable) Results() (results []interface{}, err error) {
+	ds, e, errChan := q.execute()
 	if e == nil {
 		//在Channel模式下，必须先取到全部的数据，否则stepErrs将死锁
 		//e将被丢弃，因为e会在this.stepErrs()中一起返回
-		results = ds.ToSlice(this.KeepOrder).ToInterfaces()
+		results = ds.ToSlice(q.KeepOrder).ToInterfaces()
 	}
 
-	err = this.stepErrs(errChan)
+	err = q.stepErrs(errChan)
 	if !isNil(err) {
 		results = nil
 	} else {
@@ -222,13 +222,13 @@ func (this *Queryable) Results() (results []interface{}, err error) {
 //
 // Example:
 // 	ch, errChan, err := From([]interface{}{"Jack", "Rock"}).Select(something).ToChan()
-func (this *Queryable) ToChan() (out chan interface{}, errChan chan error, err error) {
-	ds, err, stepErrsChan := this.execute()
+func (q *Queryable) ToChan() (out chan interface{}, errChan chan error, err error) {
+	ds, err, stepErrsChan := q.execute()
 
 	//make a channel to send the AggregateError
 	errChan = make(chan error, 1)
 	go func() {
-		aggErr := this.stepErrs(stepErrsChan)
+		aggErr := q.stepErrs(stepErrsChan)
 		if !isNil(aggErr) {
 			errChan <- aggErr
 		} else {
@@ -253,11 +253,11 @@ func (this *Queryable) ToChan() (out chan interface{}, errChan chan error, err e
 // 	q := From(users).Where(func (v interface{}) bool{
 //		return v.(*User).Age > 18
 // 	})
-func (this *Queryable) Where(predicate PredicateFunc, chunkSizes ...int) *Queryable {
+func (q *Queryable) Where(predicate PredicateFunc, chunkSizes ...int) *Queryable {
 	mustNotNil(predicate, ErrNilAction)
 
-	this.steps = append(this.steps, commonStep{ACT_WHERE, predicate, getChunkSizeArg(chunkSizes...)})
-	return this
+	q.steps = append(q.steps, commonStep{ACT_WHERE, predicate, getChunkSizeArg(chunkSizes...)})
+	return q
 }
 
 // Select returns a query includes the Select operation.
@@ -267,11 +267,11 @@ func (this *Queryable) Where(predicate PredicateFunc, chunkSizes ...int) *Querya
 // 	q := From(users).Select(func (v interface{}) interface{}{
 //		return v.(*User).Name
 // 	})
-func (this *Queryable) Select(selector OneArgsFunc, chunkSizes ...int) *Queryable {
+func (q *Queryable) Select(selector OneArgsFunc, chunkSizes ...int) *Queryable {
 	mustNotNil(selector, ErrNilAction)
 
-	this.steps = append(this.steps, commonStep{ACT_SELECT, selector, getChunkSizeArg(chunkSizes...)})
-	return this
+	q.steps = append(q.steps, commonStep{ACT_SELECT, selector, getChunkSizeArg(chunkSizes...)})
+	return q
 }
 
 // SelectMany returns a query includes the SelectMany operation.
@@ -282,11 +282,11 @@ func (this *Queryable) Select(selector OneArgsFunc, chunkSizes ...int) *Queryabl
 // 	q := From(users).Select(func (v interface{}) interface{}{
 //		return v.(*User).Name
 // 	})
-func (this *Queryable) SelectMany(manySelector func(interface{}) []interface{}, chunkSizes ...int) *Queryable {
+func (q *Queryable) SelectMany(manySelector func(interface{}) []interface{}, chunkSizes ...int) *Queryable {
 	mustNotNil(manySelector, ErrNilAction)
 
-	this.steps = append(this.steps, commonStep{ACT_SELECTMANY, manySelector, getChunkSizeArg(chunkSizes...)})
-	return this
+	q.steps = append(q.steps, commonStep{ACT_SELECTMANY, manySelector, getChunkSizeArg(chunkSizes...)})
+	return q
 }
 
 // Distinct returns a query includes the Distinct operation.
@@ -294,8 +294,8 @@ func (this *Queryable) SelectMany(manySelector func(interface{}) []interface{}, 
 //
 // Example:
 // 	q := From(users).Distinct()
-func (this *Queryable) Distinct(chunkSizes ...int) *Queryable {
-	return this.DistinctBy(self)
+func (q *Queryable) Distinct(chunkSizes ...int) *Queryable {
+	return q.DistinctBy(self)
 }
 
 // DistinctBy returns a query includes the DistinctBy operation.
@@ -308,28 +308,28 @@ func (this *Queryable) Distinct(chunkSizes ...int) *Queryable {
 // 	q := From(user).DistinctBy(func (p interface{}) interface{}{
 //		return p.(*Person).FirstName
 // 	})
-func (this *Queryable) DistinctBy(selector OneArgsFunc, chunkSizes ...int) *Queryable {
+func (q *Queryable) DistinctBy(selector OneArgsFunc, chunkSizes ...int) *Queryable {
 	mustNotNil(selector, ErrNilAction)
-	this.steps = append(this.steps, commonStep{ACT_DISTINCT, selector, getChunkSizeArg(chunkSizes...)})
-	return this
+	q.steps = append(q.steps, commonStep{ACT_DISTINCT, selector, getChunkSizeArg(chunkSizes...)})
+	return q
 }
 
 // OrderBy returns a query includes the OrderBy operation.
 // OrderBy operation sorts elements with provided compare function
 // in ascending order.
-// The comparator function should return -1 if the parameter "this" is less
-// than "that", returns 0 if the "this" is same with "that", otherwisze returns 1
+// The comparator function should return -1 if the parameter "q" is less
+// than "that", returns 0 if the "q" is same with "that", otherwisze returns 1
 //
 // Example:
-//	q := From(user).OrderBy(func (this interface{}, that interface{}) bool {
-//		return this.(*User).Age < that.(*User).Age
+//	q := From(user).OrderBy(func (q interface{}, that interface{}) bool {
+//		return q.(*User).Age < that.(*User).Age
 // 	})
-func (this *Queryable) OrderBy(comparator CompareFunc) *Queryable {
+func (q *Queryable) OrderBy(comparator CompareFunc) *Queryable {
 	if comparator == nil {
 		comparator = defCompare
 	}
-	this.steps = append(this.steps, commonStep{ACT_ORDERBY, comparator, this.Degree})
-	return this
+	q.steps = append(q.steps, commonStep{ACT_ORDERBY, comparator, q.Degree})
+	return q
 }
 
 // GroupBy returns a query includes the GroupBy operation.
@@ -338,13 +338,13 @@ func (this *Queryable) OrderBy(comparator CompareFunc) *Queryable {
 //
 // Example:
 //	q := From(user).GroupBy(func (v interface{}) interface{} {
-//		return this.(*User).Age
+//		return q.(*User).Age
 // 	})
-func (this *Queryable) GroupBy(keySelector OneArgsFunc, chunkSizes ...int) *Queryable {
+func (q *Queryable) GroupBy(keySelector OneArgsFunc, chunkSizes ...int) *Queryable {
 	mustNotNil(keySelector, ErrNilAction)
 
-	this.steps = append(this.steps, commonStep{ACT_GROUPBY, keySelector, getChunkSizeArg(chunkSizes...)})
-	return this
+	q.steps = append(q.steps, commonStep{ACT_GROUPBY, keySelector, getChunkSizeArg(chunkSizes...)})
+	return q
 }
 
 // Union returns a query includes the Union operation.
@@ -357,11 +357,11 @@ func (this *Queryable) GroupBy(keySelector OneArgsFunc, chunkSizes ...int) *Quer
 // Example:
 // 	q := From(int[]{1,2,3,4,5}).Union(int[]{3,4,5,6})
 // 	// q.Results() returns {1,2,3,4,5,6}
-func (this *Queryable) Union(source2 interface{}, chunkSizes ...int) *Queryable {
+func (q *Queryable) Union(source2 interface{}, chunkSizes ...int) *Queryable {
 	mustNotNil(source2, ErrUnionNilSource)
 
-	this.steps = append(this.steps, commonStep{ACT_UNION, source2, getChunkSizeArg(chunkSizes...)})
-	return this
+	q.steps = append(q.steps, commonStep{ACT_UNION, source2, getChunkSizeArg(chunkSizes...)})
+	return q
 }
 
 // Concat returns a query includes the Concat operation.
@@ -371,11 +371,11 @@ func (this *Queryable) Union(source2 interface{}, chunkSizes ...int) *Queryable 
 // Example:
 // 	q := From(int[]{1,2,3,4,5}).Union(int[]{3,4,5,6})
 // 	// q.Results() returns {1,2,3,4,5,3,4,5,6}
-func (this *Queryable) Concat(source2 interface{}) *Queryable {
+func (q *Queryable) Concat(source2 interface{}) *Queryable {
 	mustNotNil(source2, ErrConcatNilSource)
 
-	this.steps = append(this.steps, commonStep{ACT_CONCAT, source2, this.Degree})
-	return this
+	q.steps = append(q.steps, commonStep{ACT_CONCAT, source2, q.Degree})
+	return q
 }
 
 // Intersect returns a query includes the Intersect operation.
@@ -386,11 +386,11 @@ func (this *Queryable) Concat(source2 interface{}) *Queryable {
 // Example:
 // 	q := From(int[]{1,2,3,4,5}).Intersect(int[]{3,4,5,6})
 // 	// q.Results() returns {3,4,5}
-func (this *Queryable) Intersect(source2 interface{}, chunkSizes ...int) *Queryable {
+func (q *Queryable) Intersect(source2 interface{}, chunkSizes ...int) *Queryable {
 	mustNotNil(source2, ErrInterestNilSource)
 
-	this.steps = append(this.steps, commonStep{ACT_INTERSECT, source2, getChunkSizeArg(chunkSizes...)})
-	return this
+	q.steps = append(q.steps, commonStep{ACT_INTERSECT, source2, getChunkSizeArg(chunkSizes...)})
+	return q
 }
 
 // Except returns a query includes the Except operation.
@@ -401,11 +401,11 @@ func (this *Queryable) Intersect(source2 interface{}, chunkSizes ...int) *Querya
 // Example:
 // 	q := From(int[]{1,2,3,4,5}).Except(int[]{3,4,5,6})
 // 	// q.Results() returns {1,2}
-func (this *Queryable) Except(source2 interface{}, chunkSizes ...int) *Queryable {
+func (q *Queryable) Except(source2 interface{}, chunkSizes ...int) *Queryable {
 	mustNotNil(source2, ErrExceptNilSource)
 
-	this.steps = append(this.steps, commonStep{ACT_EXCEPT, source2, getChunkSizeArg(chunkSizes...)})
-	return this
+	q.steps = append(q.steps, commonStep{ACT_EXCEPT, source2, getChunkSizeArg(chunkSizes...)})
+	return q
 }
 
 // Join returns a query includes the Join operation.
@@ -420,7 +420,7 @@ func (this *Queryable) Except(source2 interface{}, chunkSizes ...int) *Queryable
 //
 // resultSelector takes outer element and inner element as inputs
 // and returns a value which will be an element in the resulting source.
-func (this *Queryable) Join(inner interface{},
+func (q *Queryable) Join(inner interface{},
 	outerKeySelector OneArgsFunc,
 	innerKeySelector OneArgsFunc,
 	resultSelector TwoArgsFunc, chunkSizes ...int) *Queryable {
@@ -430,15 +430,15 @@ func (this *Queryable) Join(inner interface{},
 	mustNotNil(innerKeySelector, ErrInnerKeySelector)
 	mustNotNil(resultSelector, ErrResultSelector)
 
-	this.steps = append(this.steps, joinStep{commonStep{ACT_JOIN, inner, getChunkSizeArg(chunkSizes...)}, outerKeySelector, innerKeySelector, resultSelector, false})
-	return this
+	q.steps = append(q.steps, joinStep{commonStep{ACT_JOIN, inner, getChunkSizeArg(chunkSizes...)}, outerKeySelector, innerKeySelector, resultSelector, false})
+	return q
 }
 
 // LeftJoin returns a query includes the LeftJoin operation.
 // LeftJoin operation is similar with Join operation,
 // but LeftJoin returns all elements in outer source,
 // the inner elements will be null if there is not matching element in inner source
-func (this *Queryable) LeftJoin(inner interface{},
+func (q *Queryable) LeftJoin(inner interface{},
 	outerKeySelector OneArgsFunc,
 	innerKeySelector OneArgsFunc,
 	resultSelector TwoArgsFunc, chunkSizes ...int) *Queryable {
@@ -448,15 +448,15 @@ func (this *Queryable) LeftJoin(inner interface{},
 	mustNotNil(innerKeySelector, ErrInnerKeySelector)
 	mustNotNil(resultSelector, ErrResultSelector)
 
-	this.steps = append(this.steps, joinStep{commonStep{ACT_JOIN, inner, getChunkSizeArg(chunkSizes...)}, outerKeySelector, innerKeySelector, resultSelector, true})
-	return this
+	q.steps = append(q.steps, joinStep{commonStep{ACT_JOIN, inner, getChunkSizeArg(chunkSizes...)}, outerKeySelector, innerKeySelector, resultSelector, true})
+	return q
 }
 
 // GroupJoin returns a query includes the GroupJoin operation.
 // GroupJoin operation is similar with Join operation,
 // but GroupJoin will correlates the element of the outer source and
 // the matching elements slice of the inner source.
-func (this *Queryable) GroupJoin(inner interface{},
+func (q *Queryable) GroupJoin(inner interface{},
 	outerKeySelector OneArgsFunc,
 	innerKeySelector OneArgsFunc,
 	resultSelector func(interface{}, []interface{}) interface{}, chunkSizes ...int) *Queryable {
@@ -465,15 +465,15 @@ func (this *Queryable) GroupJoin(inner interface{},
 	mustNotNil(innerKeySelector, ErrInnerKeySelector)
 	mustNotNil(resultSelector, ErrResultSelector)
 
-	this.steps = append(this.steps, joinStep{commonStep{ACT_GROUPJOIN, inner, getChunkSizeArg(chunkSizes...)}, outerKeySelector, innerKeySelector, resultSelector, false})
-	return this
+	q.steps = append(q.steps, joinStep{commonStep{ACT_GROUPJOIN, inner, getChunkSizeArg(chunkSizes...)}, outerKeySelector, innerKeySelector, resultSelector, false})
+	return q
 }
 
 // LeftGroupJoin returns a query includes the LeftGroupJoin operation.
 // LeftGroupJoin operation is similar with GroupJoin operation,
 // but LeftGroupJoin returns all elements in outer source,
 // the inner elements will be [] if there is not matching element in inner source
-func (this *Queryable) LeftGroupJoin(inner interface{},
+func (q *Queryable) LeftGroupJoin(inner interface{},
 	outerKeySelector OneArgsFunc,
 	innerKeySelector OneArgsFunc,
 	resultSelector func(interface{}, []interface{}) interface{}, chunkSizes ...int) *Queryable {
@@ -483,8 +483,8 @@ func (this *Queryable) LeftGroupJoin(inner interface{},
 	mustNotNil(innerKeySelector, ErrInnerKeySelector)
 	mustNotNil(resultSelector, ErrResultSelector)
 
-	this.steps = append(this.steps, joinStep{commonStep{ACT_GROUPJOIN, inner, getChunkSizeArg(chunkSizes...)}, outerKeySelector, innerKeySelector, resultSelector, true})
-	return this
+	q.steps = append(q.steps, joinStep{commonStep{ACT_GROUPJOIN, inner, getChunkSizeArg(chunkSizes...)}, outerKeySelector, innerKeySelector, resultSelector, true})
+	return q
 }
 
 // Reverse returns a query includes the Reverse operation.
@@ -493,9 +493,9 @@ func (this *Queryable) LeftGroupJoin(inner interface{},
 // Example:
 // 	q := From([]int{1,2,3,4,5}).Reverse()
 // 	// q.Results() returns {5,4,3,2,1}
-func (this *Queryable) Reverse(chunkSizes ...int) *Queryable {
-	this.steps = append(this.steps, commonStep{ACT_REVERSE, nil, getChunkSizeArg(chunkSizes...)})
-	return this
+func (q *Queryable) Reverse(chunkSizes ...int) *Queryable {
+	q.steps = append(q.steps, commonStep{ACT_REVERSE, nil, getChunkSizeArg(chunkSizes...)})
+	return q
 }
 
 // Skip returns a query includes the Skip operation.
@@ -505,9 +505,9 @@ func (this *Queryable) Reverse(chunkSizes ...int) *Queryable {
 // Example:
 // 	arr, err := From([]int{1,2,3,4,5,6}).Skip(3).Results()
 //		// arr will be 4, 5, 6
-func (this *Queryable) Skip(count int) *Queryable {
-	this.steps = append(this.steps, commonStep{ACT_SKIP, count, 0})
-	return this
+func (q *Queryable) Skip(count int) *Queryable {
+	q.steps = append(q.steps, commonStep{ACT_SKIP, count, 0})
+	return q
 }
 
 // SkipWhile returns a query includes the SkipWhile operation.
@@ -518,11 +518,11 @@ func (this *Queryable) Skip(count int) *Queryable {
 // 	arr, err := From([]int{1,2,3,4,5,6}).
 // 				SkipWhile(func(v interface{}) bool { return v.(int)%3 == 0 }).Results()
 //		// arr will be 3,4,5,6
-func (this *Queryable) SkipWhile(predicate func(interface{}) bool, chunkSizes ...int) *Queryable {
+func (q *Queryable) SkipWhile(predicate func(interface{}) bool, chunkSizes ...int) *Queryable {
 	mustNotNil(predicate, ErrNilAction)
 
-	this.steps = append(this.steps, commonStep{ACT_SKIPWHILE, PredicateFunc(predicate), getChunkSizeArg(chunkSizes...)})
-	return this
+	q.steps = append(q.steps, commonStep{ACT_SKIPWHILE, PredicateFunc(predicate), getChunkSizeArg(chunkSizes...)})
+	return q
 }
 
 // Take returns a query includes the Take operation.
@@ -533,9 +533,9 @@ func (this *Queryable) SkipWhile(predicate func(interface{}) bool, chunkSizes ..
 // 	arr, err := From([]int{1,2,3,4,5,6}).Take(3).Results()
 //		// arr will be 1,2,3
 //
-func (this *Queryable) Take(count int) *Queryable {
-	this.steps = append(this.steps, commonStep{ACT_TAKE, count, 0})
-	return this
+func (q *Queryable) Take(count int) *Queryable {
+	q.steps = append(q.steps, commonStep{ACT_TAKE, count, 0})
+	return q
 }
 
 // ElementAt returns the element at the specified index i.
@@ -545,8 +545,8 @@ func (this *Queryable) Take(count int) *Queryable {
 // Example:
 // i, found, err := From([]int{0,1,2}).ElementAt(2)
 //		// i is 2
-func (this *Queryable) ElementAt(i int) (result interface{}, found bool, err error) {
-	return this.singleValue(func(ds DataSource, pOption *ParallelOption) (result interface{}, found bool, err error) {
+func (q *Queryable) ElementAt(i int) (result interface{}, found bool, err error) {
+	return q.singleValue(func(ds DataSource, pOption *ParallelOption) (result interface{}, found bool, err error) {
 		return getElementAt(ds, i, pOption)
 	})
 }
@@ -561,8 +561,8 @@ func (this *Queryable) ElementAt(i int) (result interface{}, found bool, err err
 // 	if err == nil && found {
 //		// r is 1
 // 	}
-func (this *Queryable) First(val interface{}, chunkSizes ...int) (result interface{}, found bool, err error) {
-	return this.FirstBy(func(item interface{}) bool { return equals(item, val) }, chunkSizes...)
+func (q *Queryable) First(val interface{}, chunkSizes ...int) (result interface{}, found bool, err error) {
+	return q.FirstBy(func(item interface{}) bool { return equals(item, val) }, chunkSizes...)
 }
 
 // FirstBy returns the first element in the data source that matchs the
@@ -575,9 +575,9 @@ func (this *Queryable) First(val interface{}, chunkSizes ...int) (result interfa
 // 	if err == nil && found {
 //		// r is 1
 // 	}
-func (this *Queryable) FirstBy(predicate PredicateFunc, chunkSizes ...int) (result interface{}, found bool, err error) {
-	return this.singleValue(func(ds DataSource, pOption *ParallelOption) (result interface{}, found bool, err error) {
-		option, chunkSize := this.ParallelOption, getChunkSizeArg(chunkSizes...)
+func (q *Queryable) FirstBy(predicate PredicateFunc, chunkSizes ...int) (result interface{}, found bool, err error) {
+	return q.singleValue(func(ds DataSource, pOption *ParallelOption) (result interface{}, found bool, err error) {
+		option, chunkSize := q.ParallelOption, getChunkSizeArg(chunkSizes...)
 		if chunkSize != 0 {
 			option.ChunkSize = chunkSize
 		}
@@ -595,8 +595,8 @@ func (this *Queryable) FirstBy(predicate PredicateFunc, chunkSizes ...int) (resu
 // 	if err == nil && found {
 //		// r is 3
 // 	}
-func (this *Queryable) Last(val interface{}, chunkSizes ...int) (result interface{}, found bool, err error) {
-	return this.LastBy(func(item interface{}) bool { return equals(item, val) }, chunkSizes...)
+func (q *Queryable) Last(val interface{}, chunkSizes ...int) (result interface{}, found bool, err error) {
+	return q.LastBy(func(item interface{}) bool { return equals(item, val) }, chunkSizes...)
 }
 
 // LastBy returns the last element in the data source that matchs the
@@ -609,9 +609,9 @@ func (this *Queryable) Last(val interface{}, chunkSizes ...int) (result interfac
 // 	if err == nil && found {
 //		// r is 3
 // 	}
-func (this *Queryable) LastBy(predicate PredicateFunc, chunkSizes ...int) (result interface{}, found bool, err error) {
-	return this.singleValue(func(ds DataSource, pOption *ParallelOption) (result interface{}, found bool, err error) {
-		option, chunkSize := this.ParallelOption, getChunkSizeArg(chunkSizes...)
+func (q *Queryable) LastBy(predicate PredicateFunc, chunkSizes ...int) (result interface{}, found bool, err error) {
+	return q.singleValue(func(ds DataSource, pOption *ParallelOption) (result interface{}, found bool, err error) {
+		option, chunkSize := q.ParallelOption, getChunkSizeArg(chunkSizes...)
 		if chunkSize != 0 {
 			option.ChunkSize = chunkSize
 		}
@@ -627,9 +627,9 @@ func (this *Queryable) LastBy(predicate PredicateFunc, chunkSizes ...int) (resul
 // 	if err == nil {
 //		// found is true
 // 	}
-func (this *Queryable) Any(predicate PredicateFunc, chunkSizes ...int) (found bool, err error) {
-	_, found, err = this.singleValue(func(ds DataSource, pOption *ParallelOption) (result interface{}, found bool, err error) {
-		option, chunkSize := this.ParallelOption, getChunkSizeArg(chunkSizes...)
+func (q *Queryable) Any(predicate PredicateFunc, chunkSizes ...int) (found bool, err error) {
+	_, found, err = q.singleValue(func(ds DataSource, pOption *ParallelOption) (result interface{}, found bool, err error) {
+		option, chunkSize := q.ParallelOption, getChunkSizeArg(chunkSizes...)
 		if chunkSize != 0 {
 			option.ChunkSize = chunkSize
 		}
@@ -646,9 +646,9 @@ func (this *Queryable) Any(predicate PredicateFunc, chunkSizes ...int) (found bo
 // 	if err == nil {
 //		// found is false
 // 	}
-func (this *Queryable) All(predicate PredicateFunc, chunkSizes ...int) (found bool, err error) {
-	_, found, err = this.singleValue(func(ds DataSource, pOption *ParallelOption) (result interface{}, found bool, err error) {
-		option, chunkSize := this.ParallelOption, getChunkSizeArg(chunkSizes...)
+func (q *Queryable) All(predicate PredicateFunc, chunkSizes ...int) (found bool, err error) {
+	_, found, err = q.singleValue(func(ds DataSource, pOption *ParallelOption) (result interface{}, found bool, err error) {
+		option, chunkSize := q.ParallelOption, getChunkSizeArg(chunkSizes...)
 		if chunkSize != 0 {
 			option.ChunkSize = chunkSize
 		}
@@ -672,9 +672,9 @@ func (this *Queryable) All(predicate PredicateFunc, chunkSizes ...int) (found bo
 //	aggResults, err := From(arr).Aggregate(Sum, Count, Max, Min) // return [18, 4, 9, 0]
 //	// or
 //	sum, err := From(arr).Aggregate(Sum) // sum is 18
-func (this *Queryable) Aggregate(aggregateFuncs ...*AggregateOperation) (result interface{}, err error) {
-	result, _, err = this.singleValue(func(ds DataSource, pOption *ParallelOption) (resultValue interface{}, found bool, e error) {
-		rs, err1 := getAggregate(ds, aggregateFuncs, &(this.ParallelOption))
+func (q *Queryable) Aggregate(aggregateFuncs ...*AggregateOperation) (result interface{}, err error) {
+	result, _, err = q.singleValue(func(ds DataSource, pOption *ParallelOption) (resultValue interface{}, found bool, e error) {
+		rs, err1 := getAggregate(ds, aggregateFuncs, &(q.ParallelOption))
 		if err1 != nil {
 			e = err1
 			return
@@ -695,13 +695,13 @@ func (this *Queryable) Aggregate(aggregateFuncs ...*AggregateOperation) (result 
 // Example:
 //	arr = []interface{}{0, 3, 6, 9}
 //	sum, err := From(arr).Sum() // sum is 18
-func (this *Queryable) Sum(selectors ...OneArgsFunc) (result interface{}, err error) {
+func (q *Queryable) Sum(selectors ...OneArgsFunc) (result interface{}, err error) {
 	opr := getSumOpr(nil)
 	if selectors != nil && len(selectors) > 0 {
 		opr = getSumOpr(selectors[0])
 	}
 	aggregateOprs := []*AggregateOperation{opr}
-	return this.Aggregate(aggregateOprs...)
+	return q.Aggregate(aggregateOprs...)
 }
 
 // Count returns number of elements in the data source.
@@ -709,10 +709,10 @@ func (this *Queryable) Sum(selectors ...OneArgsFunc) (result interface{}, err er
 // Example:
 //	arr = []interface{}{0, 3, 6, 9}
 //	count, err := From(arr).Count() // count is 4
-func (this *Queryable) Count(predicates ...PredicateFunc) (result interface{}, err error) {
+func (q *Queryable) Count(predicates ...PredicateFunc) (result interface{}, err error) {
 	aggregateOprs := []*AggregateOperation{Count(predicates...)}
 
-	return this.Aggregate(aggregateOprs...)
+	return q.Aggregate(aggregateOprs...)
 }
 
 // Average computes the average of numeric values in the data source.
@@ -720,14 +720,14 @@ func (this *Queryable) Count(predicates ...PredicateFunc) (result interface{}, e
 // Example:
 //	arr = []interface{}{0, 3, 6, 9}
 //	arg, err := From(arr).Average() // sum is 4.5
-func (this *Queryable) Average(selectors ...OneArgsFunc) (result interface{}, err error) {
+func (q *Queryable) Average(selectors ...OneArgsFunc) (result interface{}, err error) {
 	sumOpr := getSumOpr(nil)
 	if selectors != nil && len(selectors) > 0 {
 		sumOpr = getSumOpr(selectors[0])
 	}
 	aggregateOprs := []*AggregateOperation{sumOpr, countAggOpr}
 
-	results, e := this.Aggregate(aggregateOprs...)
+	results, e := q.Aggregate(aggregateOprs...)
 	if e != nil {
 		return nil, err
 	}
@@ -745,7 +745,7 @@ func (this *Queryable) Average(selectors ...OneArgsFunc) (result interface{}, er
 // Example:
 //	arr = []interface{}{0, 3, 6, 9}
 //	max, err := From(arr).Max() // max is 9
-func (this *Queryable) Max(selector ...OneArgsFunc) (result interface{}, err error) {
+func (q *Queryable) Max(selector ...OneArgsFunc) (result interface{}, err error) {
 	opr := getMaxOpr(nil)
 	if selector != nil && len(selector) > 0 {
 		opr = getMaxOpr(selector[0])
@@ -753,7 +753,7 @@ func (this *Queryable) Max(selector ...OneArgsFunc) (result interface{}, err err
 
 	aggregateOprs := []*AggregateOperation{opr}
 
-	return this.Aggregate(aggregateOprs...)
+	return q.Aggregate(aggregateOprs...)
 }
 
 // Min returns the minimum value in the data source.
@@ -763,14 +763,14 @@ func (this *Queryable) Max(selector ...OneArgsFunc) (result interface{}, err err
 // Example:
 //	arr = []interface{}{0, 3, 6, 9}
 //	min, err := From(arr).Max(converts ...OneArgsFunc) // min is 0
-func (this *Queryable) Min(selectors ...OneArgsFunc) (result interface{}, err error) {
+func (q *Queryable) Min(selectors ...OneArgsFunc) (result interface{}, err error) {
 	opr := getMinOpr(nil)
 	if selectors != nil && len(selectors) > 0 {
 		opr = getMinOpr(selectors[0])
 	}
 
 	aggregateOprs := []*AggregateOperation{opr}
-	return this.Aggregate(aggregateOprs...)
+	return q.Aggregate(aggregateOprs...)
 }
 
 // TakeWhile returns a query includes the TakeWhile operation.
@@ -781,51 +781,51 @@ func (this *Queryable) Min(selectors ...OneArgsFunc) (result interface{}, err er
 // 	arr, err := From([]int{1,2,3,4,5,6}).
 //				TakeWhile(func(v interface{}) bool { return v.(int)%3 == 0 }).Results()
 //		// arr will be 1,2
-func (this *Queryable) TakeWhile(predicate func(interface{}) bool, chunkSizes ...int) *Queryable {
+func (q *Queryable) TakeWhile(predicate func(interface{}) bool, chunkSizes ...int) *Queryable {
 	mustNotNil(predicate, ErrNilAction)
-	//this.act.(predicate predicateFunc)
-	this.steps = append(this.steps, commonStep{ACT_TAKEWHILE, PredicateFunc(predicate), getChunkSizeArg(chunkSizes...)})
-	return this
+	//q.act.(predicate predicateFunc)
+	q.steps = append(q.steps, commonStep{ACT_TAKEWHILE, PredicateFunc(predicate), getChunkSizeArg(chunkSizes...)})
+	return q
 }
 
 // KeepOrder returns a query from the original query,
 // the result slice will keep the order of origin query as much as possible
 // Noted: Order operation will change the original order.
 // TODO: Distinct, Union, Join, Interest, Except operations need more testing
-func (this *Queryable) SetKeepOrder(keep bool) *Queryable {
-	this.KeepOrder = keep
-	return this
+func (q *Queryable) SetKeepOrder(keep bool) *Queryable {
+	q.KeepOrder = keep
+	return q
 }
 
 // SetDegreeOfParallelism set the degree of parallelism, it is the
 // count of Goroutines when executes the each operations.
 // The degree can also be customized in each linq operation function.
-func (this *Queryable) SetDegreeOfParallelism(degree int) *Queryable {
-	this.Degree = degree
-	return this
+func (q *Queryable) SetDegreeOfParallelism(degree int) *Queryable {
+	q.Degree = degree
+	return q
 }
 
 // SetSizeOfChunk set the size of chunk.
 // chunk is the data unit of the parallelism, default size is DEFAULTCHUNKSIZE
-func (this *Queryable) SetSizeOfChunk(size int) *Queryable {
-	this.ChunkSize = size
-	return this
+func (q *Queryable) SetSizeOfChunk(size int) *Queryable {
+	q.ChunkSize = size
+	return q
 }
 
-func (this *Queryable) aggregate(aggregateFuncs ...TwoArgsFunc) *Queryable {
-	this.steps = append(this.steps, commonStep{ACT_AGGREGATE, aggregateFuncs, 0})
-	return this
+func (q *Queryable) aggregate(aggregateFuncs ...TwoArgsFunc) *Queryable {
+	q.steps = append(q.steps, commonStep{ACT_AGGREGATE, aggregateFuncs, 0})
+	return q
 }
 
-func (this *Queryable) hGroupBy(keySelector OneArgsFunc, chunkSizes ...int) *Queryable {
-	this.steps = append(this.steps, commonStep{ACT_HGROUPBY, keySelector, 0})
-	return this
+func (q *Queryable) hGroupBy(keySelector OneArgsFunc, chunkSizes ...int) *Queryable {
+	q.steps = append(q.steps, commonStep{ACT_HGROUPBY, keySelector, 0})
+	return q
 }
 
 // Executes the query and get latest data source
-func (this *Queryable) execute() (ds DataSource, err error, errChan chan []error) {
-	if len(this.steps) == 0 {
-		ds = this.data
+func (q *Queryable) execute() (ds DataSource, err error, errChan chan []error) {
+	if len(q.steps) == 0 {
+		ds = q.data
 		return
 	}
 
@@ -842,7 +842,7 @@ func (this *Queryable) execute() (ds DataSource, err error, errChan chan []error
 				fmt.Println("From ------", srcErr)
 			}
 		}()
-		stepFutures := make([]error, 0, len(this.steps))
+		stepFutures := make([]error, 0, len(q.steps))
 
 		i := 0
 		for e := range stepErrsChan {
@@ -850,7 +850,7 @@ func (this *Queryable) execute() (ds DataSource, err error, errChan chan []error
 				stepFutures = append(stepFutures, e)
 			}
 			i++
-			if i >= len(this.steps) {
+			if i >= len(q.steps) {
 				//fmt.Println("send to errChan")
 				errChan <- stepFutures
 				return
@@ -858,10 +858,10 @@ func (this *Queryable) execute() (ds DataSource, err error, errChan chan []error
 		}
 	}()
 
-	ds = this.data
-	pOption, keepOrder := this.ParallelOption, this.ParallelOption.KeepOrder
+	ds = q.data
+	pOption, keepOrder := q.ParallelOption, q.ParallelOption.KeepOrder
 
-	for i, step := range this.steps {
+	for i, step := range q.steps {
 		//var f *promise.Future
 		step1 := step
 
@@ -876,7 +876,7 @@ func (this *Queryable) execute() (ds DataSource, err error, errChan chan []error
 			if ds, keepOrder, err = step.Action()(ds, step.POption(pOption), i == 0); err != nil {
 				//fmt.Println("err in step2----------", i, err)
 				stepErrsChan <- NewStepError(i, step1.Typ(), err)
-				for j := i + 1; j < len(this.steps); j++ {
+				for j := i + 1; j < len(q.steps); j++ {
 					stepErrsChan <- nil
 				}
 				return err
@@ -911,7 +911,33 @@ func (this *Queryable) execute() (ds DataSource, err error, errChan chan []error
 	return ds, nil, errChan
 }
 
-func (this *Queryable) stepErrs(errChan chan []error) (err *AggregateError) {
+func (q *Queryable) singleValue(getVal func(DataSource, *ParallelOption) (result interface{}, found bool, err error)) (result interface{}, found bool, err error) {
+	ds, e, errChan := q.execute()
+	if e == nil {
+		//在Channel模式下，必须先取完全部的数据，否则stepErrs将死锁
+		//e被丢弃，因为e会在this.stepErrs()中返回
+		result, found, err = getVal(ds, &(q.ParallelOption))
+	}
+
+	//merge the error in getVal to AggregateError
+	stepErrs := q.stepErrs(errChan)
+	if !isNil(stepErrs) {
+		result, found = nil, false
+		if err != nil {
+			stepErrs.innerErrs = append(stepErrs.innerErrs,
+				NewStepError(1000, ACT_SINGLEVALUE, err))
+		}
+		err = stepErrs
+		return
+	}
+
+	if isNil(err) {
+		err = nil
+	}
+	return
+}
+
+func (q *Queryable) stepErrs(errChan chan []error) (err *AggregateError) {
 	if errChan != nil {
 		if errs := <-errChan; len(errs) > 0 {
 			err = NewAggregateError("Aggregate errors", errs)
@@ -948,16 +974,6 @@ func newDataSource(data interface{}) (ds DataSource) {
 	return
 }
 
-//func newQueryable(ds DataSource) (q *Queryable) {
-//	q = &Queryable{}
-//	q.KeepOrder = true
-//	q.steps = make([]step, 0, 4)
-//	q.Degree = numCPU
-//	q.ChunkSize = defaultChunkSize
-//	q.data = ds
-//	return
-//}
-
 //The listsource and chanSource structs----------------------------------
 
 // listSource presents the slice or map source
@@ -966,19 +982,19 @@ type listSource struct {
 	data Slicer
 }
 
-func (this *listSource) Typ() int {
+func (ls *listSource) Typ() int {
 	return SOURCE_LIST
 }
 
 // ToSlice returns the interface{} slice
-func (this *listSource) ToSlice(keepOrder bool) Slicer {
-	return this.data
+func (ls *listSource) ToSlice(keepOrder bool) Slicer {
+	return ls.data
 }
 
-func (this *listSource) ToChan() (out chan interface{}) {
+func (ls *listSource) ToChan() (out chan interface{}) {
 	out = make(chan interface{})
 	go func() {
-		forEachSlicer(this.data, func(i int, v interface{}) {
+		forEachSlicer(ls.data, func(i int, v interface{}) {
 			out <- v
 		})
 		close(out)
@@ -986,7 +1002,7 @@ func (this *listSource) ToChan() (out chan interface{}) {
 	return
 }
 
-func (this *listSource) Future() *promise.Future {
+func (ls *listSource) Future() *promise.Future {
 	return nil
 }
 
@@ -1005,41 +1021,41 @@ type chanSource struct {
 	future    *promise.Future
 }
 
-func (this chanSource) Typ() int {
+func (cs chanSource) Typ() int {
 	return SOURCE_CHANNEL
 }
 
-func (this *chanSource) ChunkChan(chunkSize int) chan *Chunk {
-	this.makeChunkChanSure(chunkSize)
-	return this.chunkChan
+func (cs *chanSource) ChunkChan(chunkSize int) chan *Chunk {
+	cs.makeChunkChanSure(chunkSize)
+	return cs.chunkChan
 }
 
-func (this *chanSource) Future() *promise.Future {
-	return this.future
+func (cs *chanSource) Future() *promise.Future {
+	return cs.future
 }
 
 //Close closes the channel of the chunk
-func (this chanSource) Close() {
+func (cs chanSource) Close() {
 	defer func() {
 		_ = recover()
 	}()
 
-	if this.chunkChan != nil {
-		close(this.chunkChan)
+	if cs.chunkChan != nil {
+		close(cs.chunkChan)
 	}
 }
 
 //ToSlice returns a slice included all elements in the channel source
-func (this chanSource) ToSlice(keepOrder bool) Slicer {
-	if this.chunkChan != nil {
+func (cs chanSource) ToSlice(keepOrder bool) Slicer {
+	if cs.chunkChan != nil {
 		chunks := make([]interface{}, 0, 2)
 		ordered := newChunkOrderedList()
 
-		for c := range this.chunkChan {
+		for c := range cs.chunkChan {
 			if isNil(c) {
 				//if use the buffer channel, then must receive a nil as end flag
-				if cap(this.chunkChan) > 0 {
-					this.Close()
+				if cap(cs.chunkChan) > 0 {
+					cs.Close()
 					break
 				}
 				continue
@@ -1058,7 +1074,7 @@ func (this chanSource) ToSlice(keepOrder bool) Slicer {
 		//fmt.Println("toslice, result1===", chunks)
 		return NewSlicer(expandChunks(chunks, false))
 	} else {
-		srcChan := reflect.ValueOf(this.data)
+		srcChan := reflect.ValueOf(cs.data)
 		//if srcChan.Kind() != reflect.Chan {
 		//	panic(ErrUnsupportSource)
 		//}
@@ -1076,14 +1092,14 @@ func (this chanSource) ToSlice(keepOrder bool) Slicer {
 }
 
 //convert to a interface{} channel
-func (this chanSource) ToChan() chan interface{} {
+func (cs chanSource) ToChan() chan interface{} {
 	out := make(chan interface{})
-	if this.chunkChan != nil {
+	if cs.chunkChan != nil {
 		go func() {
-			for c := range this.chunkChan {
+			for c := range cs.chunkChan {
 				if isNil(c) {
-					if cap(this.chunkChan) > 0 {
-						this.Close()
+					if cap(cs.chunkChan) > 0 {
+						cs.Close()
 						break
 					}
 					continue
@@ -1094,8 +1110,8 @@ func (this chanSource) ToChan() chan interface{} {
 			}
 			close(out)
 		}()
-	} else if this.data != nil {
-		srcChan := reflect.ValueOf(this.data)
+	} else if cs.data != nil {
+		srcChan := reflect.ValueOf(cs.data)
 		//if srcChan.Kind() != reflect.Chan {
 		//	panic(ErrUnsupportSource)
 		//}
@@ -1114,10 +1130,10 @@ func (this chanSource) ToChan() chan interface{} {
 	return out
 }
 
-func (this *chanSource) addCallbackToCloseChan() {
-	out := this.chunkChan
-	if this.future != nil {
-		this.future.Always(func(results interface{}) {
+func (cs *chanSource) addCallbackToCloseChan() {
+	out := cs.chunkChan
+	if cs.future != nil {
+		cs.future.Always(func(results interface{}) {
 			//must use goroutiner, else may deadlock when out is buffer chan
 			//because it maybe called before the chan receiver be started.
 			//if the buffer is full, out <- nil will be holder then deadlock
@@ -1147,16 +1163,16 @@ func sendChunk(out chan *Chunk, c *Chunk) (closed bool) {
 
 // makeChunkChanSure make the channel of chunk for linq operations
 // This function will only run once
-func (this *chanSource) makeChunkChanSure(chunkSize int) {
-	if this.chunkChan == nil {
-		this.once.Do(func() {
-			if this.chunkChan != nil {
+func (cs *chanSource) makeChunkChanSure(chunkSize int) {
+	if cs.chunkChan == nil {
+		cs.once.Do(func() {
+			if cs.chunkChan != nil {
 				return
 			}
-			srcChan := reflect.ValueOf(this.data)
-			this.chunkChan = make(chan *Chunk, numCPU)
+			srcChan := reflect.ValueOf(cs.data)
+			cs.chunkChan = make(chan *Chunk, numCPU)
 
-			this.future = promise.Start(func() (r interface{}, e error) {
+			cs.future = promise.Start(func() (r interface{}, e error) {
 				defer func() {
 					if err := recover(); err != nil {
 						e = newErrorWithStacks(err)
@@ -1171,7 +1187,7 @@ func (this *chanSource) makeChunkChanSure(chunkSize int) {
 						chunkData = append(chunkData, v.Interface())
 						if len(chunkData) == cap(chunkData) {
 							c := &Chunk{NewSlicer(chunkData), order, lasti}
-							if closed := sendChunk(this.chunkChan, c); closed {
+							if closed := sendChunk(cs.chunkChan, c); closed {
 								return nil, nil
 							}
 
@@ -1185,11 +1201,11 @@ func (this *chanSource) makeChunkChanSure(chunkSize int) {
 				}
 
 				if len(chunkData) > 0 {
-					sendChunk(this.chunkChan, &Chunk{NewSlicer(chunkData), order, lasti})
+					sendChunk(cs.chunkChan, &Chunk{NewSlicer(chunkData), order, lasti})
 				}
 
-				//this.Close()
-				sendChunk(this.chunkChan, nil)
+				//cs.Close()
+				sendChunk(cs.chunkChan, nil)
 				return nil, nil
 			})
 

@@ -27,8 +27,7 @@ var (
 func init() {
 	fmt.Println("DEFAULTCHUNKSIZE=", defaultChunkSize)
 	fmt.Println("countForB=", countForB)
-	maxProcs = numCPU
-	runtime.GOMAXPROCS(maxProcs)
+	runtime.GOMAXPROCS(numCPU)
 	for i := 0; i < countForB; i++ {
 		bInts[i] = i
 		bUsers[i] = user{i, "user" + strconv.Itoa(i)}
@@ -48,7 +47,10 @@ func init() {
 
 func BenchmarkGoPLinq_Where(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		dst, _ := From(bUsers).Where(idIsEven).Results()
+		dst, _ := From(bUsers).Where(func(v interface{}) bool {
+			computerTask()
+			return v.(int)%2 == 0
+		}).Results()
 		if len(dst) != countForB/2 {
 			b.Fail()
 			b.Error("size is ", len(dst))
@@ -120,7 +122,7 @@ func BenchmarkGoLinq_Select(b *testing.B) {
 //test distinct-----------------------------------------------------------------------------
 func BenchmarkGoPLinq_Distinct(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		dst, _ := From(bRptUsers).DistinctBy(distinctUser).Results()
+		dst, _ := From(bRptUsers).DistinctBy(getUserId).Results()
 		if len(dst) != countForB {
 			b.Fail()
 			//b.Log("arr=", arr)

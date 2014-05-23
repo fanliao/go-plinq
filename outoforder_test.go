@@ -7,6 +7,11 @@ import (
 	"testing"
 )
 
+var (
+	sequentialChunkSize     = 100
+	parallelChunkSize   int = count / 7
+)
+
 //获取0到4所有的组合, 用于测试随机顺序下Skip/Take/ElementAt/FirstBy等操作是否正确
 //[0,1,2,3,4], [0,1,2,4,3], [0,1,3,2,4]......
 func getIndexses(countOfSkipTestData int) (indexses [][]int) {
