@@ -464,6 +464,13 @@ var (
 		}
 	}
 
+	expectSliceSizeEquals = func(size int) func(rs []interface{}, err error, n int, chanAsOut bool) {
+		return func(rs []interface{}, err error, n int, chanAsOut bool) {
+			c.So(err, c.ShouldBeNil)
+			c.So(len(rs), c.ShouldEqual, size)
+		}
+	}
+
 	expectSliceSizeEqualsN = func(rs []interface{}, err error, n int, chanAsOut bool) {
 		c.So(err, c.ShouldBeNil)
 		c.So(len(rs), c.ShouldEqual, n)
@@ -970,6 +977,10 @@ func TestGroupJoin(t *testing.T) {
 }
 
 func TestUnion(t *testing.T) {
+	c.Convey("When passed nil source, error be returned", t, func() {
+		c.So(func() { From(tUsers).Union(nil) }, c.ShouldPanicWith, ErrUnionNilSource)
+	})
+
 	testLazyOpr("If error appears in previous operation", t,
 		taUsers,
 		NewQuery().Select(projectWithPanic).Union([]interface{}{}),
@@ -979,209 +990,185 @@ func TestUnion(t *testing.T) {
 	testLazyOpr("An empty slice as first source", t,
 		taEmptys,
 		NewQuery().Union(tUsers2),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
-			c.So(len(rs), c.ShouldEqual, len(tUsers2))
-		})
+		expectSliceSizeEquals(len(tUsers2)),
+	)
 
 	testLazyOpr("Union an empty slice as secondary source", t,
 		taUsers,
 		NewQuery().Union([]interface{}{}),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
-			c.So(len(rs), c.ShouldEqual, n)
-		})
+		expectSliceSizeEqualsN,
+	)
 
 	testLazyOpr("Union an interface{} slice as secondary source", t,
 		taUsers,
 		NewQuery().Union(tUsers2),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
+		expectSliceSize(func(n int) int {
 			if n == count {
-				c.So(len(rs), c.ShouldEqual, n+n/2)
+				return n + n/2
 			} else {
-				c.So(len(rs), c.ShouldEqual, n)
+				return n
 			}
-		})
+		}),
+	)
 
 	testLazyOpr("Union an interface{} channel as secondary source", t,
 		taUsers,
 		func() *Queryable {
 			return NewQuery().Union(getChan(tUsers2))
 		},
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
+		expectSliceSize(func(n int) int {
 			if n == count {
-				c.So(len(rs), c.ShouldEqual, n+n/2)
+				return n + n/2
 			} else {
-				c.So(len(rs), c.ShouldEqual, n)
+				return n
 			}
-		})
-
-	c.Convey("When passed nil source, error be returned", t, func() {
-		c.So(func() { From(tUsers).Union(nil) }, c.ShouldPanicWith, ErrUnionNilSource)
-	})
+		}),
+	)
 
 }
 
 func TestConcat(t *testing.T) {
+	c.Convey("When passed nil source, error be returned", t, func() {
+		c.So(func() { From(tUsers).Concat(nil) }, c.ShouldPanicWith, ErrConcatNilSource)
+	})
+
 	testLazyOpr("If error appears in previous operation", t,
 		taUsers,
 		NewQuery().Select(projectWithPanic).Concat([]interface{}{}),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldNotBeNil)
-		})
+		expectErr,
+	)
 
 	testLazyOpr("Concat an empty slice as first source", t,
 		taEmptys,
 		NewQuery().Concat(tUsers2),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
-			c.So(len(rs), c.ShouldEqual, count)
-		})
+		expectSliceSizeEquals(count),
+	)
 
 	testLazyOpr("Concat an empty slice as secondary source", t,
 		taUsers,
 		NewQuery().Concat([]interface{}{}),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
-			c.So(len(rs), c.ShouldEqual, n)
-		})
+		expectSliceSizeEqualsN,
+	)
 
 	testLazyOpr("Concat an interface{} slice as secondary source", t,
 		taUsers,
 		NewQuery().Concat(tUsers2),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
-			c.So(len(rs), c.ShouldEqual, n+count)
-		})
+		expectSliceSize(func(n int) int {
+			return n + count
+		}),
+	)
 
 	testLazyOpr("Concat an interface{} slice as secondary source", t,
 		taUsers,
 		func() *Queryable {
 			return NewQuery().Concat(getChan(tUsers2))
 		},
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
-			c.So(len(rs), c.ShouldEqual, n+count)
-		})
-
-	c.Convey("When passed nil source, error be returned", t, func() {
-		c.So(func() { From(tUsers).Concat(nil) }, c.ShouldPanicWith, ErrConcatNilSource)
-	})
+		expectSliceSize(func(n int) int {
+			return n + count
+		}),
+	)
 
 }
 
 func TestInterest(t *testing.T) {
+	c.Convey("When passed nil source, error be returned", t, func() {
+		c.So(func() { From(tUsers).Intersect(nil) }, c.ShouldPanicWith, ErrInterestNilSource)
+	})
+
 	testLazyOpr("If error appears in previous operation", t,
 		taUsers,
 		NewQuery().Select(projectWithPanic).Intersect([]interface{}{}),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldNotBeNil)
-		})
+		expectErr,
+	)
 
 	testLazyOpr("Interest an empty slice as first source", t,
 		taEmptys,
 		NewQuery().Intersect(tUsers2),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
-			c.So(len(rs), c.ShouldEqual, 0)
-		})
+		expectEmptySlice,
+	)
 
 	testLazyOpr("Interest an empty slice as secondary source", t,
 		taUsers,
 		NewQuery().Intersect([]interface{}{}),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
-			c.So(len(rs), c.ShouldEqual, 0)
-		})
+		expectEmptySlice,
+	)
 
 	testLazyOpr("Interest an interface{} slice as secondary source", t,
 		taUsers,
 		NewQuery().Intersect(tUsers2),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
+		expectSliceSize(func(n int) int {
 			if n == count {
-				c.So(len(rs), c.ShouldEqual, n/2)
+				return n / 2
 			} else {
-				c.So(len(rs), c.ShouldEqual, count)
+				return count
 			}
-		})
+		}),
+	)
 
 	testLazyOpr("Interest an interface{} channel as secondary source", t,
 		taUsers,
 		func() *Queryable {
 			return NewQuery().Intersect(getChan(tUsers2))
 		},
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
+		expectSliceSize(func(n int) int {
 			if n == count {
-				c.So(len(rs), c.ShouldEqual, n/2)
+				return n / 2
 			} else {
-				c.So(len(rs), c.ShouldEqual, count)
+				return count
 			}
-		})
-
-	c.Convey("When passed nil source, error be returned", t, func() {
-		c.So(func() { From(tUsers).Intersect(nil) }, c.ShouldPanicWith, ErrInterestNilSource)
-	})
+		}),
+	)
 
 }
 
 func TestExcept(t *testing.T) {
+	c.Convey("When passed nil source, error be returned", t, func() {
+		c.So(func() { From(tUsers).Except(nil) }, c.ShouldPanicWith, ErrExceptNilSource)
+	})
+
 	testLazyOpr("If error appears in previous operation", t,
 		taUsers,
 		NewQuery().Select(projectWithPanic).Except([]interface{}{}),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldNotBeNil)
-		})
+		expectErr,
+	)
 
 	testLazyOpr("Except an empty slice as first source", t,
 		taEmptys,
 		NewQuery().Except(tUsers2),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
-			c.So(len(rs), c.ShouldEqual, 0)
-		})
+		expectEmptySlice,
+	)
 
 	testLazyOpr("Except an empty slice as secondary source", t,
 		taUsers,
 		NewQuery().Except([]interface{}{}),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
-			c.So(len(rs), c.ShouldEqual, n)
-		})
+		expectSliceSizeEqualsN,
+	)
 
 	testLazyOpr("Except an interface{} slice as secondary source", t,
 		taUsers,
 		NewQuery().Except(tUsers2),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
+		expectSliceSize(func(n int) int {
 			if n == count {
-				c.So(len(rs), c.ShouldEqual, n/2)
+				return n / 2
 			} else {
-				c.So(len(rs), c.ShouldEqual, n-count)
+				return n - count
 			}
-		})
+		}),
+	)
 
 	testLazyOpr("Except an interface{} channel as secondary source", t,
 		taUsers,
 		func() *Queryable {
 			return NewQuery().Except(getChan(tUsers2))
 		},
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
+		expectSliceSize(func(n int) int {
 			if n == count {
-				c.So(len(rs), c.ShouldEqual, n/2)
+				return n / 2
 			} else {
-				c.So(len(rs), c.ShouldEqual, n-count)
+				return n - count
 			}
-		})
-
-	c.Convey("When passed nil source, error be returned", t, func() {
-		c.So(func() { From(tUsers).Except(nil) }, c.ShouldPanicWith, ErrExceptNilSource)
-	})
-
+		}),
+	)
 }
 
 func TestOrderBy(t *testing.T) {
@@ -1243,9 +1230,8 @@ func TestReverse(t *testing.T) {
 	testLazyOpr("An error appears in previous operation", t,
 		taUsers,
 		NewQuery().Select(projectWithPanic).Reverse(),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldNotBeNil)
-		})
+		expectErr,
+	)
 
 	testLazyOpr("Reverse an interface{} slice", t,
 		taUsers,
@@ -1323,74 +1309,65 @@ func TestAggregate(t *testing.T) {
 }
 
 func TestSumCountAvgMaxMin(t *testing.T) {
+	expectEqual := func(expect int) func(r interface{}, err error) {
+		return func(r interface{}, err error) {
+			c.So(err, c.ShouldBeNil)
+			c.So(r, c.ShouldEqual, expect)
+		}
+	}
+
 	testImmediateOpr("Max an int slice", t,
 		taInts, NewQuery(),
 		func(q *Queryable, n int) {
-			r, err := q.Max()
-			c.So(err, c.ShouldBeNil)
-			c.So(r, c.ShouldEqual, n-1)
+			expectEqual(n - 1)(q.Max())
 		})
 
 	testImmediateOpr("MaxBy an interface slice", t,
 		taUsers, NewQuery(),
 		func(q *Queryable, n int) {
-			r, err := q.Max(func(v interface{}) interface{} {
+			expectEqual(n - 1)(q.Max(func(v interface{}) interface{} {
 				return v.(user).id
-			})
-			c.So(err, c.ShouldBeNil)
-			c.So(r, c.ShouldEqual, n-1)
+			}))
 		})
 
 	testImmediateOpr("Min an interface slice", t,
 		taInts, NewQuery(),
 		func(q *Queryable, n int) {
-			r, err := q.Min()
-			c.So(err, c.ShouldBeNil)
-			c.So(r, c.ShouldEqual, 0)
+			expectEqual(0)(q.Min())
 		})
 
 	testImmediateOpr("MinBy an interface slice", t,
 		taUsers, NewQuery(),
 		func(q *Queryable, n int) {
-			r, err := q.Min(func(v interface{}) interface{} {
+			expectEqual(0)(q.Min(func(v interface{}) interface{} {
 				return v.(user).id
-			})
-			c.So(err, c.ShouldBeNil)
-			c.So(r, c.ShouldEqual, 0)
+			}))
 		})
 
 	testImmediateOpr("Sum an interface slice", t,
 		taInts, NewQuery(),
 		func(q *Queryable, n int) {
-			r, err := q.Sum()
-			c.So(err, c.ShouldBeNil)
-			c.So(r, c.ShouldEqual, (n-1)*(n/2))
+			expectEqual((n - 1) * (n / 2))(q.Sum())
 		})
 
 	testImmediateOpr("SumBy an interface slice", t,
 		taUsers, NewQuery(),
 		func(q *Queryable, n int) {
-			r, err := q.Sum(func(v interface{}) interface{} {
+			expectEqual((n - 1) * (n / 2))(q.Sum(func(v interface{}) interface{} {
 				return v.(user).id
-			})
-			c.So(err, c.ShouldBeNil)
-			c.So(r, c.ShouldEqual, (n-1)*(n/2))
+			}))
 		})
 
 	testImmediateOpr("Count an interface slice", t,
 		taInts, NewQuery(),
 		func(q *Queryable, n int) {
-			r, err := q.Count()
-			c.So(err, c.ShouldBeNil)
-			c.So(r, c.ShouldEqual, n)
+			expectEqual(n)(q.Count())
 		})
 
 	testImmediateOpr("CountBy an interface slice", t,
 		taUsers, NewQuery(),
 		func(q *Queryable, n int) {
-			r, err := q.Count(filterFunc)
-			c.So(err, c.ShouldBeNil)
-			c.So(r, c.ShouldEqual, (n / 2))
+			expectEqual(n / 2)(q.Count(filterFunc))
 		})
 
 	testImmediateOpr("Average an interface slice", t,
@@ -1409,86 +1386,84 @@ func TestAnyAndAll(t *testing.T) {
 		ints[i] = i
 	}
 
+	expectErr := func(found bool, err error) {
+		c.So(err, c.ShouldNotBeNil)
+		c.So(found, c.ShouldEqual, false)
+	}
+	expectFound := func(found bool, err error) {
+		c.So(err, c.ShouldBeNil)
+		c.So(found, c.ShouldEqual, true)
+	}
+
+	expectNotFound := func(found bool, err error) {
+		c.So(err, c.ShouldBeNil)
+		c.So(found, c.ShouldEqual, false)
+	}
+
 	testImmediateOpr("Predicate with panic an error", t,
 		taInts, NewQuery(),
 		func(q *Queryable, n int) {
-			_, err := q.Any(func(v interface{}) bool {
+			expectErr(q.Any(func(v interface{}) bool {
 				panic(errors.New("!error"))
-			})
-			c.So(err, c.ShouldNotBeNil)
+			}))
 		})
 
 	testImmediateOpr("If an error appears in previous operation", t,
 		taInts, NewQuery().Select(projectWithPanic),
 		func(q *Queryable, n int) {
-			_, err := q.Any(func(v interface{}) bool {
+			expectErr(q.Any(func(v interface{}) bool {
 				return v.(int) == -1
-			})
-			c.So(err, c.ShouldNotBeNil)
+			}))
 		})
 
-	testImmediateOpr("Any and All nothing", t,
+	testImmediateOpr("Any nothing", t,
 		taInts, NewQuery(),
 		func(q *Queryable, n int) {
-			found, err := q.Any(func(v interface{}) bool {
+			expectNotFound(q.Any(func(v interface{}) bool {
 				return v.(int) == -1
-			})
-			c.So(err, c.ShouldBeNil)
-			c.So(found, c.ShouldEqual, false)
+			}))
 
 		})
 
 	testImmediateOpr("All nothing", t,
 		taInts, NewQuery(),
 		func(q *Queryable, n int) {
-			found, err := q.All(func(v interface{}) bool {
+			expectNotFound(q.All(func(v interface{}) bool {
 				r := v.(int) == -1
-				//fmt.Println("r=", r, "; ")
 				return r
-			})
-			fmt.Println()
-			c.So(err, c.ShouldBeNil)
-			c.So(found, c.ShouldEqual, false)
+			}))
 		})
 
 	testImmediateOpr("Find any int == 12", t,
 		taInts, NewQuery(),
 		func(q *Queryable, n int) {
-			found, err := q.Any(func(v interface{}) bool {
+			expectFound(q.Any(func(v interface{}) bool {
 				return v.(int) == 12
-			})
-			c.So(err, c.ShouldBeNil)
-			c.So(found, c.ShouldEqual, true)
+			}))
 		})
 
 	testImmediateOpr("Find any int >= 100000", t,
 		taInts, NewQuery(),
 		func(q *Queryable, n int) {
-			found, err := q.Any(func(v interface{}) bool {
+			expectNotFound(q.Any(func(v interface{}) bool {
 				return v.(int) >= 100000
-			})
-			c.So(err, c.ShouldBeNil)
-			c.So(found, c.ShouldEqual, false)
+			}))
 		})
 
 	testImmediateOpr("Find all int >= 0", t,
 		taInts, NewQuery(),
 		func(q *Queryable, n int) {
-			found, err := q.All(func(v interface{}) bool {
+			expectFound(q.All(func(v interface{}) bool {
 				return v.(int) >= 0
-			})
-			c.So(err, c.ShouldBeNil)
-			c.So(found, c.ShouldEqual, true)
+			}))
 		})
 
 	testImmediateOpr("Find all int >= 2", t,
 		taInts, NewQuery(),
 		func(q *Queryable, n int) {
-			found, err := q.All(func(v interface{}) bool {
+			expectNotFound(q.All(func(v interface{}) bool {
 				return v.(int) >= 2
-			})
-			c.So(err, c.ShouldBeNil)
-			c.So(found, c.ShouldEqual, false)
+			}))
 		})
 
 }
@@ -1505,124 +1480,102 @@ func TestSkipAndTake(t *testing.T) {
 	testLazyOpr("If skip nothing", t,
 		taInts,
 		NewQuery().Skip(-1),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
-			c.So(len(rs), c.ShouldEqual, (n))
-		})
+		expectSliceSizeEqualsN,
+	)
 
 	testLazyOpr("If skip all", t,
 		taInts,
 		NewQuery().Skip(10000),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
-			c.So(len(rs), c.ShouldEqual, 0)
-		})
+		expectEmptySlice,
+	)
 
 	testLazyOpr("If skip 12", t,
 		taInts,
 		NewQuery().Skip(12),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
-			c.So(len(rs), c.ShouldEqual, (n - 12))
-		})
+		expectSliceSize(func(n int) int {
+			return n - 12
+		}),
+	)
 
 	testLazyOpr("SkipWhile using a predicate func with panic error", t,
 		taInts,
 		NewQuery().SkipWhile(filterWithPanic),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldNotBeNil)
-		})
+		expectErr,
+	)
 
 	testLazyOpr("If skip while item be less than zero", t,
 		taInts,
 		NewQuery().SkipWhile(func(v interface{}) bool {
 			return v.(int) < -1
 		}),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
-			c.So(len(rs), c.ShouldEqual, n)
-		})
+		expectSliceSizeEqualsN,
+	)
 
 	testLazyOpr("If skip while item be less than 10000", t,
 		taInts,
 		NewQuery().SkipWhile(func(v interface{}) bool {
 			return v.(int) < 10000
 		}),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
-			c.So(len(rs), c.ShouldEqual, 0)
-		})
+		expectEmptySlice,
+	)
 
 	testLazyOpr("If skip while item mod 50 be less than 12", t,
 		taInts,
 		NewQuery().SkipWhile(func(v interface{}) bool {
 			return v.(int)%50 < 12
 		}),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
-			c.So(len(rs), c.ShouldEqual, (n - 12))
-		})
+		expectSliceSize(func(n int) int {
+			return n - 12
+		}),
+	)
 
 	testLazyOpr("If take nothing", t,
 		taInts,
 		NewQuery().Take(-1),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
-			c.So(len(rs), c.ShouldEqual, 0)
-		})
+		expectEmptySlice,
+	)
 
 	testLazyOpr("If take all", t,
 		taInts,
 		NewQuery().Take(10000),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
-			c.So(len(rs), c.ShouldEqual, n)
-		})
+		expectSliceSizeEqualsN,
+	)
 
 	testLazyOpr("If take 12", t,
 		taInts,
 		NewQuery().Take(12),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
-			c.So(len(rs), c.ShouldEqual, 12)
-		})
+		expectSliceSizeEquals(12),
+	)
 
 	testLazyOpr("TakeWhile using a predicate func with panic error", t,
 		taInts,
 		NewQuery().TakeWhile(filterWithPanic),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldNotBeNil)
-		})
+		expectErr,
+	)
 
 	testLazyOpr("If take while item be less than zero", t,
 		taInts,
 		NewQuery().TakeWhile(func(v interface{}) bool {
 			return v.(int) < -1
 		}),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
-			c.So(len(rs), c.ShouldEqual, 0)
-		})
+		expectEmptySlice,
+	)
 
 	testLazyOpr("If take while item be less than 10000", t,
 		taInts,
 		NewQuery().TakeWhile(func(v interface{}) bool {
 			return v.(int) < 10000
 		}),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
-			c.So(len(rs), c.ShouldEqual, n)
-		})
+		expectSliceSizeEqualsN,
+	)
 
 	testLazyOpr("If take while item mod 50 be less than 12", t,
 		taInts,
 		NewQuery().TakeWhile(func(v interface{}) bool {
 			return v.(int)%50 < 12
 		}),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
-			c.So(len(rs), c.ShouldEqual, 12)
-		})
+		expectSliceSizeEquals(12),
+	)
 }
 
 func TestElementAt(t *testing.T) {
