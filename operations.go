@@ -1519,7 +1519,7 @@ func parallelMatchListByDirection(src DataSource, getAction func(*Chunk, promise
 	}
 
 	fs := make([]*promise.Future, count)
-	for i, fun := range funs {
+	for i, fun := range funs[0:count] {
 		fs[i] = promise.Start(fun)
 	}
 

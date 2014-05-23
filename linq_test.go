@@ -674,14 +674,22 @@ func TestDistinct(t *testing.T) {
 	testLazyOpr("DistinctBy an interface{} slice", t,
 		taRptUsers,
 		NewQuery().DistinctBy(distinctUser),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
+		expectSliceSize(func(n int) int {
 			if n == rptCount {
-				c.So(len(rs), c.ShouldEqual, count)
+				return count
 			} else {
-				c.So(len(rs), c.ShouldEqual, countP)
+				return countP
 			}
-			c.So(err, c.ShouldBeNil)
-		})
+		}),
+	)
+	//func(rs []interface{}, err error, n int, chanAsOut bool) {
+	//	if n == rptCount {
+	//		c.So(len(rs), c.ShouldEqual, count)
+	//	} else {
+	//		c.So(len(rs), c.ShouldEqual, countP)
+	//	}
+	//	c.So(err, c.ShouldBeNil)
+	//})
 
 }
 
@@ -904,19 +912,16 @@ func TestGroupJoin(t *testing.T) {
 	})
 
 	testLazyOpr("GroupJoin an empty slice as outer source", t,
-		taEmptys, NewQuery().GroupJoin(tUsers2, userSelector, roleSelector, groupResultSelector),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(len(rs), c.ShouldEqual, 0)
-			c.So(err, c.ShouldBeNil)
-		})
+		taEmptys,
+		NewQuery().GroupJoin(tUsers2, userSelector, roleSelector, groupResultSelector),
+		expectEmptySlice,
+	)
 
 	testLazyOpr("GroupJoin an empty slice as inner source", t,
 		taUsers,
 		NewQuery().GroupJoin([]interface{}{}, userSelector, roleSelector, groupResultSelector),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(len(rs), c.ShouldEqual, 0)
-			c.So(err, c.ShouldBeNil)
-		})
+		expectEmptySlice,
+	)
 
 	testLazyOpr("GroupJoin an interface{} slice as inner source", t,
 		taUsers,
@@ -947,26 +952,20 @@ func TestGroupJoin(t *testing.T) {
 	testLazyOpr("LeftGroupJoin an empty slice as outer source", t,
 		taEmptys,
 		NewQuery().LeftGroupJoin(tUsers2, userSelector, roleSelector, groupResultSelector),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
-			c.So(len(rs), c.ShouldEqual, 0)
-		})
+		expectEmptySlice,
+	)
 
 	testLazyOpr("LeftGroupJoin an empty slice as inner source", t,
 		taUsers,
 		NewQuery().LeftGroupJoin([]interface{}{}, userSelector, roleSelector, groupResultSelector),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
-			c.So(len(rs), c.ShouldEqual, n)
-		})
+		expectSliceSizeEqualsN,
+	)
 
 	testLazyOpr("LeftGroupJoin an interface{} slice as inner source", t,
 		taUsers,
 		NewQuery().LeftGroupJoin([]interface{}{}, userSelector, roleSelector, groupResultSelector),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
-			c.So(len(rs), c.ShouldEqual, n)
-		})
+		expectSliceSizeEqualsN,
+	)
 
 }
 
@@ -974,9 +973,8 @@ func TestUnion(t *testing.T) {
 	testLazyOpr("If error appears in previous operation", t,
 		taUsers,
 		NewQuery().Select(projectWithPanic).Union([]interface{}{}),
-		func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldNotBeNil)
-		})
+		expectErr,
+	)
 
 	testLazyOpr("An empty slice as first source", t,
 		taEmptys,
