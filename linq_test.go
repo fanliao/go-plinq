@@ -132,8 +132,8 @@ var (
 		}
 	}
 
-	//将在最后一个数据抛出错误的过滤函数，用于测试错误处理
-	filterWithPanic = func(v interface{}) bool {
+	//panic when is last item
+	panicInLast = func(v interface{}) {
 		var s []interface{}
 		switch val := v.(type) {
 		case int:
@@ -145,6 +145,11 @@ var (
 				_ = s[2]
 			}
 		}
+	}
+
+	//将在最后一个数据抛出错误的过滤函数，用于测试错误处理
+	filterWithPanic = func(v interface{}) bool {
+		panicInLast()
 		return true
 	}
 
@@ -162,25 +167,13 @@ var (
 
 	//测试用的过滤函数，加入随机运算来打乱返回的顺序
 	isEvenWithOutOfOrder = func(v interface{}) bool {
-		i := v.(int)
 		outOfOrder()
-		return i%2 == 0
+		return v.(int)%2 == 0
 	}
 
 	//将抛出错误的转换函数，用于测试错误处理
 	projectWithPanic = func(v interface{}) interface{} {
-		switch val := v.(type) {
-		case int:
-			if val == count-1 {
-				var s []interface{}
-				_ = s[2]
-			}
-		case user:
-			if val.id == count-1 {
-				var s []interface{}
-				_ = s[2]
-			}
-		}
+		panicInLast()
 		return v
 	}
 
@@ -197,8 +190,7 @@ var (
 	}
 
 	distinctUser = func(v interface{}) interface{} {
-		u := v.(user)
-		return u.id
+		return v.(user).id
 	}
 
 	orderUserById = func(v1 interface{}, v2 interface{}) int {
@@ -221,8 +213,7 @@ var (
 	}
 
 	getRoleUid = func(v interface{}) interface{} {
-		r := v.(role)
-		return r.uid
+		return v.(role).uid
 	}
 
 	getUserIdAndRole = func(u interface{}, v interface{}) interface{} {
