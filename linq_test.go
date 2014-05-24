@@ -440,21 +440,28 @@ func TestGroupBy(t *testing.T) {
 		expectEmptySlice,
 	)
 
-	testLazyOpr("Group an []int", t,
+	ceil := func(a, b int) int {
+		if a%b != 0 {
+			return a/b + 1
+		} else {
+			return a / b
+		}
+	}
+	testLazyOpr("Group []int", t,
 		taInts,
 		NewQuery().GroupBy(func(v interface{}) interface{} {
 			return v.(int) / 10
 		}),
 		expectSliceSize(func(n int) int {
-			return ceilChunkSize(n, 10)
+			return ceil(n, 10)
 		}),
 	)
 
-	testLazyOpr("group an []interface{}", t,
+	testLazyOpr("Group []interface{}", t,
 		taUsers,
 		NewQuery().GroupBy(groupUser),
 		expectSliceSize(func(n int) int {
-			return ceilChunkSize(n, 10)
+			return ceil(n, 10)
 		}),
 	)
 }
@@ -1010,13 +1017,13 @@ func TestSumCountAvgMaxMin(t *testing.T) {
 		}
 	}
 
-	testImmediateOpr("Max an int slice", t,
+	testImmediateOpr("Get maximum int value", t,
 		taInts, NewQuery(),
 		func(q *Queryable, n int) {
 			expectEqual(n - 1)(q.Max())
 		})
 
-	testImmediateOpr("MaxBy an interface slice", t,
+	testImmediateOpr("Get maximum user id", t,
 		taUsers, NewQuery(),
 		func(q *Queryable, n int) {
 			expectEqual(n - 1)(q.Max(func(v interface{}) interface{} {
@@ -1024,13 +1031,13 @@ func TestSumCountAvgMaxMin(t *testing.T) {
 			}))
 		})
 
-	testImmediateOpr("Min an interface slice", t,
+	testImmediateOpr("Get minimal int value", t,
 		taInts, NewQuery(),
 		func(q *Queryable, n int) {
 			expectEqual(0)(q.Min())
 		})
 
-	testImmediateOpr("MinBy an interface slice", t,
+	testImmediateOpr("Get minimal user id", t,
 		taUsers, NewQuery(),
 		func(q *Queryable, n int) {
 			expectEqual(0)(q.Min(func(v interface{}) interface{} {
@@ -1038,13 +1045,13 @@ func TestSumCountAvgMaxMin(t *testing.T) {
 			}))
 		})
 
-	testImmediateOpr("Sum an interface slice", t,
+	testImmediateOpr("Get summary of all integer", t,
 		taInts, NewQuery(),
 		func(q *Queryable, n int) {
 			expectEqual((n - 1) * (n / 2))(q.Sum())
 		})
 
-	testImmediateOpr("SumBy an interface slice", t,
+	testImmediateOpr("Get summary of all user id", t,
 		taUsers, NewQuery(),
 		func(q *Queryable, n int) {
 			expectEqual((n - 1) * (n / 2))(q.Sum(func(v interface{}) interface{} {
@@ -1052,19 +1059,19 @@ func TestSumCountAvgMaxMin(t *testing.T) {
 			}))
 		})
 
-	testImmediateOpr("Count an interface slice", t,
+	testImmediateOpr("Get count of []int", t,
 		taInts, NewQuery(),
 		func(q *Queryable, n int) {
 			expectEqual(n)(q.Count())
 		})
 
-	testImmediateOpr("CountBy an interface slice", t,
+	testImmediateOpr("Get count of user which id is even", t,
 		taUsers, NewQuery(),
 		func(q *Queryable, n int) {
 			expectEqual(n / 2)(q.Count(idIsEven))
 		})
 
-	testImmediateOpr("Average an interface slice", t,
+	testImmediateOpr("Get average of []int", t,
 		taInts, NewQuery(),
 		func(q *Queryable, n int) {
 			r, err := q.Average()
@@ -1094,7 +1101,7 @@ func TestAnyAndAll(t *testing.T) {
 		c.So(found, c.ShouldEqual, false)
 	}
 
-	testImmediateOpr("Predicate with panic an error", t,
+	testImmediateOpr("When error returned in any function", t,
 		taInts, NewQuery(),
 		func(q *Queryable, n int) {
 			expectErr(q.Any(func(v interface{}) bool {
