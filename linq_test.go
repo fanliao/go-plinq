@@ -357,7 +357,7 @@ func TestSelectMany(t *testing.T) {
 		return ints
 	}
 
-	testLazyOpr("If the error appears in select function", t,
+	testLazyOpr("When error returned in select function", t,
 		taInts,
 		NewQuery().SelectMany(selectManyWithPanic),
 		expectErr,
@@ -536,7 +536,7 @@ func TestJoin(t *testing.T) {
 		expectEmptySlice,
 	)
 
-	testLazyOpr("Join an []interface{} slice as inner source", t,
+	testLazyOpr("Join an [][]interface{} as inner source", t,
 		taUsers,
 		NewQuery().Join(tRoles, getUserId, getRoleUid, getUserIdAndRole),
 		expectOrdered,
@@ -611,7 +611,7 @@ func TestGroupJoin(t *testing.T) {
 		_, err := From(tUsers).GroupJoin(tRoles, SelectorPanic, getRoleUid, groupResultSelector).Results()
 		c.So(err, c.ShouldNotBeNil)
 
-		rs, err := From(tUsers).GroupJoin(tRoles, getUserId, SelectorPanic, groupResultSelector).Results()
+		_, err = From(tUsers).GroupJoin(tRoles, getUserId, SelectorPanic, groupResultSelector).Results()
 		c.So(err, c.ShouldNotBeNil)
 
 		_, err = From(tUsers).GroupJoin(tRoles, getUserId, getRoleUid, resultSelectorPanic).Results()
@@ -687,19 +687,19 @@ func TestUnion(t *testing.T) {
 		expectErr,
 	)
 
-	testLazyOpr("An empty slice as first source", t,
+	testLazyOpr("Empty union []interface{}", t,
 		taEmptys,
 		NewQuery().Union(tUsers2),
 		expectSliceSizeEquals(len(tUsers2)),
 	)
 
-	testLazyOpr("Union an empty slice as secondary source", t,
+	testLazyOpr("Slice or channel union empty", t,
 		taUsers,
 		NewQuery().Union([]interface{}{}),
 		expectSliceSizeEqualsN,
 	)
 
-	testLazyOpr("Union an []interface{} as secondary source", t,
+	testLazyOpr("slice or channel union []interface{}", t,
 		taUsers,
 		NewQuery().Union(tUsers2),
 		expectSliceSize(func(n int) int {
@@ -711,7 +711,7 @@ func TestUnion(t *testing.T) {
 		}),
 	)
 
-	testLazyOpr("Union a channel interface{} as secondary source", t,
+	testLazyOpr("slice or channel union chan interface{}", t,
 		taUsers,
 		func() *Queryable {
 			return NewQuery().Union(getChan(tUsers2))
@@ -738,19 +738,19 @@ func TestConcat(t *testing.T) {
 		expectErr,
 	)
 
-	testLazyOpr("Concat an empty slice as first source", t,
+	testLazyOpr("Empty concat []interface{}", t,
 		taEmptys,
 		NewQuery().Concat(tUsers2),
 		expectSliceSizeEquals(count),
 	)
 
-	testLazyOpr("Concat an empty slice as secondary source", t,
+	testLazyOpr("slice or channel concat empty", t,
 		taUsers,
 		NewQuery().Concat([]interface{}{}),
 		expectSliceSizeEqualsN,
 	)
 
-	testLazyOpr("Concat an interface{} slice as secondary source", t,
+	testLazyOpr("slice or channel concat []interface{}", t,
 		taUsers,
 		NewQuery().Concat(tUsers2),
 		expectSliceSize(func(n int) int {
@@ -758,7 +758,7 @@ func TestConcat(t *testing.T) {
 		}),
 	)
 
-	testLazyOpr("Concat an interface{} slice as secondary source", t,
+	testLazyOpr("slice or channel concat chan interface{}", t,
 		taUsers,
 		func() *Queryable {
 			return NewQuery().Concat(getChan(tUsers2))
@@ -771,29 +771,29 @@ func TestConcat(t *testing.T) {
 }
 
 func TestInterest(t *testing.T) {
-	c.Convey("When passed nil source, error be returned", t, func() {
+	c.Convey("When passed nil source, error returned", t, func() {
 		c.So(func() { From(tUsers).Intersect(nil) }, c.ShouldPanicWith, ErrInterestNilSource)
 	})
 
-	testLazyOpr("If error appears in previous operation", t,
+	testLazyOpr("When error returned in previous operation", t,
 		taUsers,
 		NewQuery().Select(projectWithPanic).Intersect([]interface{}{}),
 		expectErr,
 	)
 
-	testLazyOpr("Interest an empty slice as first source", t,
+	testLazyOpr("Empty interest []interface{}", t,
 		taEmptys,
 		NewQuery().Intersect(tUsers2),
 		expectEmptySlice,
 	)
 
-	testLazyOpr("Interest an empty slice as secondary source", t,
+	testLazyOpr("slice or channel interest []interface{}", t,
 		taUsers,
 		NewQuery().Intersect([]interface{}{}),
 		expectEmptySlice,
 	)
 
-	testLazyOpr("Interest an interface{} slice as secondary source", t,
+	testLazyOpr("slice or channel interest []interface{}", t,
 		taUsers,
 		NewQuery().Intersect(tUsers2),
 		expectSliceSize(func(n int) int {
@@ -805,7 +805,7 @@ func TestInterest(t *testing.T) {
 		}),
 	)
 
-	testLazyOpr("Interest an interface{} channel as secondary source", t,
+	testLazyOpr("slice or channel interest chan interface{}", t,
 		taUsers,
 		func() *Queryable {
 			return NewQuery().Intersect(getChan(tUsers2))
@@ -822,29 +822,29 @@ func TestInterest(t *testing.T) {
 }
 
 func TestExcept(t *testing.T) {
-	c.Convey("When passed nil source, error be returned", t, func() {
+	c.Convey("When passed nil source, error returned", t, func() {
 		c.So(func() { From(tUsers).Except(nil) }, c.ShouldPanicWith, ErrExceptNilSource)
 	})
 
-	testLazyOpr("If error appears in previous operation", t,
+	testLazyOpr("When error returned in previous operation", t,
 		taUsers,
 		NewQuery().Select(projectWithPanic).Except([]interface{}{}),
 		expectErr,
 	)
 
-	testLazyOpr("Except an empty slice as first source", t,
+	testLazyOpr("Empty except []interface{}", t,
 		taEmptys,
 		NewQuery().Except(tUsers2),
 		expectEmptySlice,
 	)
 
-	testLazyOpr("Except an empty slice as secondary source", t,
+	testLazyOpr("slice or channel except empty", t,
 		taUsers,
 		NewQuery().Except([]interface{}{}),
 		expectSliceSizeEqualsN,
 	)
 
-	testLazyOpr("Except an interface{} slice as secondary source", t,
+	testLazyOpr("slice or channel except []interface{}", t,
 		taUsers,
 		NewQuery().Except(tUsers2),
 		expectSliceSize(func(n int) int {
@@ -856,7 +856,7 @@ func TestExcept(t *testing.T) {
 		}),
 	)
 
-	testLazyOpr("Except an interface{} channel as secondary source", t,
+	testLazyOpr("slice or channel except chan interface{}", t,
 		taUsers,
 		func() *Queryable {
 			return NewQuery().Except(getChan(tUsers2))
@@ -877,30 +877,29 @@ func TestOrderBy(t *testing.T) {
 	}
 
 	c.Convey("Test Order", t, func() {
-		c.Convey("When passed nil function, should use the default compare function", func() {
+		c.Convey("When passed nil function, will use the default compare function", func() {
 			rs, err := From([]int{4, 2, 3, 1}).OrderBy(nil).Results()
 			c.So(rs, shouldSlicesResemble, []int{1, 2, 3, 4})
 			c.So(err, c.ShouldBeNil)
 		})
 
-		c.Convey("An error should be returned if the error appears in OrderBy function", func() {
+		c.Convey("When error returned in OrderBy function", func() {
 			_, err := From(tRptUsers).OrderBy(orderWithPanic).Results()
 			c.So(err, c.ShouldNotBeNil)
 		})
 
-		c.Convey("OrderBy an empty slice", func() {
+		c.Convey("When error returned in previous operation", func() {
+			_, err := From(getChan(tRptUsers)).Select(projectWithPanic).OrderBy(orderUserById).Results()
+			c.So(err, c.ShouldNotBeNil)
+		})
+
+		c.Convey("OrderBy empty slice", func() {
 			rs, err := From([]int{}).OrderBy(nil).Results()
 			c.So(len(rs), c.ShouldEqual, 0)
 			c.So(err, c.ShouldBeNil)
 		})
 
-		c.Convey("OrderBy an interface{} slice, but before operation appears error", func() {
-			_, err := From(getChan(tRptUsers)).Select(projectWithPanic).OrderBy(orderUserById).Results()
-			c.So(err, c.ShouldNotBeNil)
-		})
-
-		c.Convey("OrderBy an interface{} slice", func() {
-			rs, err := From(tRptUsers).OrderBy(orderUserById).Results()
+		checkIfOrdered := func(rs []interface{}, err error) {
 			c.So(len(rs), c.ShouldEqual, len(tRptUsers))
 			c.So(err, c.ShouldBeNil)
 
@@ -910,31 +909,25 @@ func TestOrderBy(t *testing.T) {
 				c.So(u.id, c.ShouldBeGreaterThanOrEqualTo, id)
 				id = u.id
 			}
+		}
+		c.Convey("OrderBy []interface{}", func() {
+			checkIfOrdered(From(tRptUsers).OrderBy(orderUserById).Results())
 		})
 
-		c.Convey("OrderBy an interface{} chan", func() {
-			rs, err := From(getChan(tRptUsers)).OrderBy(orderUserById).Results()
-			c.So(len(rs), c.ShouldEqual, len(tRptUsers))
-			c.So(err, c.ShouldBeNil)
-
-			id := 0
-			for _, v := range rs {
-				u := v.(user)
-				c.So(u.id, c.ShouldBeGreaterThanOrEqualTo, id)
-				id = u.id
-			}
+		c.Convey("OrderBy chan interface{}", func() {
+			checkIfOrdered(From(getChan(tRptUsers)).OrderBy(orderUserById).Results())
 		})
 	})
 }
 
 func TestReverse(t *testing.T) {
-	testLazyOpr("An error appears in previous operation", t,
+	testLazyOpr("When error returned in previous operation", t,
 		taUsers,
 		NewQuery().Select(projectWithPanic).Reverse(),
 		expectErr,
 	)
 
-	testLazyOpr("Reverse an interface{} slice", t,
+	testLazyOpr("Reverse slice or channel", t,
 		taUsers,
 		NewQuery().OrderBy(orderUserById).Reverse(),
 		func(rs []interface{}, err error, n int, chanAsOut bool) {
@@ -978,28 +971,28 @@ func TestAggregate(t *testing.T) {
 			c.So(err, c.ShouldNotBeNil)
 		})
 
-	testImmediateOpr("If the error appears in Aggregate function", t,
+	testImmediateOpr("When error returned in Aggregate function", t,
 		taInts, NewQuery(),
 		func(q *Queryable, n int) {
 			_, err := q.Aggregate(&AggregateOperation{0, aggregatePanic, nil})
 			c.So(err, c.ShouldNotBeNil)
 		})
 
-	testImmediateOpr("An error appears in previous operation", t,
+	testImmediateOpr("When error returned in previous operation", t,
 		taInts, NewQuery(),
 		func(q *Queryable, n int) {
 			_, err := q.Select(projectWithPanic).Aggregate(myAgg)
 			c.So(err, c.ShouldNotBeNil)
 		})
 
-	testImmediateOpr("Aggregate an empty slice", t,
+	testImmediateOpr("When source is empty, returned error", t,
 		taEmptys, NewQuery(),
 		func(q *Queryable, n int) {
 			_, err := q.Aggregate(Max())
 			c.So(err, c.ShouldNotBeNil)
 		})
 
-	testImmediateOpr("Aggregate an interface{} slice", t,
+	testImmediateOpr("Compute customized aggregate operation by []interface{}", t,
 		taUsers, NewQuery(),
 		func(q *Queryable, n int) {
 			r, err := q.Aggregate(myAgg)
@@ -1109,7 +1102,7 @@ func TestAnyAndAll(t *testing.T) {
 			}))
 		})
 
-	testImmediateOpr("If an error appears in previous operation", t,
+	testImmediateOpr("When an error returned in previous operation", t,
 		taInts, NewQuery().Select(projectWithPanic),
 		func(q *Queryable, n int) {
 			expectErr(q.Any(func(v interface{}) bool {
@@ -1178,19 +1171,19 @@ func TestSkipAndTake(t *testing.T) {
 		c.So(func() { From(tInts).SkipWhile(nil).Results() }, c.ShouldPanicWith, ErrNilAction)
 	})
 
-	testLazyOpr("If skip nothing", t,
+	testLazyOpr("When skip nothing", t,
 		taInts,
 		NewQuery().Skip(-1),
 		expectSliceSizeEqualsN,
 	)
 
-	testLazyOpr("If skip all", t,
+	testLazyOpr("When skip all", t,
 		taInts,
 		NewQuery().Skip(10000),
 		expectEmptySlice,
 	)
 
-	testLazyOpr("If skip 12", t,
+	testLazyOpr("When skip 12", t,
 		taInts,
 		NewQuery().Skip(12),
 		expectSliceSize(func(n int) int {
@@ -1204,7 +1197,7 @@ func TestSkipAndTake(t *testing.T) {
 		expectErr,
 	)
 
-	testLazyOpr("If skip while item be less than zero", t,
+	testLazyOpr("When skip while item be less than zero", t,
 		taInts,
 		NewQuery().SkipWhile(func(v interface{}) bool {
 			return v.(int) < -1
@@ -1212,7 +1205,7 @@ func TestSkipAndTake(t *testing.T) {
 		expectSliceSizeEqualsN,
 	)
 
-	testLazyOpr("If skip while item be less than 10000", t,
+	testLazyOpr("When skip while item be less than 10000", t,
 		taInts,
 		NewQuery().SkipWhile(func(v interface{}) bool {
 			return v.(int) < 10000
@@ -1220,7 +1213,7 @@ func TestSkipAndTake(t *testing.T) {
 		expectEmptySlice,
 	)
 
-	testLazyOpr("If skip while item mod 50 be less than 12", t,
+	testLazyOpr("When skip while item mod 50 be less than 12", t,
 		taInts,
 		NewQuery().SkipWhile(func(v interface{}) bool {
 			return v.(int)%50 < 12
@@ -1230,19 +1223,19 @@ func TestSkipAndTake(t *testing.T) {
 		}),
 	)
 
-	testLazyOpr("If take nothing", t,
+	testLazyOpr("When take nothing", t,
 		taInts,
 		NewQuery().Take(-1),
 		expectEmptySlice,
 	)
 
-	testLazyOpr("If take all", t,
+	testLazyOpr("When take all", t,
 		taInts,
 		NewQuery().Take(10000),
 		expectSliceSizeEqualsN,
 	)
 
-	testLazyOpr("If take 12", t,
+	testLazyOpr("When take 12", t,
 		taInts,
 		NewQuery().Take(12),
 		expectSliceSizeEquals(12),
@@ -1254,7 +1247,7 @@ func TestSkipAndTake(t *testing.T) {
 		expectErr,
 	)
 
-	testLazyOpr("If take while item be less than zero", t,
+	testLazyOpr("When take while item be less than zero", t,
 		taInts,
 		NewQuery().TakeWhile(func(v interface{}) bool {
 			return v.(int) < -1
@@ -1262,7 +1255,7 @@ func TestSkipAndTake(t *testing.T) {
 		expectEmptySlice,
 	)
 
-	testLazyOpr("If take while item be less than 10000", t,
+	testLazyOpr("When take while item be less than 10000", t,
 		taInts,
 		NewQuery().TakeWhile(func(v interface{}) bool {
 			return v.(int) < 10000
@@ -1270,7 +1263,7 @@ func TestSkipAndTake(t *testing.T) {
 		expectSliceSizeEqualsN,
 	)
 
-	testLazyOpr("If take while item mod 50 be less than 12", t,
+	testLazyOpr("When take while item mod 50 be less than 12", t,
 		taInts,
 		NewQuery().TakeWhile(func(v interface{}) bool {
 			return v.(int)%50 < 12
@@ -1363,7 +1356,7 @@ func TestFirstBy(t *testing.T) {
 			}))
 		})
 
-	testImmediateOpr("If panic an error in previous operation", t,
+	testImmediateOpr("When panic an error in previous operation", t,
 		taInts,
 		NewQuery().Where(filterWithPanic),
 		func(q *Queryable, n int) {
@@ -1381,6 +1374,7 @@ func TestFirstBy(t *testing.T) {
 			}))
 		})
 
+	fmt.Println("廖恩正小朋友，该要念书刷牙洗澡澡睡觉觉啦！！！！！！不听话的小朋友没有蛋糕！！！！！！！！！！！！！！！！！！！")
 }
 
 func getChanResult(out chan interface{}, errChan chan error) (rs []interface{}, err error) {
