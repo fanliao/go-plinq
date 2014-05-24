@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"github.com/fanliao/go-promise"
+
+	"reflect"
 )
 
 var _ = fmt.Println //for debugger
@@ -793,6 +795,51 @@ func getFirstElement(src DataSource, findMatch func(c *Chunk, canceller promise.
 	panic(ErrUnsupportSource)
 }
 
+func getLastElement(src DataSource,
+	foundMatch func(c *Chunk, canceller promise.Canceller) (r int, found bool),
+	option *ParallelOption) (element interface{}, found bool, err error) {
+	switch s := src.(type) {
+	case *listSource:
+		rs := s.data
+		//根据数据量大小进行并行或串行查找
+		if i, found, err := getFirstOrLastIndex(newListSource(rs), foundMatch, option, false); err != nil {
+			return nil, false, err
+		} else if !found {
+			return nil, false, nil
+		} else {
+			return rs.Index(i), true, nil
+		}
+	case *chanSource:
+		srcChan := s.ChunkChan(option.ChunkSize)
+		f := promise.Start(func() (interface{}, error) {
+			var r interface{}
+			maxOrder := -1
+			_, _ = forEachChanByOrder(s, srcChan, func(c *Chunk, foundFirstMatch *bool) bool {
+				index, matched := foundMatch(c, nil)
+				if matched {
+					if c.Order > maxOrder {
+						maxOrder = c.Order
+						r = c.Data.Index(index)
+					}
+				}
+				return false
+			})
+			if maxOrder >= 0 {
+				element = r
+				found = true
+			}
+			return nil, nil
+		})
+
+		if _, err := f.Get(); err != nil {
+			s.Close()
+			return nil, false, err
+		}
+		return
+	}
+	panic(ErrUnsupportSource)
+}
+
 // Get the action function for Any operation
 func getAny(src DataSource, predicate PredicateFunc, option *ParallelOption) (result interface{}, allMatched bool, err error) {
 	getMapChunk := func(c *Chunk) func(promise.Canceller) (interface{}, error) {
@@ -845,51 +892,6 @@ func getChunkMatchResult(c *Chunk,
 }
 
 // Get the action function for ElementAt operation
-func getLastElement(src DataSource,
-	foundMatch func(c *Chunk, canceller promise.Canceller) (r int, found bool),
-	option *ParallelOption) (element interface{}, found bool, err error) {
-	switch s := src.(type) {
-	case *listSource:
-		rs := s.data
-		//根据数据量大小进行并行或串行查找
-		if i, found, err := getFirstOrLastIndex(newListSource(rs), foundMatch, option, false); err != nil {
-			return nil, false, err
-		} else if !found {
-			return nil, false, nil
-		} else {
-			return rs.Index(i), true, nil
-		}
-	case *chanSource:
-
-		srcChan := s.ChunkChan(option.ChunkSize)
-		f := promise.Start(func() (interface{}, error) {
-			var r interface{}
-			maxOrder := -1
-			_, _ = forEachChanByOrder(s, srcChan, func(c *Chunk, foundFirstMatch *bool) bool {
-				index, matched := foundMatch(c, nil)
-				if matched {
-					if c.Order > maxOrder {
-						maxOrder = c.Order
-						r = c.Data.Index(index)
-					}
-				}
-				return false
-			})
-			if maxOrder >= 0 {
-				element = r
-				found = true
-			}
-			return nil, nil
-		})
-
-		if _, err := f.Get(); err != nil {
-			s.Close()
-			return nil, false, err
-		}
-	}
-	panic(ErrUnsupportSource)
-}
-
 func forEachChanByOrder(src *chanSource, srcChan chan *Chunk, action func(*Chunk, *bool) bool) (interface{}, error) {
 	foundFirstMatch := false
 	shouldBreak := false

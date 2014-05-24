@@ -1109,7 +1109,7 @@ func TestAnyAndAll(t *testing.T) {
 			}))
 		})
 
-	testImmediateOpr("When an error returned in previous operation", t,
+	testImmediateOpr("When error returned in previous operation", t,
 		taInts, NewQuery().Select(projectWithPanic),
 		func(q *Queryable, n int) {
 			expectErr(q.Any(func(v interface{}) bool {
@@ -1117,7 +1117,7 @@ func TestAnyAndAll(t *testing.T) {
 			}))
 		})
 
-	testImmediateOpr("Any nothing", t,
+	testImmediateOpr("Any item == -1? no matched", t,
 		taInts, NewQuery(),
 		func(q *Queryable, n int) {
 			expectNotFound(q.Any(func(v interface{}) bool {
@@ -1126,16 +1126,15 @@ func TestAnyAndAll(t *testing.T) {
 
 		})
 
-	testImmediateOpr("All nothing", t,
+	testImmediateOpr("All item > 100000? no", t,
 		taInts, NewQuery(),
 		func(q *Queryable, n int) {
 			expectNotFound(q.All(func(v interface{}) bool {
-				r := v.(int) == -1
-				return r
+				return v.(int) > 100000
 			}))
 		})
 
-	testImmediateOpr("Find any int == 12", t,
+	testImmediateOpr("Any int == 12? yes", t,
 		taInts, NewQuery(),
 		func(q *Queryable, n int) {
 			expectFound(q.Any(func(v interface{}) bool {
@@ -1143,15 +1142,7 @@ func TestAnyAndAll(t *testing.T) {
 			}))
 		})
 
-	testImmediateOpr("Find any int >= 100000", t,
-		taInts, NewQuery(),
-		func(q *Queryable, n int) {
-			expectNotFound(q.Any(func(v interface{}) bool {
-				return v.(int) >= 100000
-			}))
-		})
-
-	testImmediateOpr("Find all int >= 0", t,
+	testImmediateOpr("All int >= 0? yes", t,
 		taInts, NewQuery(),
 		func(q *Queryable, n int) {
 			expectFound(q.All(func(v interface{}) bool {
@@ -1159,7 +1150,7 @@ func TestAnyAndAll(t *testing.T) {
 			}))
 		})
 
-	testImmediateOpr("Find all int >= 2", t,
+	testImmediateOpr("All int >= 2? no", t,
 		taInts, NewQuery(),
 		func(q *Queryable, n int) {
 			expectNotFound(q.All(func(v interface{}) bool {
@@ -1170,21 +1161,21 @@ func TestAnyAndAll(t *testing.T) {
 }
 
 func TestSkipAndTake(t *testing.T) {
-	c.Convey("SkipWhile with nil predicateFunc", t, func() {
+	c.Convey("When passed nil function in SkipWhile operation, error returned", t, func() {
 		c.So(func() { From(tInts).SkipWhile(nil).Results() }, c.ShouldPanicWith, ErrNilAction)
 	})
 
-	c.Convey("TakeWhile with nil predicateFunc", t, func() {
-		c.So(func() { From(tInts).SkipWhile(nil).Results() }, c.ShouldPanicWith, ErrNilAction)
+	c.Convey("When passed nil function in TakeWhile operation, error returned", t, func() {
+		c.So(func() { From(tInts).TakeWhile(nil).Results() }, c.ShouldPanicWith, ErrNilAction)
 	})
 
-	testLazyOpr("When skip nothing", t,
+	testLazyOpr("When skip 0, all items returned", t,
 		taInts,
-		NewQuery().Skip(-1),
+		NewQuery().Skip(0),
 		expectSliceSizeEqualsN,
 	)
 
-	testLazyOpr("When skip all", t,
+	testLazyOpr("When skip all, empty returned", t,
 		taInts,
 		NewQuery().Skip(10000),
 		expectEmptySlice,
@@ -1198,21 +1189,21 @@ func TestSkipAndTake(t *testing.T) {
 		}),
 	)
 
-	testLazyOpr("SkipWhile using a predicate func with panic error", t,
+	testLazyOpr("When error returned in predicate func, error returned", t,
 		taInts,
 		NewQuery().SkipWhile(filterWithPanic),
 		expectErr,
 	)
 
-	testLazyOpr("When skip while item be less than zero", t,
+	testLazyOpr("When skip while item < zero, all items returned", t,
 		taInts,
 		NewQuery().SkipWhile(func(v interface{}) bool {
-			return v.(int) < -1
+			return v.(int) < 0
 		}),
 		expectSliceSizeEqualsN,
 	)
 
-	testLazyOpr("When skip while item be less than 10000", t,
+	testLazyOpr("When skip while item < 10000, empty returned", t,
 		taInts,
 		NewQuery().SkipWhile(func(v interface{}) bool {
 			return v.(int) < 10000
@@ -1220,7 +1211,7 @@ func TestSkipAndTake(t *testing.T) {
 		expectEmptySlice,
 	)
 
-	testLazyOpr("When skip while item mod 50 be less than 12", t,
+	testLazyOpr("When skip while item % 50 < 12", t,
 		taInts,
 		NewQuery().SkipWhile(func(v interface{}) bool {
 			return v.(int)%50 < 12
@@ -1230,13 +1221,13 @@ func TestSkipAndTake(t *testing.T) {
 		}),
 	)
 
-	testLazyOpr("When take nothing", t,
+	testLazyOpr("When take 0, empty returned", t,
 		taInts,
-		NewQuery().Take(-1),
+		NewQuery().Take(0),
 		expectEmptySlice,
 	)
 
-	testLazyOpr("When take all", t,
+	testLazyOpr("When take 10000, all items returned", t,
 		taInts,
 		NewQuery().Take(10000),
 		expectSliceSizeEqualsN,
@@ -1248,21 +1239,21 @@ func TestSkipAndTake(t *testing.T) {
 		expectSliceSizeEquals(12),
 	)
 
-	testLazyOpr("TakeWhile using a predicate func with panic error", t,
+	testLazyOpr("When error paniced in predicate func, error returned", t,
 		taInts,
 		NewQuery().TakeWhile(filterWithPanic),
 		expectErr,
 	)
 
-	testLazyOpr("When take while item be less than zero", t,
+	testLazyOpr("When take while item < 0, empty returned", t,
 		taInts,
 		NewQuery().TakeWhile(func(v interface{}) bool {
-			return v.(int) < -1
+			return v.(int) < 0
 		}),
 		expectEmptySlice,
 	)
 
-	testLazyOpr("When take while item be less than 10000", t,
+	testLazyOpr("When take while item < 10000, all items returned", t,
 		taInts,
 		NewQuery().TakeWhile(func(v interface{}) bool {
 			return v.(int) < 10000
@@ -1270,7 +1261,7 @@ func TestSkipAndTake(t *testing.T) {
 		expectSliceSizeEqualsN,
 	)
 
-	testLazyOpr("When take while item mod 50 be less than 12", t,
+	testLazyOpr("When take while item % 50 < 12", t,
 		taInts,
 		NewQuery().TakeWhile(func(v interface{}) bool {
 			return v.(int)%50 < 12
@@ -1280,7 +1271,7 @@ func TestSkipAndTake(t *testing.T) {
 }
 
 func TestElementAt(t *testing.T) {
-	testImmediateOpr("ElementAt -1", t,
+	testImmediateOpr("Find ElementAt -1? no, ", t,
 		taInts,
 		NewQuery(),
 		func(q *Queryable, n int) {
@@ -1289,7 +1280,7 @@ func TestElementAt(t *testing.T) {
 			c.So(found, c.ShouldEqual, false)
 		})
 
-	testImmediateOpr("ElementAt 10000", t,
+	testImmediateOpr("Find ElementAt 10000? no", t,
 		taInts,
 		NewQuery(),
 		func(q *Queryable, n int) {
@@ -1298,7 +1289,7 @@ func TestElementAt(t *testing.T) {
 			c.So(found, c.ShouldEqual, false)
 		})
 
-	testImmediateOpr("ElementAt 12", t,
+	testImmediateOpr("Find ElementAt 12? yes", t,
 		taInts,
 		NewQuery(),
 		func(q *Queryable, n int) {
@@ -1310,7 +1301,7 @@ func TestElementAt(t *testing.T) {
 
 }
 
-func TestFirstBy(t *testing.T) {
+func TestFirstByAndLastBy(t *testing.T) {
 	expectErr := func(r interface{}, found bool, err error) {
 		c.So(err, c.ShouldNotBeNil)
 		c.So(found, c.ShouldEqual, false)
@@ -1321,13 +1312,13 @@ func TestFirstBy(t *testing.T) {
 		c.So(found, c.ShouldEqual, false)
 	}
 
-	expectBe12 := func(r interface{}, found bool, err error) {
+	expectBe14 := func(r interface{}, found bool, err error) {
 		c.So(err, c.ShouldBeNil)
-		c.So(r, c.ShouldEqual, 12)
+		c.So(r, c.ShouldEqual, 14)
 		c.So(found, c.ShouldEqual, true)
 	}
 
-	testImmediateOpr("FirstBy with panic an error", t,
+	testImmediateOpr("When error paniced in FirstBy func, error returned", t,
 		taInts,
 		NewQuery(),
 		func(q *Queryable, n int) {
@@ -1336,34 +1327,7 @@ func TestFirstBy(t *testing.T) {
 			}))
 		})
 
-	testImmediateOpr("FirstBy item equals -1", t,
-		taInts,
-		NewQuery(),
-		func(q *Queryable, n int) {
-			expectNotFound(q.FirstBy(func(v interface{}) bool {
-				return v.(int) == -1
-			}))
-		})
-
-	testImmediateOpr("FirstBy item equals 10000", t,
-		taInts,
-		NewQuery(),
-		func(q *Queryable, n int) {
-			expectNotFound(q.FirstBy(func(v interface{}) bool {
-				return v.(int) == 10000
-			}))
-		})
-
-	testImmediateOpr("FirstBy item mod 100 equals 12", t,
-		taInts,
-		NewQuery(),
-		func(q *Queryable, n int) {
-			expectBe12(q.FirstBy(func(v interface{}) bool {
-				return v.(int)%100 == 12
-			}))
-		})
-
-	testImmediateOpr("When panic an error in previous operation", t,
+	testImmediateOpr("When error paniced in previous operation, FirstBy return error", t,
 		taInts,
 		NewQuery().Where(filterWithPanic),
 		func(q *Queryable, n int) {
@@ -1372,16 +1336,109 @@ func TestFirstBy(t *testing.T) {
 			}))
 		})
 
-	testImmediateOpr("Filter then FirstBy item mod 100 equals 12", t,
+	testImmediateOpr("Find FirstBy item == -1? no", t,
 		taInts,
-		NewQuery().Where(isEven),
+		NewQuery(),
 		func(q *Queryable, n int) {
-			expectBe12(q.FirstBy(func(v interface{}) bool {
-				return v.(int)%100 == 12
+			expectNotFound(q.FirstBy(func(v interface{}) bool {
+				return v.(int) == -1
 			}))
 		})
 
-	fmt.Println("廖恩正小朋友，该要念书刷牙洗澡澡睡觉觉啦！！！！！！不听话的小朋友没有蛋糕！！！！！！！！！！！！！！！！！！！")
+	testImmediateOpr("Find FirstBy item == 10000? no", t,
+		taInts,
+		NewQuery(),
+		func(q *Queryable, n int) {
+			expectNotFound(q.FirstBy(func(v interface{}) bool {
+				return v.(int) == 10000
+			}))
+		})
+
+	testImmediateOpr("Find FirstBy item % 100 == 14? 14 returned", t,
+		taInts,
+		NewQuery(),
+		func(q *Queryable, n int) {
+			expectBe14(q.FirstBy(func(v interface{}) bool {
+				return v.(int)%100 == 14
+			}))
+		})
+
+	testImmediateOpr("Filter even then Find FirstBy item > 0 && item % 7 == 0, 14 returned", t,
+		taInts,
+		NewQuery().Where(isEven),
+		func(q *Queryable, n int) {
+			expectBe14(q.FirstBy(func(v interface{}) bool {
+				return v.(int) > 0 && v.(int)%7 == 0
+			}))
+		})
+
+	testImmediateOpr("Find First 14? 14 returned", t,
+		taInts,
+		NewQuery(),
+		func(q *Queryable, n int) {
+			expectBe14(q.First(14))
+		})
+
+	testImmediateOpr("When error paniced in LastBy func, error returned", t,
+		taInts,
+		NewQuery(),
+		func(q *Queryable, n int) {
+			expectErr(q.LastBy(func(v interface{}) bool {
+				panic(errors.New("!error"))
+			}))
+		})
+
+	testImmediateOpr("When error paniced in previous operation, LastBy return error", t,
+		taInts,
+		NewQuery().Where(filterWithPanic),
+		func(q *Queryable, n int) {
+			expectErr(q.LastBy(func(v interface{}) bool {
+				return v.(int) == -1
+			}))
+		})
+
+	testImmediateOpr("Find LastBy item == -1? no", t,
+		taInts,
+		NewQuery(),
+		func(q *Queryable, n int) {
+			expectNotFound(q.LastBy(func(v interface{}) bool {
+				return v.(int) == -1
+			}))
+		})
+
+	testImmediateOpr("Find LastBy item == 10000? no", t,
+		taInts,
+		NewQuery(),
+		func(q *Queryable, n int) {
+			expectNotFound(q.LastBy(func(v interface{}) bool {
+				return v.(int) == 10000
+			}))
+		})
+
+	testImmediateOpr("Find LastBy item < 20 && item % 7 == 0? 14 returned", t,
+		taInts,
+		NewQuery(),
+		func(q *Queryable, n int) {
+			expectBe14(q.LastBy(func(v interface{}) bool {
+				return v.(int) < 20 && v.(int)%7 == 0
+			}))
+		})
+
+	testImmediateOpr("Filter even then Find LastBy item < 15 && item % 2 == 0, 14 returned", t,
+		taInts,
+		NewQuery().Where(isEven),
+		func(q *Queryable, n int) {
+			expectBe14(q.LastBy(func(v interface{}) bool {
+				return v.(int) > 0 && v.(int) < 15 && v.(int)%2 == 0
+			}))
+		})
+
+	testImmediateOpr("Find Last 14? 14 returned", t,
+		taInts,
+		NewQuery(),
+		func(q *Queryable, n int) {
+			expectBe14(q.Last(14))
+		})
 }
 
 func getChanResult(out chan interface{}, errChan chan error) (rs []interface{}, err error) {

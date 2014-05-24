@@ -13,10 +13,11 @@ var (
 )
 
 //获取0到4所有的组合, 用于测试随机顺序下Skip/Take/ElementAt/FirstBy等操作是否正确
+//Get all sequence that items includes 0,1,2,3,4 to
+//test Skip/Take/ElementAt/First when chunks are received by out of order
 //[0,1,2,3,4], [0,1,2,4,3], [0,1,3,2,4]......
 func getIndexses(countOfSkipTestData int) (indexses [][]int) {
 	for i := 0; i < countOfSkipTestData; i++ {
-		//开始创建一个随机组合
 		for j := 0; j < countOfSkipTestData; j++ {
 			if j == i {
 				continue
