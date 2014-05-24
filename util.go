@@ -27,7 +27,7 @@ func self(v interface{}) interface{} {
 }
 
 //the Utils functions for Slice and Chunk----------------------
-func distinctChunkValues(c *Chunk, distKVs map[interface{}]int, pResults *[]interface{}) *Chunk {
+func distChunkValues(c *Chunk, distKVs map[interface{}]int, pResults *[]interface{}) *Chunk {
 	if pResults == nil {
 		size := c.Data.Len()
 		result := make([]interface{}, 0, size)
@@ -248,25 +248,27 @@ func expandChunks(src []interface{}, keepOrder bool) []interface{} {
 
 	if keepOrder {
 		//根据需要排序
-		src = sortSlice(src, func(a interface{}, b interface{}) bool {
-			var (
-				a1, b1 *Chunk
-			)
+		if len(src) > 1 {
+			src = sortSlice(src, func(a interface{}, b interface{}) bool {
+				var (
+					a1, b1 *Chunk
+				)
 
-			if isNil(a) {
-				return true
-			} else if isNil(b) {
-				return false
-			}
+				if isNil(a) {
+					return true
+				} else if isNil(b) {
+					return false
+				}
 
-			switch v := a.(type) {
-			case []interface{}:
-				a1, b1 = v[0].(*Chunk), b.([]interface{})[0].(*Chunk)
-			case *Chunk:
-				a1, b1 = v, b.(*Chunk)
-			}
-			return a1.Order < b1.Order
-		})
+				switch v := a.(type) {
+				case []interface{}:
+					a1, b1 = v[0].(*Chunk), b.([]interface{})[0].(*Chunk)
+				case *Chunk:
+					a1, b1 = v, b.(*Chunk)
+				}
+				return a1.Order < b1.Order
+			})
+		}
 	}
 
 	//得到块列表
@@ -1101,10 +1103,14 @@ func getMinOpr(convert OneArgsFunc) *AggregateOperation {
 }
 
 func getMaxOpr(convert OneArgsFunc) *AggregateOperation {
-	fun := func(a interface{}, b interface{}) interface{} {
+	fun1 := func(a interface{}, b interface{}) interface{} {
 		return minMaxOpr(a, b, false)
 	}
-	return &AggregateOperation{nil, getAggByFunc(fun, convert), fun}
+	fun2 := func(a interface{}, b interface{}) interface{} {
+		//fmt.Print(a, b, minMaxOpr(a, b, false))
+		return minMaxOpr(a, b, false)
+	}
+	return &AggregateOperation{nil, getAggByFunc(fun1, convert), fun2}
 }
 
 func getCountByOpr(predicate PredicateFunc) *AggregateOperation {
@@ -1371,7 +1377,3 @@ func bytesEquals(addr1 uintptr, addr2 uintptr, size uintptr) bool {
 	}
 	return true
 }
-
-//func Equals(a, b interface{}) bool {
-//	return equals(a, b)
-//}

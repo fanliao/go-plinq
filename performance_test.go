@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	countForB      int  = 100
-	rptCountForB   int  = 110
+	countForB      int  = 100000
+	rptCountForB   int  = 110000
 	testGoLinq     bool = true
 	largeChunkSize int  = 1000
 )
@@ -22,18 +22,12 @@ var (
 	bRptUsers []user = make([]user, rptCountForB, rptCountForB)
 	bUsers2   []user = make([]user, countForB, countForB)
 	bRoles    []role = make([]role, countForB, countForB)
-	//bInts     []interface{} = make([]interface{}, countForB, countForB)
-	//bUsers    []interface{} = make([]interface{}, countForB, countForB)
-	//bRptUsers []interface{} = make([]interface{}, rptCountForB, rptCountForB)
-	//bUsers2   []interface{} = make([]interface{}, countForB, countForB)
-	//bRoles    []interface{} = make([]interface{}, countForB, countForB)
 )
 
 func init() {
-	fmt.Println("DEFAULTCHUNKSIZE=", DefaultChunkSize)
+	fmt.Println("DEFAULTCHUNKSIZE=", defaultChunkSize)
 	fmt.Println("countForB=", countForB)
-	maxProcs = numCPU
-	runtime.GOMAXPROCS(maxProcs)
+	runtime.GOMAXPROCS(numCPU)
 	for i := 0; i < countForB; i++ {
 		bInts[i] = i
 		bUsers[i] = user{i, "user" + strconv.Itoa(i)}
@@ -53,11 +47,15 @@ func init() {
 
 func BenchmarkGoPLinq_Where(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		dst, _ := From(bUsers).Where(filterFunc).Results()
+		dst, err := From(bUsers).Where(func(v interface{}) bool {
+			computerTask()
+			return v.(user).id%2 == 0
+		}).Results()
 		if len(dst) != countForB/2 {
 			b.Fail()
-			b.Error("size is ", len(dst))
+			b.Error("size of dst is ", len(dst))
 			b.Log("dst=", dst)
+			b.Log("err=", err)
 		}
 	}
 }
@@ -71,7 +69,7 @@ func BenchmarkGoLinq_Where(b *testing.B) {
 		dst, _ := linq.From(bUsers).Where(func(i linq.T) (bool, error) {
 			v := i.(user)
 			computerTask()
-			return strconv.Itoa(v.id%2) == "0", nil
+			return v.id%2 == 0, nil
 		}).Results()
 		if len(dst) != countForB/2 {
 			b.Fail()
@@ -82,7 +80,7 @@ func BenchmarkGoLinq_Where(b *testing.B) {
 
 func BenchmarkGoPLinq_Select(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		dst, _ := From(bUsers).Select(projectFunc).Results()
+		dst, _ := From(bUsers).Select(userToStr).Results()
 		if len(dst) != countForB {
 			b.Fail()
 			//b.Log("arr=", arr)
@@ -125,7 +123,7 @@ func BenchmarkGoLinq_Select(b *testing.B) {
 //test distinct-----------------------------------------------------------------------------
 func BenchmarkGoPLinq_Distinct(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		dst, _ := From(bRptUsers).DistinctBy(distinctUser).Results()
+		dst, _ := From(bRptUsers).DistinctBy(getUserId).Results()
 		if len(dst) != countForB {
 			b.Fail()
 			//b.Log("arr=", arr)
@@ -190,7 +188,7 @@ func BenchmarkGoLinq_Distinct(b *testing.B) {
 //test join-----------------------------------------------------------------
 func BenchmarkGoPLinq_Join(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		dst, _ := From(bUsers).Join(bRoles, userSelector, roleSelector, resultSelector).Results()
+		dst, _ := From(bUsers).Join(bRoles, getUserId, getRoleUid, getUserIdAndRole).Results()
 		if len(dst) != countForB {
 			b.Fail()
 			//b.Log("arr=", arr)
@@ -256,7 +254,7 @@ func BenchmarkGoLinq_Union(b *testing.B) {
 ////test union--------------------------------------------------------------------
 func BenchmarkGoPLinq_UnionSelect(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		dst, _ := From(bUsers).Union(bUsers2, largeChunkSize).Select(projectFunc).Results()
+		dst, _ := From(bUsers).Union(bUsers2, largeChunkSize).Select(userToStr).Results()
 		if len(dst) != countForB+countForB/2 {
 			b.Fail()
 			//b.Log("arr=", arr)
@@ -419,8 +417,11 @@ func testPlinqSkipWhile(b *testing.B, i int) {
 
 func BenchmarkGoPLinq_SkipWhile(b *testing.B) {
 	for i := 0; i < b.N; i++ {
+		//fmt.Println("skip while", countForB/3)
 		testPlinqSkipWhile(b, countForB/3)
+		//fmt.Println("skip while", 2*countForB/3)
 		testPlinqSkipWhile(b, 2*countForB/3)
+		//fmt.Println("skip while", 5*countForB/6)
 		testPlinqSkipWhile(b, 5*countForB/6)
 	}
 }
