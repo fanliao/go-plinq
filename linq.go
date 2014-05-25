@@ -163,17 +163,15 @@ type Queryable struct {
 // input parameter must be a slice or channel. Otherwise panics ErrUnsupportSource.
 //
 // Example:
-//     i1 := []int{1,2,3,4,5,6}
-//     q := From(i)
-//     i2 := []interface{}{1,2,3,4,5,6}
-//     q := From(i)
+//     ints := []int{1,2,3,4,5,6}
+//     q := From(ints)
+//     ints := []interface{}{1,2,3,4,5,6}
+//     q := From(ints)
 //
 //     c1 := chan string
 //     q := From(c1)
 //     c2 := chan interface{}
 //     q := From(c2)
-//
-//	   Todo: need to test map
 //
 // Note: if the source is a channel, the channel must be closed by caller of linq,
 // otherwise will be deadlock
@@ -181,6 +179,13 @@ func From(src interface{}) (q *Queryable) {
 	return NewQuery().SetDataSource(src) // newQueryable(newDataSource(src))
 }
 
+// NewQuery initializes a Queryable but the data source is not unresolved.
+// The data source can be resolved by SetDataSource method before calling Results() or ToChan().
+//
+// Example:
+//     c1 := chan string
+//     q := NewQuery().Select(something)
+//     rs, err := q.SetDataSource(c1).Results()
 func NewQuery() (q *Queryable) {
 	q = &Queryable{}
 	q.KeepOrder = true
@@ -190,6 +195,12 @@ func NewQuery() (q *Queryable) {
 	return
 }
 
+// SetDataSource set the data source of query.
+//
+// Example:
+//     c1 := chan string
+//     q := NewQuery().Select(something)
+//     rs, err := q.SetDataSource(c1).Results()
 func (q *Queryable) SetDataSource(data interface{}) *Queryable {
 	q.data = newDataSource(data)
 	return q
@@ -238,10 +249,7 @@ func (q *Queryable) ToChan() (out chan interface{}, errChan chan error, err erro
 
 	if err == nil {
 		out = ds.ToChan()
-		//return
-	} //else {
-	//	return nil, errChan, e
-	//}
+	}
 	return
 
 }
@@ -960,13 +968,13 @@ func newDataSource(data interface{}) (ds dataSource) {
 	if _, ok := data.(Slicer); ok {
 		return newListSource(data)
 	}
-	//var ds DataSource
+
 	if v := reflect.ValueOf(data); v.Kind() == reflect.Slice || v.Kind() == reflect.Map {
-		ds = newListSource(data) //&listSource{data: data}
+		ds = newListSource(data)
 	} else if v.Kind() == reflect.Ptr {
 		ov := v.Elem()
 		if ov.Kind() == reflect.Slice || ov.Kind() == reflect.Map {
-			ds = newListSource(data) //&listSource{data: data}
+			ds = newListSource(data)
 		} else {
 			panic(ErrUnsupportSource)
 		}
@@ -984,7 +992,6 @@ func newDataSource(data interface{}) (ds dataSource) {
 
 // listSource presents the slice or map source
 type listSource struct {
-	//data interface{}
 	data Slicer
 }
 
@@ -1020,7 +1027,6 @@ func newListSource(data interface{}) *listSource {
 // note: the channel must be closed by caller of linq,
 // otherwise will be deadlock
 type chanSource struct {
-	//data1 chan *Chunk
 	once      *sync.Once
 	data      interface{}
 	chunkChan chan *chunk
@@ -1074,16 +1080,11 @@ func (cs chanSource) ToSlice(keepOrder bool) Slicer {
 		}
 		if keepOrder {
 			chunks = ordered.ToSlice()
-			//fmt.Println("latest chunks :", chunks, ordered.list)
 		}
 
-		//fmt.Println("toslice, result1===", chunks)
 		return NewSlicer(expandChunks(chunks, false))
 	} else {
 		srcChan := reflect.ValueOf(cs.data)
-		//if srcChan.Kind() != reflect.Chan {
-		//	panic(ErrUnsupportSource)
-		//}
 
 		result := make([]interface{}, 0, 10)
 		for {
@@ -1118,9 +1119,6 @@ func (cs chanSource) ToChan() chan interface{} {
 		}()
 	} else if cs.data != nil {
 		srcChan := reflect.ValueOf(cs.data)
-		//if srcChan.Kind() != reflect.Chan {
-		//	panic(ErrUnsupportSource)
-		//}
 
 		go func() {
 			for {
@@ -1163,7 +1161,6 @@ func sendChunk(out chan *chunk, c *chunk) (closed bool) {
 		}
 	}()
 	out <- c
-	//closed = false
 	return
 }
 
