@@ -9,7 +9,7 @@ import (
 
 var (
 	sequentialChunkSize     = 100
-	parallelChunkSize   int = count / 7
+	parallelChunkSize   int = countS / 7
 )
 
 //获取0到4所有的组合, 用于测试随机顺序下Skip/Take/ElementAt/FirstBy等操作是否正确
@@ -47,7 +47,7 @@ func getIndexses(countOfSkipTestData int) (indexses [][]int) {
 var countOfSkipTestData int = 5
 
 func getChunkByi(i int, ints []interface{}) *Chunk {
-	size := count / countOfSkipTestData
+	size := countS / countOfSkipTestData
 	return &Chunk{NewSlicer(ints[i*size : (i+1)*size]), i, 0}
 }
 
@@ -75,8 +75,8 @@ func getChunkSrcByOrder(indexs []int, ints []interface{}) chan *Chunk {
 // 1. SkipWhile/TakeWhile after Union operation
 // 2. if the data source includes the count of match item are more than one.
 func TestSkipAndTakeWithOutOfOrder(t *testing.T) {
-	ints := make([]interface{}, count)
-	for i := 0; i < count; i++ {
+	ints := make([]interface{}, countS)
+	for i := 0; i < countS; i++ {
 		ints[i] = i
 	}
 
@@ -84,8 +84,8 @@ func TestSkipAndTakeWithOutOfOrder(t *testing.T) {
 	//indexses := [][]int{[]int{0, 1, 3, 2, 4}}
 
 	getSkipResult := func(i int) []interface{} {
-		r := make([]interface{}, count-i)
-		for j := 0; j < count-i; j++ {
+		r := make([]interface{}, countS-i)
+		for j := 0; j < countS-i; j++ {
 			r[j] = j + i
 		}
 		return r
@@ -248,8 +248,8 @@ func TestSkipAndTakeWithOutOfOrder(t *testing.T) {
 }
 
 func TestElementAtWithOutOfOrder(t *testing.T) {
-	ints := make([]interface{}, count)
-	for i := 0; i < count; i++ {
+	ints := make([]interface{}, countS)
+	for i := 0; i < countS; i++ {
 		ints[i] = i
 	}
 
@@ -296,8 +296,8 @@ func TestElementAtWithOutOfOrder(t *testing.T) {
 }
 
 func TestFirstByWithOutOfOrder(t *testing.T) {
-	ints := make([]interface{}, count)
-	for i := 0; i < count; i++ {
+	ints := make([]interface{}, countS)
+	for i := 0; i < countS; i++ {
 		ints[i] = i
 	}
 
@@ -333,7 +333,7 @@ func TestFirstByWithOutOfOrder(t *testing.T) {
 		c.Convey("FirstBy nothing", func() {
 			for _, v := range indexses {
 				_, found, err := From(getChunkSrcByOrder(v, ints)).FirstBy(func(v interface{}) bool {
-					return v.(int) == count
+					return v.(int) == countS
 				})
 				c.So(err, c.ShouldBeNil)
 				c.So(found, c.ShouldEqual, false)

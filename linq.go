@@ -202,7 +202,7 @@ func (q *Queryable) SetDataSource(data interface{}) *Queryable {
 // 	results, err := From([]interface{}{"Jack", "Rock"}).Select(something).Results()
 func (q *Queryable) Results() (results []interface{}, err error) {
 	ds, e, errChan := q.execute()
-	if e == nil {
+	if e == nil && !isNil(ds) {
 		//在Channel模式下，必须先取到全部的数据，否则stepErrs将死锁
 		//e将被丢弃，因为e会在this.stepErrs()中一起返回
 		results = ds.ToSlice(q.KeepOrder).ToInterfaces()
@@ -828,8 +828,14 @@ func (q *Queryable) execute() (ds DataSource, err error, errChan chan []error) {
 		ds = q.data
 		return
 	}
-
 	errChan = make(chan []error)
+	if isNil(q.data) {
+		err = ErrNilSource
+		go func() {
+			errChan <- []error{err}
+		}()
+		return
+	}
 
 	srcErr := newErrorWithStacks(errors.New("source error"))
 	//create a goroutines to collect the errors for the pipeline mode step

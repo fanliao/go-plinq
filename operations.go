@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/fanliao/go-promise"
-
-	"reflect"
 )
 
 var _ = fmt.Println //for debugger
@@ -722,26 +720,33 @@ func getSkipTake(findMatch func(*Chunk, promise.Canceller) (int, bool), isTake b
 }
 
 // Get the action function for ElementAt operation
-func getFirstElement(src DataSource, findMatch func(c *Chunk, canceller promise.Canceller) (r int, found bool), useIndex bool, option *ParallelOption) (element interface{}, found bool, err error) {
+func getFirstElement(src DataSource,
+	findMatch func(c *Chunk, canceller promise.Canceller) (r int, found bool),
+	useIndex bool, option *ParallelOption) (element interface{}, found bool, err error) {
 	switch s := src.(type) {
 	case *listSource:
-		rs := s.data
+		rs, i := s.data, -1
 		if useIndex {
 			//使用索引查找列表非常简单，无需并行
-			if i, found := findMatch(&Chunk{rs, 0, 0}, nil); found {
+			if i, found = findMatch(&Chunk{rs, 0, 0}, nil); found {
 				return rs.Index(i), true, nil
 			} else {
 				return nil, false, nil
 			}
 		} else {
 			//根据数据量大小进行并行或串行查找
-			if i, found, err := getFirstOrLastIndex(newListSource(rs), findMatch, option, true); err != nil {
-				return nil, false, err
-			} else if !found {
-				return nil, false, nil
-			} else {
-				return rs.Index(i), true, nil
+			i, found, err = getFirstOrLastIndex(newListSource(rs), findMatch, option, true)
+			if found && err == nil {
+				element = rs.Index(i)
 			}
+			return
+			//if i, found, err := getFirstOrLastIndex(newListSource(rs), findMatch, option, true); err != nil {
+			//	return nil, false, err
+			//} else if !found {
+			//	return nil, false, nil
+			//} else {
+			//	return rs.Index(i), true, nil
+			//}
 		}
 	case *chanSource:
 		beforeMatchAct := func(c *chunkMatchResult) (while bool) {
@@ -796,26 +801,24 @@ func getFirstElement(src DataSource, findMatch func(c *Chunk, canceller promise.
 }
 
 func getLastElement(src DataSource,
-	foundMatch func(c *Chunk, canceller promise.Canceller) (r int, found bool),
+	findMatch func(c *Chunk, canceller promise.Canceller) (r int, found bool),
 	option *ParallelOption) (element interface{}, found bool, err error) {
 	switch s := src.(type) {
 	case *listSource:
-		rs := s.data
+		rs, i := s.data, -1
 		//根据数据量大小进行并行或串行查找
-		if i, found, err := getFirstOrLastIndex(newListSource(rs), foundMatch, option, false); err != nil {
-			return nil, false, err
-		} else if !found {
-			return nil, false, nil
-		} else {
-			return rs.Index(i), true, nil
+		i, found, err = getFirstOrLastIndex(newListSource(rs), findMatch, option, false)
+		if found && err == nil {
+			element = rs.Index(i)
 		}
+		return
 	case *chanSource:
 		srcChan := s.ChunkChan(option.ChunkSize)
 		f := promise.Start(func() (interface{}, error) {
 			var r interface{}
 			maxOrder := -1
 			_, _ = forEachChanByOrder(s, srcChan, func(c *Chunk, foundFirstMatch *bool) bool {
-				index, matched := foundMatch(c, nil)
+				index, matched := findMatch(c, nil)
 				if matched {
 					if c.Order > maxOrder {
 						maxOrder = c.Order

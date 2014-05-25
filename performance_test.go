@@ -47,14 +47,15 @@ func init() {
 
 func BenchmarkGoPLinq_Where(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		dst, _ := From(bUsers).Where(func(v interface{}) bool {
+		dst, err := From(bUsers).Where(func(v interface{}) bool {
 			computerTask()
-			return v.(int)%2 == 0
+			return v.(user).id%2 == 0
 		}).Results()
 		if len(dst) != countForB/2 {
 			b.Fail()
-			b.Error("size is ", len(dst))
+			b.Error("size of dst is ", len(dst))
 			b.Log("dst=", dst)
+			b.Log("err=", err)
 		}
 	}
 }
@@ -68,7 +69,7 @@ func BenchmarkGoLinq_Where(b *testing.B) {
 		dst, _ := linq.From(bUsers).Where(func(i linq.T) (bool, error) {
 			v := i.(user)
 			computerTask()
-			return strconv.Itoa(v.id%2) == "0", nil
+			return v.id%2 == 0, nil
 		}).Results()
 		if len(dst) != countForB/2 {
 			b.Fail()
