@@ -74,7 +74,7 @@ type Comparable interface {
 // the struct and interface about data DataSource---------------------------------------------------
 
 // Chunk presents a data chunk, it is the minimal data unit for a task.
-type Chunk struct {
+type chunk struct {
 	Data       Slicer //[]interface{}
 	Order      int    //a index presents the order of chunk
 	StartIndex int    //a index presents the start index in whole data
@@ -82,7 +82,7 @@ type Chunk struct {
 
 // DataSource presents the data of linq operation，
 // Most linq operations usually convert a DataSource to another DataSource
-type DataSource interface {
+type dataSource interface {
 	Typ() int                 //list or chan?
 	ToSlice(bool) Slicer      //Get a slice includes all datas
 	ToChan() chan interface{} //Get a channel includes all datas
@@ -154,7 +154,7 @@ type ParallelOption struct {
 // All query functions will return Queryable.
 // For getting the result slice of the query, use Results(). use ToChan() can get a chan presents the result.
 type Queryable struct {
-	data  DataSource
+	data  dataSource
 	steps []step
 	ParallelOption
 }
@@ -163,17 +163,15 @@ type Queryable struct {
 // input parameter must be a slice or channel. Otherwise panics ErrUnsupportSource.
 //
 // Example:
-//     i1 := []int{1,2,3,4,5,6}
-//     q := From(i)
-//     i2 := []interface{}{1,2,3,4,5,6}
-//     q := From(i)
+//     ints := []int{1,2,3,4,5,6}
+//     q := From(ints)
+//     ints := []interface{}{1,2,3,4,5,6}
+//     q := From(ints)
 //
 //     c1 := chan string
 //     q := From(c1)
 //     c2 := chan interface{}
 //     q := From(c2)
-//
-//	   Todo: need to test map
 //
 // Note: if the source is a channel, the channel must be closed by caller of linq,
 // otherwise will be deadlock
@@ -181,6 +179,13 @@ func From(src interface{}) (q *Queryable) {
 	return NewQuery().SetDataSource(src) // newQueryable(newDataSource(src))
 }
 
+// NewQuery initializes a Queryable but the data source is not unresolved.
+// The data source can be resolved by SetDataSource method before calling Results() or ToChan().
+//
+// Example:
+//     c1 := chan string
+//     q := NewQuery().Select(something)
+//     rs, err := q.SetDataSource(c1).Results()
 func NewQuery() (q *Queryable) {
 	q = &Queryable{}
 	q.KeepOrder = true
@@ -190,6 +195,12 @@ func NewQuery() (q *Queryable) {
 	return
 }
 
+// SetDataSource set the data source of query.
+//
+// Example:
+//     c1 := chan string
+//     q := NewQuery().Select(something)
+//     rs, err := q.SetDataSource(c1).Results()
 func (q *Queryable) SetDataSource(data interface{}) *Queryable {
 	q.data = newDataSource(data)
 	return q
@@ -238,10 +249,7 @@ func (q *Queryable) ToChan() (out chan interface{}, errChan chan error, err erro
 
 	if err == nil {
 		out = ds.ToChan()
-		//return
-	} //else {
-	//	return nil, errChan, e
-	//}
+	}
 	return
 
 }
@@ -546,7 +554,7 @@ func (q *Queryable) Take(count int) *Queryable {
 // i, found, err := From([]int{0,1,2}).ElementAt(2)
 //		// i is 2
 func (q *Queryable) ElementAt(i int) (result interface{}, found bool, err error) {
-	return q.singleValue(func(ds DataSource, pOption *ParallelOption) (result interface{}, found bool, err error) {
+	return q.singleValue(func(ds dataSource, pOption *ParallelOption) (result interface{}, found bool, err error) {
 		return getElementAt(ds, i, pOption)
 	})
 }
@@ -576,7 +584,7 @@ func (q *Queryable) First(val interface{}, chunkSizes ...int) (result interface{
 //		// r is 1
 // 	}
 func (q *Queryable) FirstBy(predicate PredicateFunc, chunkSizes ...int) (result interface{}, found bool, err error) {
-	return q.singleValue(func(ds DataSource, pOption *ParallelOption) (result interface{}, found bool, err error) {
+	return q.singleValue(func(ds dataSource, pOption *ParallelOption) (result interface{}, found bool, err error) {
 		option, chunkSize := q.ParallelOption, getChunkSizeArg(chunkSizes...)
 		if chunkSize != 0 {
 			option.ChunkSize = chunkSize
@@ -610,7 +618,7 @@ func (q *Queryable) Last(val interface{}, chunkSizes ...int) (result interface{}
 //		// r is 3
 // 	}
 func (q *Queryable) LastBy(predicate PredicateFunc, chunkSizes ...int) (result interface{}, found bool, err error) {
-	return q.singleValue(func(ds DataSource, pOption *ParallelOption) (result interface{}, found bool, err error) {
+	return q.singleValue(func(ds dataSource, pOption *ParallelOption) (result interface{}, found bool, err error) {
 		option, chunkSize := q.ParallelOption, getChunkSizeArg(chunkSizes...)
 		if chunkSize != 0 {
 			option.ChunkSize = chunkSize
@@ -628,7 +636,7 @@ func (q *Queryable) LastBy(predicate PredicateFunc, chunkSizes ...int) (result i
 //		// found is true
 // 	}
 func (q *Queryable) Any(predicate PredicateFunc, chunkSizes ...int) (found bool, err error) {
-	_, found, err = q.singleValue(func(ds DataSource, pOption *ParallelOption) (result interface{}, found bool, err error) {
+	_, found, err = q.singleValue(func(ds dataSource, pOption *ParallelOption) (result interface{}, found bool, err error) {
 		option, chunkSize := q.ParallelOption, getChunkSizeArg(chunkSizes...)
 		if chunkSize != 0 {
 			option.ChunkSize = chunkSize
@@ -647,7 +655,7 @@ func (q *Queryable) Any(predicate PredicateFunc, chunkSizes ...int) (found bool,
 //		// found is false
 // 	}
 func (q *Queryable) All(predicate PredicateFunc, chunkSizes ...int) (found bool, err error) {
-	_, found, err = q.singleValue(func(ds DataSource, pOption *ParallelOption) (result interface{}, found bool, err error) {
+	_, found, err = q.singleValue(func(ds dataSource, pOption *ParallelOption) (result interface{}, found bool, err error) {
 		option, chunkSize := q.ParallelOption, getChunkSizeArg(chunkSizes...)
 		if chunkSize != 0 {
 			option.ChunkSize = chunkSize
@@ -673,7 +681,7 @@ func (q *Queryable) All(predicate PredicateFunc, chunkSizes ...int) (found bool,
 //	// or
 //	sum, err := From(arr).Aggregate(Sum) // sum is 18
 func (q *Queryable) Aggregate(aggregateFuncs ...*AggregateOperation) (result interface{}, err error) {
-	result, _, err = q.singleValue(func(ds DataSource, pOption *ParallelOption) (resultValue interface{}, found bool, e error) {
+	result, _, err = q.singleValue(func(ds dataSource, pOption *ParallelOption) (resultValue interface{}, found bool, e error) {
 		rs, err1 := getAggregate(ds, aggregateFuncs, &(q.ParallelOption))
 		if err1 != nil {
 			e = err1
@@ -823,7 +831,7 @@ func (q *Queryable) hGroupBy(keySelector OneArgsFunc, chunkSizes ...int) *Querya
 }
 
 // Executes the query and get latest data source
-func (q *Queryable) execute() (ds DataSource, err error, errChan chan []error) {
+func (q *Queryable) execute() (ds dataSource, err error, errChan chan []error) {
 	if len(q.steps) == 0 {
 		ds = q.data
 		return
@@ -917,7 +925,7 @@ func (q *Queryable) execute() (ds DataSource, err error, errChan chan []error) {
 	return ds, nil, errChan
 }
 
-func (q *Queryable) singleValue(getVal func(DataSource, *ParallelOption) (result interface{}, found bool, err error)) (result interface{}, found bool, err error) {
+func (q *Queryable) singleValue(getVal func(dataSource, *ParallelOption) (result interface{}, found bool, err error)) (result interface{}, found bool, err error) {
 	ds, e, errChan := q.execute()
 	if e == nil {
 		//在Channel模式下，必须先取完全部的数据，否则stepErrs将死锁
@@ -954,23 +962,23 @@ func (q *Queryable) stepErrs(errChan chan []error) (err *AggregateError) {
 	return
 }
 
-func newDataSource(data interface{}) (ds DataSource) {
+func newDataSource(data interface{}) (ds dataSource) {
 	mustNotNil(data, ErrNilSource)
 
 	if _, ok := data.(Slicer); ok {
 		return newListSource(data)
 	}
-	//var ds DataSource
+
 	if v := reflect.ValueOf(data); v.Kind() == reflect.Slice || v.Kind() == reflect.Map {
-		ds = newListSource(data) //&listSource{data: data}
+		ds = newListSource(data)
 	} else if v.Kind() == reflect.Ptr {
 		ov := v.Elem()
 		if ov.Kind() == reflect.Slice || ov.Kind() == reflect.Map {
-			ds = newListSource(data) //&listSource{data: data}
+			ds = newListSource(data)
 		} else {
 			panic(ErrUnsupportSource)
 		}
-	} else if s, ok := data.(chan *Chunk); ok {
+	} else if s, ok := data.(chan *chunk); ok {
 		ds = &chanSource{chunkChan: s}
 	} else if v.Kind() == reflect.Chan {
 		ds = &chanSource{new(sync.Once), data, nil, nil}
@@ -984,7 +992,6 @@ func newDataSource(data interface{}) (ds DataSource) {
 
 // listSource presents the slice or map source
 type listSource struct {
-	//data interface{}
 	data Slicer
 }
 
@@ -1020,10 +1027,9 @@ func newListSource(data interface{}) *listSource {
 // note: the channel must be closed by caller of linq,
 // otherwise will be deadlock
 type chanSource struct {
-	//data1 chan *Chunk
 	once      *sync.Once
 	data      interface{}
-	chunkChan chan *Chunk
+	chunkChan chan *chunk
 	future    *promise.Future
 }
 
@@ -1031,7 +1037,7 @@ func (cs chanSource) Typ() int {
 	return SOURCE_CHANNEL
 }
 
-func (cs *chanSource) ChunkChan(chunkSize int) chan *Chunk {
+func (cs *chanSource) ChunkChan(chunkSize int) chan *chunk {
 	cs.makeChunkChanSure(chunkSize)
 	return cs.chunkChan
 }
@@ -1074,16 +1080,11 @@ func (cs chanSource) ToSlice(keepOrder bool) Slicer {
 		}
 		if keepOrder {
 			chunks = ordered.ToSlice()
-			//fmt.Println("latest chunks :", chunks, ordered.list)
 		}
 
-		//fmt.Println("toslice, result1===", chunks)
 		return NewSlicer(expandChunks(chunks, false))
 	} else {
 		srcChan := reflect.ValueOf(cs.data)
-		//if srcChan.Kind() != reflect.Chan {
-		//	panic(ErrUnsupportSource)
-		//}
 
 		result := make([]interface{}, 0, 10)
 		for {
@@ -1118,9 +1119,6 @@ func (cs chanSource) ToChan() chan interface{} {
 		}()
 	} else if cs.data != nil {
 		srcChan := reflect.ValueOf(cs.data)
-		//if srcChan.Kind() != reflect.Chan {
-		//	panic(ErrUnsupportSource)
-		//}
 
 		go func() {
 			for {
@@ -1156,14 +1154,13 @@ func (cs *chanSource) addCallbackToCloseChan() {
 	}
 }
 
-func sendChunk(out chan *Chunk, c *Chunk) (closed bool) {
+func sendChunk(out chan *chunk, c *chunk) (closed bool) {
 	defer func() {
 		if e := recover(); e != nil {
 			closed = true
 		}
 	}()
 	out <- c
-	//closed = false
 	return
 }
 
@@ -1176,7 +1173,7 @@ func (cs *chanSource) makeChunkChanSure(chunkSize int) {
 				return
 			}
 			srcChan := reflect.ValueOf(cs.data)
-			cs.chunkChan = make(chan *Chunk, numCPU)
+			cs.chunkChan = make(chan *chunk, numCPU)
 
 			cs.future = promise.Start(func() (r interface{}, e error) {
 				defer func() {
@@ -1192,7 +1189,7 @@ func (cs *chanSource) makeChunkChanSure(chunkSize int) {
 						i++
 						chunkData = append(chunkData, v.Interface())
 						if len(chunkData) == cap(chunkData) {
-							c := &Chunk{NewSlicer(chunkData), order, lasti}
+							c := &chunk{NewSlicer(chunkData), order, lasti}
 							if closed := sendChunk(cs.chunkChan, c); closed {
 								return nil, nil
 							}
@@ -1207,7 +1204,7 @@ func (cs *chanSource) makeChunkChanSure(chunkSize int) {
 				}
 
 				if len(chunkData) > 0 {
-					sendChunk(cs.chunkChan, &Chunk{NewSlicer(chunkData), order, lasti})
+					sendChunk(cs.chunkChan, &chunk{NewSlicer(chunkData), order, lasti})
 				}
 
 				//cs.Close()
