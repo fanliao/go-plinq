@@ -45,7 +45,7 @@ const (
 //         the Future value will be used to get the error if the error appears after the stepAction returns
 //    bool: true if the after operation need keep the order of data
 //    error: if the operation returns the list mode, it present if the error appears
-type stepAction func(DataSource, *ParallelOption, bool) (DataSource, bool, error) //, *promise.Future, bool, error)
+type stepAction func(dataSource, *ParallelOption, bool) (dataSource, bool, error) //, *promise.Future, bool, error)
 
 //step present a linq operation
 type step interface {
@@ -136,7 +136,7 @@ func (this joinStep) Action() (act stepAction) {
 
 // Get the action function for select operation
 func getSelect(selector OneArgsFunc) stepAction {
-	return stepAction(func(src DataSource, option *ParallelOption, first bool) (dest DataSource, keep bool, e error) {
+	return stepAction(func(src dataSource, option *ParallelOption, first bool) (dest dataSource, keep bool, e error) {
 		keep = option.KeepOrder
 		mapChunk := getChunkOprFunc(mapSliceToSelf, selector)
 		if first {
@@ -151,11 +151,11 @@ func getSelect(selector OneArgsFunc) stepAction {
 
 // Get the action function for select operation
 func getSelectMany(manySelector func(interface{}) []interface{}) stepAction {
-	return stepAction(func(src DataSource, option *ParallelOption, first bool) (dest DataSource, keep bool, e error) {
+	return stepAction(func(src dataSource, option *ParallelOption, first bool) (dest dataSource, keep bool, e error) {
 		keep = option.KeepOrder
-		mapChunk := func(c *Chunk) *Chunk {
+		mapChunk := func(c *chunk) *chunk {
 			results := mapSliceToMany(c.Data, manySelector)
-			return &Chunk{NewSlicer(results), c.Order, c.StartIndex}
+			return &chunk{NewSlicer(results), c.Order, c.StartIndex}
 		}
 
 		dest, e = parallelMap(src, nil, mapChunk, option)
@@ -166,7 +166,7 @@ func getSelectMany(manySelector func(interface{}) []interface{}) stepAction {
 
 // Get the action function for where operation
 func getWhere(predicate PredicateFunc) stepAction {
-	return stepAction(func(src DataSource, option *ParallelOption, first bool) (dest DataSource, keep bool, e error) {
+	return stepAction(func(src dataSource, option *ParallelOption, first bool) (dest dataSource, keep bool, e error) {
 		keep = option.KeepOrder
 		mapChunk := getChunkOprFunc(filterSlice, predicate)
 		dest, e = parallelMap(src, nil, mapChunk, option)
@@ -176,7 +176,7 @@ func getWhere(predicate PredicateFunc) stepAction {
 
 // Get the action function for OrderBy operation
 func getOrder(comparator CompareFunc) stepAction {
-	return stepAction(func(src DataSource, option *ParallelOption, first bool) (dest DataSource, keep bool, e error) {
+	return stepAction(func(src dataSource, option *ParallelOption, first bool) (dest dataSource, keep bool, e error) {
 		defer func() {
 			if err := recover(); err != nil {
 				e = newErrorWithStacks(err)
@@ -202,7 +202,7 @@ func getOrder(comparator CompareFunc) stepAction {
 					avl.Insert(v)
 				}), option)
 
-			dest, e = getFutureResult(cs.Future(), func(r []interface{}) DataSource {
+			dest, e = getFutureResult(cs.Future(), func(r []interface{}) dataSource {
 				return newDataSource(avl.ToSlice())
 			})
 			keep = true
@@ -214,7 +214,7 @@ func getOrder(comparator CompareFunc) stepAction {
 
 // Get the action function for DistinctBy operation
 func getDistinct(selector OneArgsFunc) stepAction {
-	return stepAction(func(src DataSource, option *ParallelOption, first bool) (dest DataSource, keep bool, e error) {
+	return stepAction(func(src dataSource, option *ParallelOption, first bool) (dest dataSource, keep bool, e error) {
 		keep = option.KeepOrder
 		var useDefHash uint32 = 0
 		mapChunk := getMapChunkToKVChunkFunc(&useDefHash, selector)
@@ -233,7 +233,7 @@ func getDistinct(selector OneArgsFunc) stepAction {
 // Get the action function for GroupBy operation
 // note the groupby cannot keep order because the map cannot keep order
 func getGroupBy(selector OneArgsFunc, returnMap bool) stepAction {
-	return stepAction(func(src DataSource, option *ParallelOption, first bool) (dest DataSource, keep bool, e error) {
+	return stepAction(func(src dataSource, option *ParallelOption, first bool) (dest dataSource, keep bool, e error) {
 		var useDefHash uint32 = 0
 		mapChunk := getMapChunkToKVChunkFunc(&useDefHash, selector)
 
@@ -317,7 +317,7 @@ func getJoinImpl(inner interface{},
 	innerKeySelector OneArgsFunc,
 	matchSelector func(*hKeyValue, []interface{}, *[]interface{}),
 	unmatchSelector func(*hKeyValue, *[]interface{}), isLeftJoin bool) stepAction {
-	return stepAction(func(src DataSource, option *ParallelOption, first bool) (dest DataSource, keep bool, e error) {
+	return stepAction(func(src dataSource, option *ParallelOption, first bool) (dest dataSource, keep bool, e error) {
 		keep = option.KeepOrder
 		innerKVtask := promise.Start(func() (interface{}, error) {
 			if innerKVsDs, err, _ := From(inner).hGroupBy(innerKeySelector).execute(); err == nil {
@@ -329,7 +329,7 @@ func getJoinImpl(inner interface{},
 		})
 
 		var useDefHash uint32 = 0
-		mapChunk := func(c *Chunk) (r *Chunk) {
+		mapChunk := func(c *chunk) (r *chunk) {
 			outerKVs := getMapChunkToKVs(&useDefHash, outerKeySelector)(c).ToInterfaces()
 			results := make([]interface{}, 0, 10)
 
@@ -347,7 +347,7 @@ func getJoinImpl(inner interface{},
 					}
 				}
 			}
-			return &Chunk{NewSlicer(results), c.Order, c.StartIndex}
+			return &chunk{NewSlicer(results), c.Order, c.StartIndex}
 		}
 
 		dest, e = parallelMap(src, nil, mapChunk, option)
@@ -355,7 +355,7 @@ func getJoinImpl(inner interface{},
 	})
 }
 
-func canSequentialSet(src DataSource, src2 DataSource) bool {
+func canSequentialSet(src dataSource, src2 dataSource) bool {
 	if src.Typ() == SOURCE_LIST && src2.Typ() == SOURCE_LIST {
 		if src.ToSlice(false).Len() <= defaultLargeChunkSize && src2.ToSlice(false).Len() <= defaultLargeChunkSize {
 			return true
@@ -368,13 +368,13 @@ func canSequentialSet(src DataSource, src2 DataSource) bool {
 // Get the action function for Union operation
 // note the union cannot keep order because the map cannot keep order
 func getUnion(source2 interface{}) stepAction {
-	return stepAction(func(src DataSource, option *ParallelOption, first bool) (dest DataSource, keep bool, e error) {
+	return stepAction(func(src dataSource, option *ParallelOption, first bool) (dest dataSource, keep bool, e error) {
 		keep = option.KeepOrder
 		src2 := From(source2).data
 		if canSequentialSet(src, src2) {
 			return sequentialUnion(src, src2, option, first)
 		}
-		reduceSrcChan := make(chan *Chunk, 2)
+		reduceSrcChan := make(chan *chunk, 2)
 
 		var useDefHash uint32
 		mapChunk := getMapChunkToKVChunkFunc(&useDefHash, nil)
@@ -396,7 +396,7 @@ func getUnion(source2 interface{}) stepAction {
 
 // Get the action function for Union operation
 // note the union cannot keep order because the map cannot keep order
-func sequentialUnion(src DataSource, src2 DataSource, option *ParallelOption, first bool) (ds DataSource, keep bool, e error) {
+func sequentialUnion(src dataSource, src2 dataSource, option *ParallelOption, first bool) (ds dataSource, keep bool, e error) {
 	defer func() {
 		if err := recover(); err != nil {
 			e = newErrorWithStacks(err)
@@ -408,8 +408,8 @@ func sequentialUnion(src DataSource, src2 DataSource, option *ParallelOption, fi
 	var useDefHash uint32 = 0
 	mapChunk := getMapChunkToKVChunkFunc(&useDefHash, nil)
 
-	c1 := mapChunk(&Chunk{s1, 0, 1})
-	c2 := mapChunk(&Chunk{s2, 0, 1})
+	c1 := mapChunk(&chunk{s1, 0, 1})
+	c2 := mapChunk(&chunk{s2, 0, 1})
 	result := make([]interface{}, 0, s1.Len()+s2.Len())
 
 	distKVs := make(map[interface{}]int)
@@ -421,7 +421,7 @@ func sequentialUnion(src DataSource, src2 DataSource, option *ParallelOption, fi
 
 // Get the action function for Concat operation
 func getConcat(source2 interface{}) stepAction {
-	return stepAction(func(src DataSource, option *ParallelOption, first bool) (dest DataSource, keep bool, e error) {
+	return stepAction(func(src dataSource, option *ParallelOption, first bool) (dest dataSource, keep bool, e error) {
 		//TODO: if the source is channel source, should use channel mode
 		slice1 := src.ToSlice(option.KeepOrder).ToInterfaces()
 		if slice2, err2 := From(source2).SetKeepOrder(option.KeepOrder).Results(); err2 == nil {
@@ -439,7 +439,7 @@ func getConcat(source2 interface{}) stepAction {
 // Get the action function for intersect operation
 // note the intersect cannot keep order because the map cannot keep order
 func getIntersect(source2 interface{}) stepAction {
-	return stepAction(func(src DataSource, option *ParallelOption, first bool) (dest DataSource, keep bool, e error) {
+	return stepAction(func(src dataSource, option *ParallelOption, first bool) (dest dataSource, keep bool, e error) {
 		keep = option.KeepOrder
 		dest, e = filterSet(src, source2, false, option)
 		return
@@ -449,7 +449,7 @@ func getIntersect(source2 interface{}) stepAction {
 // Get the action function for Except operation
 // note the except cannot keep order because the map cannot keep order
 func getExcept(source2 interface{}) stepAction {
-	return stepAction(func(src DataSource, option *ParallelOption, first bool) (dest DataSource, keep bool, e error) {
+	return stepAction(func(src dataSource, option *ParallelOption, first bool) (dest dataSource, keep bool, e error) {
 		keep = option.KeepOrder
 		dest, e = filterSet(src, source2, true, option)
 		return
@@ -458,7 +458,7 @@ func getExcept(source2 interface{}) stepAction {
 
 // Get the action function for Reverse operation
 func getReverse() stepAction {
-	return stepAction(func(src DataSource, option *ParallelOption, first bool) (dest DataSource, keep bool, e error) {
+	return stepAction(func(src dataSource, option *ParallelOption, first bool) (dest dataSource, keep bool, e error) {
 		keep = option.KeepOrder
 		var (
 			dstSlicer []interface{}
@@ -475,7 +475,7 @@ func getReverse() stepAction {
 		size := srcSlicer.Len()
 		srcSlice := srcSlicer.Slice(0, size/2) //wholeSlice[0 : size/2]
 
-		mapChunk := func(c *Chunk) *Chunk {
+		mapChunk := func(c *chunk) *chunk {
 			forEachSlicer(c.Data, func(i int, v interface{}) {
 				j := c.StartIndex + i
 				dstSlicer[size-1-j], dstSlicer[j] = c.Data.Index(i), srcSlicer.Index(size-1-j)
@@ -485,12 +485,12 @@ func getReverse() stepAction {
 
 		reverseSrc := &listSource{NewSlicer(srcSlice)} //newDataSource(srcSlice)
 		if size <= 1000 {
-			mapChunk(&Chunk{Data: srcSlice})
+			mapChunk(&chunk{Data: srcSlice})
 			dest = newDataSource(dstSlicer)
 			return
 		}
 
-		f := parallelMapListToList(reverseSrc, func(c *Chunk) *Chunk {
+		f := parallelMapListToList(reverseSrc, func(c *chunk) *chunk {
 			return mapChunk(c)
 		}, option)
 		_, e = f.Get()
@@ -504,7 +504,7 @@ func getSkipTakeCount(count int, isTake bool) stepAction {
 	if count < 0 {
 		count = 0
 	}
-	return getSkipTake(func(c *Chunk, canceller promise.Canceller) (i int, found bool) {
+	return getSkipTake(func(c *chunk, canceller promise.Canceller) (i int, found bool) {
 		if c.StartIndex > count {
 			i, found = 0, true
 		} else if c.StartIndex+c.Data.Len() >= count {
@@ -523,8 +523,8 @@ func getSkipTakeWhile(predicate PredicateFunc, isTake bool) stepAction {
 
 // note the elementAt cannot keep order because the map cannot keep order
 // 根据索引查找单个元素
-func getElementAt(src DataSource, i int, option *ParallelOption) (element interface{}, found bool, e error) {
-	return getFirstElement(src, func(c *Chunk, canceller promise.Canceller) (int, bool) {
+func getElementAt(src dataSource, i int, option *ParallelOption) (element interface{}, found bool, e error) {
+	return getFirstElement(src, func(c *chunk, canceller promise.Canceller) (int, bool) {
 		size := c.Data.Len()
 		if c.StartIndex <= i && c.StartIndex+size-1 >= i {
 			return i - c.StartIndex, true
@@ -536,18 +536,18 @@ func getElementAt(src DataSource, i int, option *ParallelOption) (element interf
 
 // Get the action function for FirstBy operation
 // 根据条件查找第一个符合的元素
-func getFirstBy(src DataSource, predicate PredicateFunc, option *ParallelOption) (element interface{}, found bool, e error) {
+func getFirstBy(src dataSource, predicate PredicateFunc, option *ParallelOption) (element interface{}, found bool, e error) {
 	return getFirstElement(src, foundMatchFunc(predicate, true), false, option)
 }
 
 // Get the action function for LastBy operation
 // 根据条件查找最后一个符合的元素
-func getLastBy(src DataSource, predicate PredicateFunc, option *ParallelOption) (element interface{}, found bool, e error) {
+func getLastBy(src dataSource, predicate PredicateFunc, option *ParallelOption) (element interface{}, found bool, e error) {
 	return getLastElement(src, foundMatchFunc(predicate, false), option)
 }
 
 // Get the action function for Aggregate operation
-func getAggregate(src DataSource, aggregateFuncs []*AggregateOperation, option *ParallelOption) (result []interface{}, e error) {
+func getAggregate(src dataSource, aggregateFuncs []*AggregateOperation, option *ParallelOption) (result []interface{}, e error) {
 	if isNil(aggregateFuncs) || len(aggregateFuncs) == 0 {
 		return nil, newErrorWithStacks(errors.New("Aggregation function cannot be nil"))
 	}
@@ -559,8 +559,8 @@ func getAggregate(src DataSource, aggregateFuncs []*AggregateOperation, option *
 	}
 
 	rs := make([]interface{}, len(aggregateFuncs))
-	mapChunk := func(c *Chunk) (r *Chunk) {
-		r = &Chunk{aggregateSlice(c.Data, aggregateFuncs, false, true), c.Order, c.StartIndex}
+	mapChunk := func(c *chunk) (r *chunk) {
+		r = &chunk{aggregateSlice(c.Data, aggregateFuncs, false, true), c.Order, c.StartIndex}
 		return
 	}
 	//NOTE: must use channel as map output,
@@ -571,7 +571,7 @@ func getAggregate(src DataSource, aggregateFuncs []*AggregateOperation, option *
 	//reduce the keyValue map to get grouped slice
 	//get key with group values values
 	first := true
-	reduce := func(c *Chunk) {
+	reduce := func(c *chunk) {
 		if first {
 			for i := 0; i < len(rs); i++ {
 				rs[i] = aggregateFuncs[i].Seed
@@ -585,7 +585,7 @@ func getAggregate(src DataSource, aggregateFuncs []*AggregateOperation, option *
 	}
 
 	avl := newChunkAvlTree()
-	if errs := reduceChan(mapOut, func(c *Chunk) (r *Chunk) {
+	if errs := reduceChan(mapOut, func(c *chunk) (r *chunk) {
 		if !keep {
 			reduce(c)
 		} else {
@@ -599,7 +599,7 @@ func getAggregate(src DataSource, aggregateFuncs []*AggregateOperation, option *
 	if keep {
 		cs := avl.ToSlice()
 		for _, v := range cs {
-			c := v.(*Chunk)
+			c := v.(*chunk)
 			reduce(c)
 		}
 	}
@@ -612,8 +612,8 @@ func getAggregate(src DataSource, aggregateFuncs []*AggregateOperation, option *
 
 }
 
-func getSkipTake(findMatch func(*Chunk, promise.Canceller) (int, bool), isTake bool, useIndex bool) stepAction {
-	return stepAction(func(src DataSource, option *ParallelOption, first bool) (dest DataSource, keep bool, e error) {
+func getSkipTake(findMatch func(*chunk, promise.Canceller) (int, bool), isTake bool, useIndex bool) stepAction {
+	return stepAction(func(src dataSource, option *ParallelOption, first bool) (dest dataSource, keep bool, e error) {
 		switch s := src.(type) {
 		case *listSource:
 			var (
@@ -622,7 +622,7 @@ func getSkipTake(findMatch func(*Chunk, promise.Canceller) (int, bool), isTake b
 			)
 			//如果是根据索引查询列表，可以直接计算，否则要一个个判断
 			if useIndex {
-				i, _ = findMatch(&Chunk{s.data, 0, 0}, nil)
+				i, _ = findMatch(&chunk{s.data, 0, 0}, nil)
 			} else {
 				if i, found, e = getFirstOrLastIndex(s, findMatch, option, true); !found {
 					i = s.data.Len()
@@ -636,12 +636,12 @@ func getSkipTake(findMatch func(*Chunk, promise.Canceller) (int, bool), isTake b
 				return newDataSource(s.data.Slice(i, s.data.Len())), option.KeepOrder, e
 			}
 		case *chanSource:
-			out := make(chan *Chunk, option.Degree)
-			sendMatchChunk := func(c *Chunk, idx int) {
+			out := make(chan *chunk, option.Degree)
+			sendMatchChunk := func(c *chunk, idx int) {
 				if isTake {
-					sendChunk(out, &Chunk{c.Data.Slice(0, idx), c.Order, c.StartIndex})
+					sendChunk(out, &chunk{c.Data.Slice(0, idx), c.Order, c.StartIndex})
 				} else {
-					sendChunk(out, &Chunk{c.Data.Slice(idx, c.Data.Len()), c.Order, c.StartIndex})
+					sendChunk(out, &chunk{c.Data.Slice(idx, c.Data.Len()), c.Order, c.StartIndex})
 				}
 			}
 
@@ -663,7 +663,7 @@ func getSkipTake(findMatch func(*Chunk, promise.Canceller) (int, bool), isTake b
 					sendChunk(out, c.chunk)
 				} else {
 					//send a empty slicer is better, because the after operations may include Skip, it need the whole chunk list
-					sendChunk(out, &Chunk{NewSlicer([]interface{}{}), c.chunk.Order, c.chunk.StartIndex})
+					sendChunk(out, &chunk{NewSlicer([]interface{}{}), c.chunk.Order, c.chunk.StartIndex})
 				}
 				return false
 			}
@@ -684,7 +684,7 @@ func getSkipTake(findMatch func(*Chunk, promise.Canceller) (int, bool), isTake b
 			srcChan := s.ChunkChan(option.ChunkSize)
 			f := promise.Start(func() (interface{}, error) {
 				matchedList := newChunkMatchResultList(beforeMatchAct, afterMatchAct, beMatchAct, useIndex)
-				return forEachChanByOrder(s, srcChan, func(c *Chunk, foundFirstMatch *bool) bool {
+				return forEachChanByOrder(s, srcChan, func(c *chunk, foundFirstMatch *bool) bool {
 					if !*foundFirstMatch {
 						//检查块是否存在匹配的数据，按Index计算的总是返回false，因为必须要等前面所有的块已经排好序后才能得到正确的索引
 						chunkResult := getChunkMatchResult(c, findMatch, useIndex)
@@ -720,15 +720,15 @@ func getSkipTake(findMatch func(*Chunk, promise.Canceller) (int, bool), isTake b
 }
 
 // Get the action function for ElementAt operation
-func getFirstElement(src DataSource,
-	findMatch func(c *Chunk, canceller promise.Canceller) (r int, found bool),
+func getFirstElement(src dataSource,
+	findMatch func(c *chunk, canceller promise.Canceller) (r int, found bool),
 	useIndex bool, option *ParallelOption) (element interface{}, found bool, err error) {
 	switch s := src.(type) {
 	case *listSource:
 		rs, i := s.data, -1
 		if useIndex {
 			//使用索引查找列表非常简单，无需并行
-			if i, found = findMatch(&Chunk{rs, 0, 0}, nil); found {
+			if i, found = findMatch(&chunk{rs, 0, 0}, nil); found {
 				return rs.Index(i), true, nil
 			} else {
 				return nil, false, nil
@@ -771,7 +771,7 @@ func getFirstElement(src DataSource,
 		srcChan := s.ChunkChan(option.ChunkSize)
 		f := promise.Start(func() (interface{}, error) {
 			matchedList := newChunkMatchResultList(beforeMatchAct, afterMatchAct, beMatchAct, useIndex)
-			return forEachChanByOrder(s, srcChan, func(c *Chunk, foundFirstMatch *bool) bool {
+			return forEachChanByOrder(s, srcChan, func(c *chunk, foundFirstMatch *bool) bool {
 				if !*foundFirstMatch {
 					chunkResult := getChunkMatchResult(c, findMatch, useIndex)
 
@@ -800,8 +800,8 @@ func getFirstElement(src DataSource,
 	panic(ErrUnsupportSource)
 }
 
-func getLastElement(src DataSource,
-	findMatch func(c *Chunk, canceller promise.Canceller) (r int, found bool),
+func getLastElement(src dataSource,
+	findMatch func(c *chunk, canceller promise.Canceller) (r int, found bool),
 	option *ParallelOption) (element interface{}, found bool, err error) {
 	switch s := src.(type) {
 	case *listSource:
@@ -817,7 +817,7 @@ func getLastElement(src DataSource,
 		f := promise.Start(func() (interface{}, error) {
 			var r interface{}
 			maxOrder := -1
-			_, _ = forEachChanByOrder(s, srcChan, func(c *Chunk, foundFirstMatch *bool) bool {
+			_, _ = forEachChanByOrder(s, srcChan, func(c *chunk, foundFirstMatch *bool) bool {
 				index, matched := findMatch(c, nil)
 				if matched {
 					if c.Order > maxOrder {
@@ -844,8 +844,8 @@ func getLastElement(src DataSource,
 }
 
 // Get the action function for Any operation
-func getAny(src DataSource, predicate PredicateFunc, option *ParallelOption) (result interface{}, allMatched bool, err error) {
-	getMapChunk := func(c *Chunk) func(promise.Canceller) (interface{}, error) {
+func getAny(src dataSource, predicate PredicateFunc, option *ParallelOption) (result interface{}, allMatched bool, err error) {
+	getMapChunk := func(c *chunk) func(promise.Canceller) (interface{}, error) {
 		return func(canceller promise.Canceller) (foundNoMatched interface{}, e error) {
 			size := c.Data.Len()
 			for i := 0; i < size; i++ {
@@ -884,8 +884,8 @@ func getAny(src DataSource, predicate PredicateFunc, option *ParallelOption) (re
 	return
 }
 
-func getChunkMatchResult(c *Chunk,
-	findMatch func(c *Chunk, canceller promise.Canceller) (r int, found bool),
+func getChunkMatchResult(c *chunk,
+	findMatch func(c *chunk, canceller promise.Canceller) (r int, found bool),
 	useIndex bool) (r *chunkMatchResult) {
 	r = &chunkMatchResult{chunk: c}
 	if !useIndex {
@@ -895,7 +895,7 @@ func getChunkMatchResult(c *Chunk,
 }
 
 // Get the action function for ElementAt operation
-func forEachChanByOrder(src *chanSource, srcChan chan *Chunk, action func(*Chunk, *bool) bool) (interface{}, error) {
+func forEachChanByOrder(src *chanSource, srcChan chan *chunk, action func(*chunk, *bool) bool) (interface{}, error) {
 	foundFirstMatch := false
 	shouldBreak := false
 	//Noted the order of sent from source chan maybe confused
@@ -922,7 +922,7 @@ func forEachChanByOrder(src *chanSource, srcChan chan *Chunk, action func(*Chunk
 	return nil, nil
 }
 
-func filterSet(src DataSource, source2 interface{}, isExcept bool, option *ParallelOption) (DataSource, error) {
+func filterSet(src dataSource, source2 interface{}, isExcept bool, option *ParallelOption) (dataSource, error) {
 	src2 := newDataSource(source2)
 	if canSequentialSet(src, src2) {
 		return filterSetWithSeq(src, src2, isExcept, option)
@@ -960,21 +960,21 @@ func addDistVal(k interface{}, val interface{},
 	return
 }
 
-func getFilterSetMapFuncs() (mapFunc1, mapFunc2 func(*Chunk) *Chunk) {
+func getFilterSetMapFuncs() (mapFunc1, mapFunc2 func(*chunk) *chunk) {
 	var useDefHash uint32 = 0
 	mapFunc1 = getMapChunkToKVChunkFunc(&useDefHash, nil)
-	mapFunc2 = func(c *Chunk) (r *Chunk) {
-		getResult := func(c *Chunk, useValAsKey bool) Slicer {
+	mapFunc2 = func(c *chunk) (r *chunk) {
+		getResult := func(c *chunk, useValAsKey bool) Slicer {
 			return mapSlice(c.Data, hash64)
 		}
 		slicer := getMapChunkToKeyList(&useDefHash, nil, getResult)(c)
-		return &Chunk{slicer, c.Order, c.StartIndex}
+		return &chunk{slicer, c.Order, c.StartIndex}
 	}
 	return
 }
 
-func filterSetByChan(src DataSource, src2 DataSource, isExcept bool, option *ParallelOption) (DataSource, error) {
-	checkChunkBeEnd := func(c *Chunk, ok bool, ended *bool, anotherEnded bool, ch chan *Chunk) (end, broken bool) {
+func filterSetByChan(src dataSource, src2 dataSource, isExcept bool, option *ParallelOption) (dataSource, error) {
+	checkChunkBeEnd := func(c *chunk, ok bool, ended *bool, anotherEnded bool, ch chan *chunk) (end, broken bool) {
 		if isNil(c) || !ok {
 			func() {
 				defer func() {
@@ -1070,11 +1070,11 @@ func filterSetByChan(src DataSource, src2 DataSource, isExcept bool, option *Par
 
 }
 
-func filterSetWithSeq(src DataSource, src2 DataSource, isExcept bool, option *ParallelOption) (DataSource, error) {
+func filterSetWithSeq(src dataSource, src2 dataSource, isExcept bool, option *ParallelOption) (dataSource, error) {
 	mapChunk, mapChunk2 := getFilterSetMapFuncs()
 
-	c1 := mapChunk(&Chunk{src.ToSlice(false), 0, 1})
-	c2 := mapChunk2(&Chunk{src2.ToSlice(false), 0, 1})
+	c1 := mapChunk(&chunk{src.ToSlice(false), 0, 1})
+	c2 := mapChunk2(&chunk{src2.ToSlice(false), 0, 1})
 
 	//获取src2对应的map用于筛选
 	distKVs := make(map[interface{}]bool, c2.Data.Len())
@@ -1099,7 +1099,7 @@ func filterSetWithSeq(src DataSource, src2 DataSource, isExcept bool, option *Pa
 	return &listSource{NewSlicer(results[0:count])}, nil
 }
 
-func filterSetByList(src DataSource, src2 DataSource, isExcept bool, option *ParallelOption) (cs DataSource, e error) {
+func filterSetByList(src dataSource, src2 dataSource, isExcept bool, option *ParallelOption) (cs dataSource, e error) {
 	ds2 := src2
 	mapChunk, mapChunk2 := getFilterSetMapFuncs()
 	ds1, e := parallelMap(src, nil, mapChunk, option)
@@ -1107,7 +1107,7 @@ func filterSetByList(src DataSource, src2 DataSource, isExcept bool, option *Par
 
 	var distKVs map[interface{}]bool
 	resultKVs := make(map[interface{}]interface{}, 100)
-	mapDist := func(c *Chunk) *Chunk {
+	mapDist := func(c *chunk) *chunk {
 		//获取src2对应的map用于筛选
 		if distKVs == nil {
 			if rs, err := f2.Get(); err != nil {
@@ -1115,7 +1115,7 @@ func filterSetByList(src DataSource, src2 DataSource, isExcept bool, option *Par
 			} else {
 				distKVs = make(map[interface{}]bool, 100)
 				for _, c := range rs.([]interface{}) {
-					chunk := c.(*Chunk)
+					chunk := c.(*chunk)
 					forEachSlicer(chunk.Data, func(i int, v interface{}) {
 						distKVs[v] = true
 					})
@@ -1135,7 +1135,7 @@ func filterSetByList(src DataSource, src2 DataSource, isExcept bool, option *Par
 				count++
 			}
 		})
-		return &Chunk{NewSlicer(results[0:count]), c.Order, c.StartIndex}
+		return &chunk{NewSlicer(results[0:count]), c.Order, c.StartIndex}
 	}
 
 	option.Degree = 1
@@ -1144,7 +1144,7 @@ func filterSetByList(src DataSource, src2 DataSource, isExcept bool, option *Par
 }
 
 func getFirstOrLastIndex(src *listSource,
-	predicate func(c *Chunk, canceller promise.Canceller) (r int, found bool),
+	predicate func(c *chunk, canceller promise.Canceller) (r int, found bool),
 	option *ParallelOption, before2after bool) (idx int, found bool, err error) {
 	i, err := parallelMatchListByDirection(src, predicate, option, before2after)
 	if err == nil && i != -1 {
@@ -1156,8 +1156,8 @@ func getFirstOrLastIndex(src *listSource,
 	return
 }
 
-func foundMatchFunc(predicate PredicateFunc, findFirst bool) func(c *Chunk, canceller promise.Canceller) (r int, found bool) {
-	return func(c *Chunk, canceller promise.Canceller) (r int, found bool) {
+func foundMatchFunc(predicate PredicateFunc, findFirst bool) func(c *chunk, canceller promise.Canceller) (r int, found bool) {
+	return func(c *chunk, canceller promise.Canceller) (r int, found bool) {
 		r = -1
 		size := c.Data.Len()
 		i, end := 0, size
@@ -1191,7 +1191,7 @@ func foundMatchFunc(predicate PredicateFunc, findFirst bool) func(c *Chunk, canc
 //paralleliam functions--------------------------------------------------
 
 //连续分割，将slice分割为几个连续的块，块数<=option.Degree
-func splitContinuous(src DataSource, action func(*Chunk), option *ParallelOption) {
+func splitContinuous(src dataSource, action func(*chunk), option *ParallelOption) {
 	data := src.ToSlice(false)
 	lenOfData := data.Len()
 	size := ceilChunkSize(lenOfData, option.Degree)
@@ -1205,7 +1205,7 @@ func splitContinuous(src DataSource, action func(*Chunk), option *ParallelOption
 		if end >= lenOfData {
 			end = lenOfData
 		}
-		c := &Chunk{data.Slice(i*size, end), i, i * size} //, end}
+		c := &chunk{data.Slice(i*size, end), i, i * size} //, end}
 		action(c)
 	}
 
@@ -1214,7 +1214,7 @@ func splitContinuous(src DataSource, action func(*Chunk), option *ParallelOption
 
 //条带式分割，将slice分割为固定大小的Chunk，然后发送到Channel并返回
 //如果数据量==0，则返回nil
-func splitToChunkChan(src DataSource, option *ParallelOption) (ch chan *Chunk) {
+func splitToChunkChan(src dataSource, option *ParallelOption) (ch chan *chunk) {
 	data := src.ToSlice(false)
 	lenOfData := data.Len()
 
@@ -1226,14 +1226,14 @@ func splitToChunkChan(src DataSource, option *ParallelOption) (ch chan *Chunk) {
 		return
 	}
 
-	ch = make(chan *Chunk, option.Degree)
+	ch = make(chan *chunk, option.Degree)
 	go func() {
 		for i := 0; i*size < lenOfData; i++ {
 			end := (i + 1) * size
 			if end >= lenOfData {
 				end = lenOfData
 			}
-			c := &Chunk{data.Slice(i*size, end), i, i * size} //, end}
+			c := &chunk{data.Slice(i*size, end), i, i * size} //, end}
 			sendChunk(ch, c)
 		}
 		func() {
@@ -1245,14 +1245,14 @@ func splitToChunkChan(src DataSource, option *ParallelOption) (ch chan *Chunk) {
 }
 
 //对data source进行并行的Map处理，小数据量下返回listSource，否则都返回chanSource
-func parallelMap(src DataSource, reduceSrcChan chan *Chunk,
-	mapChunk func(c *Chunk) (r *Chunk), option *ParallelOption) (dest DataSource, err error) {
+func parallelMap(src dataSource, reduceSrcChan chan *chunk,
+	mapChunk func(c *chunk) (r *chunk), option *ParallelOption) (dest dataSource, err error) {
 	//get all values and keys
 	switch s := src.(type) {
 	case *listSource:
 		if s.data.Len() <= option.ChunkSize*option.Degree {
 			f := parallelMapListToList(s, mapChunk, option)
-			dest, err = getFutureResult(f, func(r []interface{}) DataSource {
+			dest, err = getFutureResult(f, func(r []interface{}) dataSource {
 				return newDataSource(expandChunks(r, option.KeepOrder))
 			})
 			return
@@ -1267,8 +1267,8 @@ func parallelMap(src DataSource, reduceSrcChan chan *Chunk,
 }
 
 //并行映射data source到channel
-func parallelMapToChan(src DataSource, reduceSrcChan chan *Chunk,
-	mapChunk func(c *Chunk) (r *Chunk), option *ParallelOption) (cs *chanSource) {
+func parallelMapToChan(src dataSource, reduceSrcChan chan *chunk,
+	mapChunk func(c *chunk) (r *chunk), option *ParallelOption) (cs *chanSource) {
 	//get all values and keys
 	switch s := src.(type) {
 	case *listSource:
@@ -1280,8 +1280,8 @@ func parallelMapToChan(src DataSource, reduceSrcChan chan *Chunk,
 	}
 }
 
-func forEachChan(src *chanSource, srcChan chan *Chunk,
-	action func(*Chunk) (result interface{}, beEnded bool, err error)) (r interface{}, e error) {
+func forEachChan(src *chanSource, srcChan chan *chunk,
+	action func(*chunk) (result interface{}, beEnded bool, err error)) (r interface{}, e error) {
 	defer func() {
 		if err := recover(); err != nil {
 			e = newErrorWithStacks(err)
@@ -1310,11 +1310,11 @@ func forEachChan(src *chanSource, srcChan chan *Chunk,
 }
 
 //并行映射channel到channel
-func parallelMapChanToChan(src *chanSource, out chan *Chunk,
-	task func(*Chunk) *Chunk, option *ParallelOption) (cs *chanSource) {
+func parallelMapChanToChan(src *chanSource, out chan *chunk,
+	task func(*chunk) *chunk, option *ParallelOption) (cs *chanSource) {
 	var createOutChan bool
 	if out == nil {
-		out = make(chan *Chunk, option.Degree)
+		out = make(chan *chunk, option.Degree)
 		createOutChan = true
 	}
 
@@ -1323,7 +1323,7 @@ func parallelMapChanToChan(src *chanSource, out chan *Chunk,
 	fs := make([]*promise.Future, option.Degree)
 	for i := 0; i < option.Degree; i++ {
 		f := promise.Start(func() (r interface{}, e error) {
-			r, e = forEachChan(src, srcChan, func(c *Chunk) (result interface{}, beEnded bool, err error) {
+			r, e = forEachChan(src, srcChan, func(c *chunk) (result interface{}, beEnded bool, err error) {
 				d := task(c)
 				if out != nil && d != nil {
 					sendChunk(out, d)
@@ -1344,11 +1344,11 @@ func parallelMapChanToChan(src *chanSource, out chan *Chunk,
 }
 
 //并行映射slice到channel
-func parallelMapListToChan(src DataSource, out chan *Chunk,
-	task func(*Chunk) *Chunk, option *ParallelOption) (cs *chanSource) {
+func parallelMapListToChan(src dataSource, out chan *chunk,
+	task func(*chunk) *chunk, option *ParallelOption) (cs *chanSource) {
 	var createOutChan bool
 	if out == nil {
-		out = make(chan *Chunk, option.Degree)
+		out = make(chan *chunk, option.Degree)
 		createOutChan = true
 	}
 
@@ -1370,10 +1370,10 @@ func parallelMapListToChan(src DataSource, out chan *Chunk,
 }
 
 //并行映射slice到slice
-func parallelMapListToList(src DataSource, task func(*Chunk) *Chunk, option *ParallelOption) (f *promise.Future) {
+func parallelMapListToList(src dataSource, task func(*chunk) *chunk, option *ParallelOption) (f *promise.Future) {
 
 	i, fs := 0, make([]interface{}, option.Degree)
-	splitContinuous(src, func(c *Chunk) {
+	splitContinuous(src, func(c *chunk) {
 		fs[i] = func() (interface{}, error) {
 			r := task(c)
 			return r, nil
@@ -1386,11 +1386,11 @@ func parallelMapListToList(src DataSource, task func(*Chunk) *Chunk, option *Par
 
 //并行循环slice，如果任一任务的返回值满足要求，则返回该值，否则返回false，
 //如果没有匹配的返回值并且有任务失败则reject
-func parallelMapListForAnyTrue(src DataSource,
-	getAction func(*Chunk) func(promise.Canceller) (interface{}, error),
+func parallelMapListForAnyTrue(src dataSource,
+	getAction func(*chunk) func(promise.Canceller) (interface{}, error),
 	predicate PredicateFunc, option *ParallelOption) (f *promise.Future) {
 	i, fs := 0, make([]*promise.Future, option.Degree)
-	splitContinuous(src, func(c *Chunk) {
+	splitContinuous(src, func(c *chunk) {
 		fs[i] = promise.Start(getAction(c))
 		i++
 	}, option)
@@ -1401,7 +1401,7 @@ func parallelMapListForAnyTrue(src DataSource,
 //并行循环channel，如果任一任务的返回值满足要求，则返回该值，否则返回false，
 //如果没有匹配的返回值并且有任务失败则reject
 func parallelMapChanForAnyTrue(src *chanSource,
-	getAction func(*Chunk) func(promise.Canceller) (interface{}, error),
+	getAction func(*chunk) func(promise.Canceller) (interface{}, error),
 	predicate PredicateFunc, option *ParallelOption) *promise.Future {
 
 	srcChan := src.ChunkChan(option.ChunkSize)
@@ -1410,7 +1410,7 @@ func parallelMapChanForAnyTrue(src *chanSource,
 	for i := 0; i < option.Degree; i++ {
 		//k := i
 		f := promise.Start(func(canceller promise.Canceller) (r interface{}, e error) {
-			r, e = forEachChan(src, srcChan, func(c *Chunk) (result interface{}, beEnded bool, err error) {
+			r, e = forEachChan(src, srcChan, func(c *chunk) (result interface{}, beEnded bool, err error) {
 				if result, err = getAction(c)(canceller); err == nil {
 					if predicate(result) {
 						r = result
@@ -1432,12 +1432,12 @@ func parallelMapChanForAnyTrue(src *chanSource,
 }
 
 //并行查找slice中第一个符合条件的索引，可以选择从前和从后开始判断
-func parallelMatchListByDirection(src DataSource,
-	getAction func(*Chunk, promise.Canceller) (int, bool),
+func parallelMatchListByDirection(src dataSource,
+	getAction func(*chunk, promise.Canceller) (int, bool),
 	option *ParallelOption, isFarword bool) (index interface{}, err error) {
 	count, funs := 0, make([]func(promise.Canceller) (interface{}, error), option.Degree)
 	//fmt.Println("match list,len(src)=", src.ToSlice(false).Len())
-	splitContinuous(src, func(c *Chunk) {
+	splitContinuous(src, func(c *chunk) {
 		funs[count] = func(canceller promise.Canceller) (interface{}, error) {
 			r, found := getAction(c, canceller)
 			if found && r != -1 {
@@ -1532,7 +1532,7 @@ func parallelMatchListByDirection(src DataSource,
 
 //if the data source is listSource, then computer the degree of paralleliam.
 //if the degree is 1, the paralleliam is no need.
-func singleDegree(src DataSource, option *ParallelOption) bool {
+func singleDegree(src dataSource, option *ParallelOption) bool {
 	if s, ok := src.(*listSource); ok {
 		list := s.ToSlice(false)
 		return list.Len() <= option.ChunkSize
@@ -1542,7 +1542,7 @@ func singleDegree(src DataSource, option *ParallelOption) bool {
 	}
 }
 
-func trySequentialAggregate(src DataSource, option *ParallelOption, aggregateFuncs []*AggregateOperation) (rs []interface{}, err error, handled bool) {
+func trySequentialAggregate(src dataSource, option *ParallelOption, aggregateFuncs []*AggregateOperation) (rs []interface{}, err error, handled bool) {
 	defer func() {
 		if e := recover(); e != nil {
 			err = newErrorWithStacks(e)
@@ -1574,9 +1574,9 @@ func ifMustSequential(aggregateFuncs []*AggregateOperation) bool {
 }
 
 //the functions reduces the paralleliam map result----------------------------------------------------------
-func reduceChan(mapOut DataSource, reduce func(*Chunk) *Chunk) (err interface{}) {
+func reduceChan(mapOut dataSource, reduce func(*chunk) *chunk) (err interface{}) {
 	if cs, ok := mapOut.(*chanSource); ok {
-		_, err := forEachChan(cs, cs.chunkChan, func(c *Chunk) (result interface{}, beEnded bool, err error) {
+		_, err := forEachChan(cs, cs.chunkChan, func(c *chunk) (result interface{}, beEnded bool, err error) {
 			reduce(c)
 			return nil, false, nil
 		})
@@ -1589,7 +1589,7 @@ func reduceChan(mapOut DataSource, reduce func(*Chunk) *Chunk) (err interface{})
 				}
 			}()
 			ls, _ := mapOut.(*listSource)
-			c := &Chunk{Data: ls.data}
+			c := &chunk{Data: ls.data}
 			reduce(c)
 		}()
 		return
@@ -1597,12 +1597,12 @@ func reduceChan(mapOut DataSource, reduce func(*Chunk) *Chunk) (err interface{})
 }
 
 //the functions reduces the paralleliam map result----------------------------------------------------------
-func reduceDistValues(src DataSource, option *ParallelOption) (dest DataSource, err error) {
+func reduceDistValues(src dataSource, option *ParallelOption) (dest dataSource, err error) {
 	//get distinct values
 	distKVs := make(map[interface{}]int)
 	option.Degree = 1
 	//fmt.Println("reduceDistValues")
-	return parallelMap(src, nil, func(c *Chunk) *Chunk {
+	return parallelMap(src, nil, func(c *chunk) *chunk {
 
 		r := distChunkValues(c, distKVs, nil)
 		//fmt.Println("\n distChunkValues", c, r.Data)
@@ -1612,13 +1612,13 @@ func reduceDistValues(src DataSource, option *ParallelOption) (dest DataSource, 
 
 //util functions-----------------------------------------------------------------
 
-func getFutureResult(f *promise.Future, dataSourceFunc func([]interface{}) DataSource) (DataSource, error) {
+func getFutureResult(f *promise.Future, dataSourceFunc func([]interface{}) dataSource) (dataSource, error) {
 	if results, err := f.Get(); err != nil {
 		return nil, err
 	} else {
 		rs := results.([]interface{})
 		if rs != nil && len(rs) == 1 {
-			if c, ok := rs[0].(*Chunk); ok {
+			if c, ok := rs[0].(*chunk); ok {
 				return &listSource{c.Data}, nil
 			}
 		}
@@ -1634,7 +1634,7 @@ func ceilChunkSize(a int, b int) int {
 	}
 }
 
-func chunkToKeyValues(c *Chunk, hashAsKey bool, keyFunc func(v interface{}) interface{}, KeyValues *[]interface{}) Slicer {
+func chunkToKeyValues(c *chunk, hashAsKey bool, keyFunc func(v interface{}) interface{}, KeyValues *[]interface{}) Slicer {
 	return mapSlice(c.Data, func(v interface{}) interface{} {
 		k := keyFunc(v)
 		if hashAsKey {
@@ -1672,7 +1672,7 @@ func getChunkSizeArg(chunkSizes ...int) int {
 }
 
 type chunkMatchResult struct {
-	chunk      *Chunk
+	chunk      *chunk
 	matched    bool
 	matchIndex int
 }

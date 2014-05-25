@@ -27,7 +27,7 @@ func self(v interface{}) interface{} {
 }
 
 //the Utils functions for Slice and Chunk----------------------
-func distChunkValues(c *Chunk, distKVs map[interface{}]int, pResults *[]interface{}) *Chunk {
+func distChunkValues(c *chunk, distKVs map[interface{}]int, pResults *[]interface{}) *chunk {
 	if pResults == nil {
 		size := c.Data.Len()
 		result := make([]interface{}, 0, size)
@@ -52,28 +52,28 @@ func distChunkValues(c *Chunk, distKVs map[interface{}]int, pResults *[]interfac
 	return c
 }
 
-func getChunkOprFunc(sliceOpr func(Slicer, interface{}) Slicer, opr interface{}) func(*Chunk) *Chunk {
-	return func(c *Chunk) *Chunk {
+func getChunkOprFunc(sliceOpr func(Slicer, interface{}) Slicer, opr interface{}) func(*chunk) *chunk {
+	return func(c *chunk) *chunk {
 		result := sliceOpr(c.Data, opr)
 		if result != nil {
-			return &Chunk{result, c.Order, c.StartIndex}
+			return &chunk{result, c.Order, c.StartIndex}
 		} else {
 			return nil
 		}
 	}
 }
 
-func getMapChunkFunc(f OneArgsFunc) func(*Chunk) *Chunk {
-	return func(c *Chunk) *Chunk {
+func getMapChunkFunc(f OneArgsFunc) func(*chunk) *chunk {
+	return func(c *chunk) *chunk {
 		result := mapSlice(c.Data, f)
-		return &Chunk{result, c.Order, c.StartIndex}
+		return &chunk{result, c.Order, c.StartIndex}
 	}
 }
 
-func getMapChunkToSelfFunc(f OneArgsFunc) func(*Chunk) *Chunk {
-	return func(c *Chunk) *Chunk {
+func getMapChunkToSelfFunc(f OneArgsFunc) func(*chunk) *chunk {
+	return func(c *chunk) *chunk {
 		result := mapSliceToSelf(c.Data, f)
-		return &Chunk{result, c.Order, c.StartIndex}
+		return &chunk{result, c.Order, c.StartIndex}
 	}
 }
 
@@ -157,8 +157,8 @@ func mapSliceToSelf(src Slicer, f interface{}) Slicer {
 	}
 }
 
-func getMapChunkToKeyList(useDefHash *uint32, converter OneArgsFunc, getResult func(*Chunk, bool) Slicer) func(c *Chunk) Slicer {
-	return func(c *Chunk) (rs Slicer) {
+func getMapChunkToKeyList(useDefHash *uint32, converter OneArgsFunc, getResult func(*chunk, bool) Slicer) func(c *chunk) Slicer {
+	return func(c *chunk) (rs Slicer) {
 		useValAsKey := false
 		valCanAsKey := atomic.LoadUint32(useDefHash)
 		useSelf := isNil(converter)
@@ -197,27 +197,27 @@ func getMapChunkToKeyList(useDefHash *uint32, converter OneArgsFunc, getResult f
 	}
 }
 
-func getMapChunkToKVs(useDefHash *uint32, converter OneArgsFunc) func(c *Chunk) Slicer {
-	return getMapChunkToKeyList(useDefHash, converter, func(c *Chunk, useValAsKey bool) Slicer {
+func getMapChunkToKVs(useDefHash *uint32, converter OneArgsFunc) func(c *chunk) Slicer {
+	return getMapChunkToKeyList(useDefHash, converter, func(c *chunk, useValAsKey bool) Slicer {
 		return chunkToKeyValues(c, !useValAsKey, converter, nil)
 	})
 }
 
-func getMapChunkToKVChunkFunc(useDefHash *uint32, converter OneArgsFunc) func(c *Chunk) (r *Chunk) {
-	return func(c *Chunk) (r *Chunk) {
+func getMapChunkToKVChunkFunc(useDefHash *uint32, converter OneArgsFunc) func(c *chunk) (r *chunk) {
+	return func(c *chunk) (r *chunk) {
 		slicer := getMapChunkToKVs(useDefHash, converter)(c)
 		//fmt.Println("\ngetMapChunkToKVChunk", c, slicer)
-		return &Chunk{slicer, c.Order, c.StartIndex}
+		return &chunk{slicer, c.Order, c.StartIndex}
 	}
 }
 
-func getMapChunkToKVChunk2(useDefHash *uint32, maxOrder *int, converter OneArgsFunc) func(c *Chunk) (r *Chunk) {
-	return func(c *Chunk) (r *Chunk) {
+func getMapChunkToKVChunk2(useDefHash *uint32, maxOrder *int, converter OneArgsFunc) func(c *chunk) (r *chunk) {
+	return func(c *chunk) (r *chunk) {
 		slicer := getMapChunkToKVs(useDefHash, converter)(c)
 		if c.Order > *maxOrder {
 			*maxOrder = c.Order
 		}
-		return &Chunk{slicer, c.Order, c.StartIndex}
+		return &chunk{slicer, c.Order, c.StartIndex}
 	}
 }
 
@@ -251,7 +251,7 @@ func expandChunks(src []interface{}, keepOrder bool) []interface{} {
 		if len(src) > 1 {
 			src = sortSlice(src, func(a interface{}, b interface{}) bool {
 				var (
-					a1, b1 *Chunk
+					a1, b1 *chunk
 				)
 
 				if isNil(a) {
@@ -262,9 +262,9 @@ func expandChunks(src []interface{}, keepOrder bool) []interface{} {
 
 				switch v := a.(type) {
 				case []interface{}:
-					a1, b1 = v[0].(*Chunk), b.([]interface{})[0].(*Chunk)
-				case *Chunk:
-					a1, b1 = v, b.(*Chunk)
+					a1, b1 = v[0].(*chunk), b.([]interface{})[0].(*chunk)
+				case *chunk:
+					a1, b1 = v, b.(*chunk)
 				}
 				return a1.Order < b1.Order
 			})
@@ -273,15 +273,15 @@ func expandChunks(src []interface{}, keepOrder bool) []interface{} {
 
 	//得到块列表
 	count := 0
-	chunks := make([]*Chunk, len(src))
+	chunks := make([]*chunk, len(src))
 	for i, c := range src {
 		if isNil(c) {
 			continue
 		}
 		switch v := c.(type) {
 		case []interface{}:
-			chunks[i] = v[0].(*Chunk)
-		case *Chunk:
+			chunks[i] = v[0].(*chunk)
+		case *chunk:
 			chunks[i] = v
 		}
 		count += chunks[i].Data.Len()
@@ -815,7 +815,7 @@ func newAvlTree(compare func(a interface{}, b interface{}) int) *avlTree {
 
 func newChunkAvlTree() *avlTree {
 	return newAvlTree(func(a interface{}, b interface{}) int {
-		c1, c2 := a.(*Chunk), b.(*Chunk)
+		c1, c2 := a.(*chunk), b.(*chunk)
 		if c1.Order < c2.Order {
 			return -1
 		} else if c1.Order == c2.Order {
@@ -834,7 +834,7 @@ type chunkOrderedList struct {
 
 func (this *chunkOrderedList) Insert(node interface{}) {
 	//fmt.Println("\ninsert chunk", node, len(this.list))
-	order := node.(*Chunk).Order
+	order := node.(*chunk).Order
 	//某些情况下Order会重复，比如Union的第二个数据源的Order会和第一个重复
 	if order < len(this.list) && this.list[order] != nil {
 		order = this.maxOrder + 1
@@ -1302,7 +1302,7 @@ func testCanAsKey(v interface{}) (ok bool) {
 	return
 }
 
-func testCanUseDefaultHash(src, src2 DataSource) bool {
+func testCanUseDefaultHash(src, src2 dataSource) bool {
 	if src.Typ() == SOURCE_CHANNEL && src2.Typ() == SOURCE_CHANNEL {
 		slicer1 := src.ToSlice(false)
 		if slicer1.Len() > 0 {

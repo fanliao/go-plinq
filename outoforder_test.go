@@ -46,14 +46,14 @@ func getIndexses(countOfSkipTestData int) (indexses [][]int) {
 
 var countOfSkipTestData int = 5
 
-func getChunkByi(i int, ints []interface{}) *Chunk {
+func getChunkByi(i int, ints []interface{}) *chunk {
 	size := countS / countOfSkipTestData
-	return &Chunk{NewSlicer(ints[i*size : (i+1)*size]), i, 0}
+	return &chunk{NewSlicer(ints[i*size : (i+1)*size]), i, 0}
 }
 
 //根据指定的顺序发送chunk到channel
-func getChunkSrcByOrder(indexs []int, ints []interface{}) chan *Chunk {
-	chunkSrc := make(chan *Chunk)
+func getChunkSrcByOrder(indexs []int, ints []interface{}) chan *chunk {
+	chunkSrc := make(chan *chunk)
 	go func() {
 		//indexs := []int{3, 0, 1, 4, 2}
 		defer func() {
