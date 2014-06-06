@@ -796,8 +796,7 @@ func (q *Queryable) TakeWhile(predicate func(interface{}) bool, chunkSizes ...in
 	return q
 }
 
-// KeepOrder returns a query from the original query,
-// the result slice will keep the order of origin query as much as possible
+// SetKeepOrder returns a query which the result slice will keep the order of origin query as much as possible
 // Noted: Order operation will change the original order.
 // TODO: Distinct, Union, Join, Interest, Except operations need more testing
 func (q *Queryable) SetKeepOrder(keep bool) *Queryable {
