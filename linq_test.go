@@ -20,6 +20,7 @@ const (
 	rptCountP        int = 300
 	arrForSequential     = 0
 	arrForParallel       = 1
+	runTest              = false
 )
 
 var (
@@ -123,6 +124,9 @@ var (
 
 // Testing functions----------------------------------------------------------
 func TestFrom(t *testing.T) {
+	if !runTest {
+		return
+	}
 	c.Convey("When nil as data source, error returned", t, func() {
 		c.So(func() { _ = From(nil) }, c.ShouldPanicWith, ErrNilSource)
 		c.So(func() { _ = From(1) }, c.ShouldPanicWith, ErrUnsupportSource)
@@ -167,6 +171,9 @@ func TestFrom(t *testing.T) {
 }
 
 func TestCommonOperations(t *testing.T) {
+	if !runTest {
+		return
+	}
 	expectedInts := make([]interface{}, countS/2)
 	for i := 0; i < countS/2; i++ {
 		expectedInts[i] = multiply10(i * 2).(int)
@@ -1573,6 +1580,9 @@ var (
 		assert func([]interface{}, error, int, bool)) {
 		defaultChunkSize = 20
 
+		if !runTest {
+			return
+		}
 		var getQry func() *Queryable
 		if q, ok := qry.(func() *Queryable); ok {
 			getQry = q
@@ -1636,6 +1646,9 @@ var (
 		assert func(*Queryable, int)) {
 		defaultChunkSize = 20
 
+		if !runTest {
+			return
+		}
 		test := func(src interface{}) {
 			n := reflect.ValueOf(src).Len()
 			c.Convey("Test the slicer -> slicer", func() {

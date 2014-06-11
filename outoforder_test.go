@@ -75,6 +75,10 @@ func getChunkSrcByOrder(indexs []int, ints []interface{}) chan *chunk {
 // 1. SkipWhile/TakeWhile after Union operation
 // 2. if the data source includes the count of match item are more than one.
 func TestSkipAndTakeWithOutOfOrder(t *testing.T) {
+	if !runTest {
+		return
+	}
+
 	ints := make([]interface{}, countS)
 	for i := 0; i < countS; i++ {
 		ints[i] = i
@@ -248,6 +252,10 @@ func TestSkipAndTakeWithOutOfOrder(t *testing.T) {
 }
 
 func TestElementAtWithOutOfOrder(t *testing.T) {
+	if !runTest {
+		return
+	}
+
 	ints := make([]interface{}, countS)
 	for i := 0; i < countS; i++ {
 		ints[i] = i
@@ -296,6 +304,10 @@ func TestElementAtWithOutOfOrder(t *testing.T) {
 }
 
 func TestFirstByWithOutOfOrder(t *testing.T) {
+	if !runTest {
+		return
+	}
+
 	ints := make([]interface{}, countS)
 	for i := 0; i < countS; i++ {
 		ints[i] = i

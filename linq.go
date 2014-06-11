@@ -1072,9 +1072,10 @@ func (cs chanSource) ToSlice(keepOrder bool) Slicer {
 				continue
 			}
 
+			//TODO: bug? if keepOrder == false?
 			if keepOrder {
 				ordered.Insert(c)
-				chunks = appendToSlice(chunks, c)
+				//chunks = appendToSlice(chunks, c)
 			}
 		}
 		if keepOrder {
