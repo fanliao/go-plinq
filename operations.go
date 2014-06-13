@@ -1433,13 +1433,13 @@ func parallelMapChanForAnyTrue(src *chanSource,
 
 //并行查找slice中第一个符合条件的索引，可以选择从前和从后开始判断
 func parallelMatchListByDirection(src dataSource,
-	getAction func(*chunk, promise.Canceller) (int, bool),
+	find func(*chunk, promise.Canceller) (int, bool),
 	option *ParallelOption, isFarword bool) (index interface{}, err error) {
 	count, funs := 0, make([]func(promise.Canceller) (interface{}, error), option.Degree)
 	//fmt.Println("match list,len(src)=", src.ToSlice(false).Len())
 	splitContinuous(src, func(c *chunk) {
 		funs[count] = func(canceller promise.Canceller) (interface{}, error) {
-			r, found := getAction(c, canceller)
+			r, found := find(c, canceller)
 			if found && r != -1 {
 				r = r + c.StartIndex
 			}
