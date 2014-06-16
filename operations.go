@@ -733,20 +733,22 @@ func getFirstElement(src dataSource,
 			} else {
 				return nil, false, nil
 			}
-		} else {
+		} else if s.data.Len() <= option.Degree*option.ChunkSize {
 			//根据数据量大小进行并行或串行查找
 			i, found, err = getFirstOrLastIndex(newListSource(rs), findMatch, option, true)
 			if found && err == nil {
 				element = rs.Index(i)
 			}
 			return
-			//if i, found, err := getFirstOrLastIndex(newListSource(rs), findMatch, option, true); err != nil {
-			//	return nil, false, err
-			//} else if !found {
-			//	return nil, false, nil
-			//} else {
-			//	return rs.Index(i), true, nil
+		} else {
+			//i, found, err = getFirstOrLastIndex(newListSource(rs), findMatch, option, true)
+			//if found && err == nil {
+			//	element = rs.Index(i)
 			//}
+			//return
+			chunkChan := splitToChunkChan(src, option)
+			return getFirstElement(&chanSource{chunkChan: chunkChan},
+				findMatch, useIndex, option)
 		}
 	case *chanSource:
 		beforeMatchAct := func(c *chunkMatchResult) (while bool) {
