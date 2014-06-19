@@ -39,12 +39,12 @@ func distChunkValues(c *chunk, distKVs map[interface{}]int, pResults *[]interfac
 			//fmt.Println("distinctChunkValues get==", i, v, kv)
 			if _, ok := distKVs[kv.keyHash]; !ok {
 				distKVs[kv.keyHash] = 1
-				*pResults = append(*pResults, kv.value)
+				*pResults = appendToSlice1(*pResults, kv.value)
 			}
 		} else {
 			if _, ok := distKVs[v]; !ok {
 				distKVs[v] = 1
-				*pResults = append(*pResults, v)
+				*pResults = appendToSlice1(*pResults, v)
 			}
 		}
 	})
@@ -325,6 +325,17 @@ func appendToSlice(src []interface{}, vs ...interface{}) []interface{} {
 		}
 		return src
 	}
+}
+
+func appendToSlice1(src []interface{}, vs interface{}) []interface{} {
+	c, l := cap(src), len(src)
+	if c <= l+1 {
+		newSlice := make([]interface{}, l, 2*c)
+		_ = copy(newSlice[0:l], src)
+		src = newSlice
+	}
+	src = append(src, vs)
+	return src
 }
 
 //reflect functions------------------------------------------------
@@ -720,7 +731,7 @@ func insertAVL(root **avlNode, e interface{}, taller *bool, compare1 func(interf
 				(*root).sameList = make([]interface{}, 0, 2)
 			}
 
-			(*root).sameList = appendToSlice((*root).sameList, e)
+			(*root).sameList = appendToSlice1((*root).sameList, e)
 			return false
 		}
 

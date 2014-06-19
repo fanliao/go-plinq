@@ -252,7 +252,7 @@ func getGroupBy(selector OneArgsFunc, returnMap bool) stepAction {
 				groups[k] = []interface{}{kv.value}
 			} else {
 				list := v.([]interface{})
-				groups[k] = appendToSlice(list, kv.value)
+				groups[k] = appendToSlice1(list, kv.value)
 			}
 		}
 
@@ -290,10 +290,10 @@ func getJoin(inner interface{},
 	return getJoinImpl(inner, outerKeySelector, innerKeySelector,
 		func(outerkv *hKeyValue, innerList []interface{}, results *[]interface{}) {
 			for _, iv := range innerList {
-				*results = appendToSlice(*results, resultSelector(outerkv.value, iv))
+				*results = appendToSlice1(*results, resultSelector(outerkv.value, iv))
 			}
 		}, func(outerkv *hKeyValue, results *[]interface{}) {
-			*results = appendToSlice(*results, resultSelector(outerkv.value, nil))
+			*results = appendToSlice1(*results, resultSelector(outerkv.value, nil))
 		}, isLeftJoin)
 }
 
@@ -305,9 +305,9 @@ func getGroupJoin(inner interface{},
 
 	return getJoinImpl(inner, outerKeySelector, innerKeySelector,
 		func(outerkv *hKeyValue, innerList []interface{}, results *[]interface{}) {
-			*results = appendToSlice(*results, resultSelector(outerkv.value, innerList))
+			*results = appendToSlice1(*results, resultSelector(outerkv.value, innerList))
 		}, func(outerkv *hKeyValue, results *[]interface{}) {
-			*results = appendToSlice(*results, resultSelector(outerkv.value, []interface{}{}))
+			*results = appendToSlice1(*results, resultSelector(outerkv.value, []interface{}{}))
 		}, isLeftJoin)
 }
 
@@ -389,6 +389,7 @@ func getUnion(source2 interface{}) stepAction {
 		mapOut := &chanSource{chunkChan: reduceSrcChan, future: mapFuture}
 		mapOut.addCallbackToCloseChan()
 
+		//option.ReIndex = true
 		dest, e = reduceDistValues(mapOut, option)
 		return
 	})
@@ -681,6 +682,7 @@ func getSkipTake(findMatch func(*chunk, promise.Canceller) (int, bool), isTake b
 			}
 
 			//开始处理channel中的块
+			fmt.Println("forEachChanByOrder--------------------")
 			srcChan := s.ChunkChan(option.ChunkSize)
 			f := promise.Start(func() (interface{}, error) {
 				matchedList := newChunkMatchResultList(beforeMatchAct, afterMatchAct, beMatchAct, useIndex)
@@ -741,14 +743,14 @@ func getFirstElement(src dataSource,
 			}
 			return
 		} else {
-			//i, found, err = getFirstOrLastIndex(newListSource(rs), findMatch, option, true)
-			//if found && err == nil {
-			//	element = rs.Index(i)
-			//}
-			//return
-			chunkChan := splitToChunkChan(src, option)
-			return getFirstElement(&chanSource{chunkChan: chunkChan},
-				findMatch, useIndex, option)
+			i, found, err = getFirstOrLastIndex(newListSource(rs), findMatch, option, true)
+			if found && err == nil {
+				element = rs.Index(i)
+			}
+			return
+			//chunkChan := splitToChunkChan(src, option)
+			//return getFirstElement(&chanSource{chunkChan: chunkChan},
+			//	findMatch, useIndex, option)
 		}
 	case *chanSource:
 		beforeMatchAct := func(c *chunkMatchResult) (while bool) {
@@ -1262,6 +1264,7 @@ func parallelMap(src dataSource, reduceSrcChan chan *chunk,
 			return parallelMapListToChan(s, reduceSrcChan, mapChunk, option), nil
 		}
 	case *chanSource:
+		fmt.Println("parallelMap to chan--------------------")
 		return parallelMapChanToChan(s, reduceSrcChan, mapChunk, option), nil
 	default:
 		panic(ErrUnsupportSource)
@@ -1325,7 +1328,13 @@ func parallelMapChanToChan(src *chanSource, out chan *chunk,
 	fs := make([]*promise.Future, option.Degree)
 	for i := 0; i < option.Degree; i++ {
 		f := promise.Start(func() (r interface{}, e error) {
+			//idx := 0
 			r, e = forEachChan(src, srcChan, func(c *chunk) (result interface{}, beEnded bool, err error) {
+				if option.Degree == 1 && option.ReIndex {
+					//c.StartIndex = idx
+					//idx++
+				}
+
 				d := task(c)
 				if out != nil && d != nil {
 					sendChunk(out, d)
@@ -1336,7 +1345,14 @@ func parallelMapChanToChan(src *chanSource, out chan *chunk,
 		})
 		fs[i] = f
 	}
-	f := promise.WhenAllFuture(fs...).Fail(func(err interface{}) { src.Close() })
+
+	var f *promise.Future
+	if option.Degree != 1 {
+		f = promise.WhenAllFuture(fs...)
+	} else {
+		f = fs[0]
+	}
+	f.Fail(func(err interface{}) { src.Close() })
 
 	outCs := &chanSource{chunkChan: out, future: f}
 	if createOutChan {
@@ -1605,7 +1621,6 @@ func reduceDistValues(src dataSource, option *ParallelOption) (dest dataSource, 
 	option.Degree = 1
 	//fmt.Println("reduceDistValues")
 	return parallelMap(src, nil, func(c *chunk) *chunk {
-
 		r := distChunkValues(c, distKVs, nil)
 		//fmt.Println("\n distChunkValues", c, r.Data)
 		return r
@@ -1618,9 +1633,15 @@ func getFutureResult(f *promise.Future, dataSourceFunc func([]interface{}) dataS
 	if results, err := f.Get(); err != nil {
 		return nil, err
 	} else {
-		rs := results.([]interface{})
-		if rs != nil && len(rs) == 1 {
-			if c, ok := rs[0].(*chunk); ok {
+		rs, ok := results.([]interface{})
+		if ok {
+			if rs != nil && len(rs) == 1 {
+				if c, ok := rs[0].(*chunk); ok {
+					return &listSource{c.Data}, nil
+				}
+			}
+		} else {
+			if c, ok := results.(*chunk); ok {
 				return &listSource{c.Data}, nil
 			}
 		}
@@ -1708,6 +1729,9 @@ func (this *chunkMatcheds) Insert(node *chunkMatchResult) {
 	//某些情况下Order会重复，比如Union的第二个数据源的Order会和第一个重复
 	if order < len(this.list) && this.list[order] != nil {
 		order = this.maxOrder + 1
+		fmt.Println("order is repeated:", order, "---------------")
+	} else {
+		fmt.Println("order is", order, "---------------")
 	}
 
 	if order > this.maxOrder {

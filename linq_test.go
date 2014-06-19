@@ -16,11 +16,11 @@ import (
 const (
 	countS           int = 20
 	rptCountS        int = 22
-	countP           int = 300
-	rptCountP        int = 300
+	countP           int = 500
+	rptCountP        int = 500
 	arrForSequential     = 0
 	arrForParallel       = 1
-	runTest              = false
+	runTest              = true
 )
 
 var (
@@ -943,8 +943,8 @@ func TestOrderBy(t *testing.T) {
 		})
 
 		checkIfOrdered := func(rs []interface{}, err error) {
-			c.So(len(rs), c.ShouldEqual, len(tRptUsers))
 			c.So(err, c.ShouldBeNil)
+			c.So(len(rs), c.ShouldEqual, len(tRptUsers))
 
 			id := 0
 			for _, v := range rs {
@@ -1303,6 +1303,20 @@ func TestSkipAndTake(t *testing.T) {
 			return v.(int)%50 < 12
 		}),
 		expectSliceSizeEquals(12),
+	)
+	
+	expectNotErr := func(rs []interface{}, err error, n int, chanAsOut bool) {
+			c.So(err, c.ShouldBeNil)
+		}
+
+	testLazyOpr("Union and TakeWhile", t,
+		tUserss,
+		func() *Queryable {
+			return NewQuery().Union(getChan(tUsers2)).TakeWhile(func(v interface{}) bool {
+				return (v.(user).id)%50 < 12
+			})
+		},
+		expectNotErr,
 	)
 }
 

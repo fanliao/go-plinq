@@ -261,6 +261,15 @@ func BenchmarkGoPLinq_UnionSelect(b *testing.B) {
 			b.Error("size is ", len(dst))
 			b.Log("dst=", dst)
 		}
+		dst, _ := From(bUsers).Union(bUsers2, largeChunkSize).SkipWhile(func(v interface{}) bool {
+			return (v.(user).id)%5000 < 4730
+		}).Results()
+		if len(dst) != countForB+countForB/2 {
+			b.Fail()
+			//b.Log("arr=", arr)
+			b.Error("size is ", len(dst))
+			b.Log("dst=", dst)
+		}
 	}
 }
 

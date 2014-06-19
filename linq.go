@@ -148,6 +148,7 @@ type ParallelOption struct {
 	Degree    int  //The degree of the paralleliam algorithm
 	ChunkSize int  //The size of chunk
 	KeepOrder bool //whether need keep order of original data
+	ReIndex   bool
 }
 
 // Queryable presents an object includes the data and query operations.
@@ -1089,7 +1090,7 @@ func (cs chanSource) ToSlice(keepOrder bool) Slicer {
 		result := make([]interface{}, 0, 10)
 		for {
 			if v, ok := srcChan.Recv(); ok {
-				result = appendToSlice(result, v.Interface())
+				result = appendToSlice1(result, v.Interface())
 			} else {
 				break
 			}
