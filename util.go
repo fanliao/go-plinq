@@ -1377,34 +1377,3 @@ func bytesEquals(addr1 uintptr, addr2 uintptr, size uintptr) bool {
 	}
 	return true
 }
-
-//Ring list
-type ringList struct {
-	list  []interface{} //a list store the items
-	start int
-	end   int
-}
-
-func (this *ringList) len() int {
-	if this.start == -1 {
-		return 0
-	} else {
-		return this.end - this.start + 1
-	}
-}
-
-func (this *ringList) cap() int {
-	return cap(this.list)
-}
-
-func (this *ringList) insert(i int, value interface{}) {
-	//if this.len() >=
-}
-
-func (this *ringList) del(i int) {
-
-}
-
-func (this *ringList) get(i int) (val interface{}, err error) {
-	return nil, nil
-}
