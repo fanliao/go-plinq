@@ -20,7 +20,7 @@ const (
 	rptCountP        int = 500
 	arrForSequential     = 0
 	arrForParallel       = 1
-	runTest              = true
+	runTest              = false
 )
 
 var (
@@ -1304,10 +1304,10 @@ func TestSkipAndTake(t *testing.T) {
 		}),
 		expectSliceSizeEquals(12),
 	)
-	
+
 	expectNotErr := func(rs []interface{}, err error, n int, chanAsOut bool) {
-			c.So(err, c.ShouldBeNil)
-		}
+		c.So(err, c.ShouldBeNil)
+	}
 
 	testLazyOpr("Union and TakeWhile", t,
 		tUserss,

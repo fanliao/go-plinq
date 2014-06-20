@@ -389,7 +389,7 @@ func getUnion(source2 interface{}) stepAction {
 		mapOut := &chanSource{chunkChan: reduceSrcChan, future: mapFuture}
 		mapOut.addCallbackToCloseChan()
 
-		//option.ReIndex = true
+		option.ReIndex = true
 		dest, e = reduceDistValues(mapOut, option)
 		return
 	})
@@ -682,11 +682,11 @@ func getSkipTake(findMatch func(*chunk, promise.Canceller) (int, bool), isTake b
 			}
 
 			//开始处理channel中的块
-			fmt.Println("forEachChanByOrder--------------------")
 			srcChan := s.ChunkChan(option.ChunkSize)
 			f := promise.Start(func() (interface{}, error) {
 				matchedList := newChunkMatchResultList(beforeMatchAct, afterMatchAct, beMatchAct, useIndex)
 				return forEachChanByOrder(s, srcChan, func(c *chunk, foundFirstMatch *bool) bool {
+					//fmt.Println("forEachChanByOrder", c, c.Data.Len(), "------------------", *foundFirstMatch)
 					if !*foundFirstMatch {
 						//检查块是否存在匹配的数据，按Index计算的总是返回false，因为必须要等前面所有的块已经排好序后才能得到正确的索引
 						chunkResult := getChunkMatchResult(c, findMatch, useIndex)
@@ -1223,8 +1223,8 @@ func splitToChunkChan(src dataSource, option *ParallelOption) (ch chan *chunk) {
 	lenOfData := data.Len()
 
 	size := option.ChunkSize
-	if size < lenOfData/(numCPU*5) {
-		size = lenOfData / (numCPU * 5)
+	if size < lenOfData/(numCPU*50) {
+		size = lenOfData / (numCPU * 50)
 	}
 	if lenOfData == 0 {
 		return
@@ -1328,11 +1328,11 @@ func parallelMapChanToChan(src *chanSource, out chan *chunk,
 	fs := make([]*promise.Future, option.Degree)
 	for i := 0; i < option.Degree; i++ {
 		f := promise.Start(func() (r interface{}, e error) {
-			//idx := 0
+			idx := 0
 			r, e = forEachChan(src, srcChan, func(c *chunk) (result interface{}, beEnded bool, err error) {
 				if option.Degree == 1 && option.ReIndex {
-					//c.StartIndex = idx
-					//idx++
+					c.Order = idx
+					idx++
 				}
 
 				d := task(c)
@@ -1622,7 +1622,7 @@ func reduceDistValues(src dataSource, option *ParallelOption) (dest dataSource, 
 	//fmt.Println("reduceDistValues")
 	return parallelMap(src, nil, func(c *chunk) *chunk {
 		r := distChunkValues(c, distKVs, nil)
-		//fmt.Println("\n distChunkValues", c, r.Data)
+		//fmt.Println("\n distChunkValues", c, r)
 		return r
 	}, option)
 }
@@ -1758,7 +1758,7 @@ func (this *chunkMatcheds) getMatchChunk() *chunkMatchResult {
 }
 
 func (this *chunkMatcheds) handleChunk(matchResult *chunkMatchResult) (foundFirstMatch bool) {
-	//fmt.Println("check handleChunk=", chunkResult, chunkResult.chunk.Order)
+	fmt.Println("check handleChunk=", matchResult, matchResult.chunk.Order)
 	if matchResult.matched {
 		//如果块中发现匹配的数据
 		foundFirstMatch = this.handleMatchChunk(matchResult)
@@ -1938,6 +1938,7 @@ func (this *chunkMatcheds) putMatchChunk(c *chunkMatchResult) bool {
 		this.beMatchAct(c)
 		return true
 	} else {
+	fmt.Println("insert2")
 		this.Insert(c)
 		return false
 	}

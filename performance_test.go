@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	countForB      int  = 100000
-	rptCountForB   int  = 110000
+	countForB      int  = 1000000
+	rptCountForB   int  = 1100000
 	testGoLinq     bool = true
 	largeChunkSize int  = 1000
 )
@@ -254,6 +254,7 @@ func BenchmarkGoLinq_Union(b *testing.B) {
 ////test union--------------------------------------------------------------------
 func BenchmarkGoPLinq_UnionSelect(b *testing.B) {
 	for i := 0; i < b.N; i++ {
+	//fmt.Println("\nStart", i, ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
 		dst, _ := From(bUsers).Union(bUsers2, largeChunkSize).Select(userToStr).Results()
 		if len(dst) != countForB+countForB/2 {
 			b.Fail()
@@ -261,15 +262,9 @@ func BenchmarkGoPLinq_UnionSelect(b *testing.B) {
 			b.Error("size is ", len(dst))
 			b.Log("dst=", dst)
 		}
-		dst, _ := From(bUsers).Union(bUsers2, largeChunkSize).SkipWhile(func(v interface{}) bool {
-			return (v.(user).id)%5000 < 4730
-		}).Results()
-		if len(dst) != countForB+countForB/2 {
-			b.Fail()
-			//b.Log("arr=", arr)
-			b.Error("size is ", len(dst))
-			b.Log("dst=", dst)
-		}
+		/*_, _ = From(bUsers).Union(bUsers2).SkipWhile(func(v interface{}) bool {
+			return (v.(user).id)%200000 < 173340
+		}).Results()*/
 	}
 }
 
