@@ -254,7 +254,7 @@ func BenchmarkGoLinq_Union(b *testing.B) {
 ////test union--------------------------------------------------------------------
 func BenchmarkGoPLinq_UnionSelect(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-	//fmt.Println("\nStart", i, ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
+		//fmt.Println("\nStart", i, ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
 		dst, _ := From(bUsers).Union(bUsers2, largeChunkSize).Select(userToStr).Results()
 		if len(dst) != countForB+countForB/2 {
 			b.Fail()
@@ -466,9 +466,9 @@ func testPlinqFirst(b *testing.B, i int) {
 
 func BenchmarkGoPLinq_FirstBy(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		testPlinqFirst(b, countForB/3)
-		testPlinqFirst(b, 2*countForB/3)
-		testPlinqFirst(b, 5*countForB/6)
+		testPlinqFirst(b, countForB/7)
+		testPlinqFirst(b, 3*countForB/7)
+		//testPlinqFirst(b, 6*countForB/7)
 	}
 }
 
@@ -486,9 +486,9 @@ func testLinqFirst(b *testing.B, i int) {
 }
 func BenchmarkGoLinq_FirstBy(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		testLinqFirst(b, countForB/3)
-		testLinqFirst(b, 2*countForB/3)
-		testLinqFirst(b, 5*countForB/6)
+		testLinqFirst(b, countForB/7)
+		testLinqFirst(b, 3*countForB/7)
+		//testLinqFirst(b, 6*countForB/7)
 	}
 }
 

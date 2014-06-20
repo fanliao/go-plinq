@@ -20,7 +20,7 @@ const (
 	rptCountP        int = 500
 	arrForSequential     = 0
 	arrForParallel       = 1
-	runTest              = false
+	runTest              = true
 )
 
 var (

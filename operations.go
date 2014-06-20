@@ -772,31 +772,48 @@ func getFirstElement(src dataSource,
 			element = c.chunk.Data.Index(c.matchIndex)
 		}
 
-		srcChan := s.ChunkChan(option.ChunkSize)
-		f := promise.Start(func() (interface{}, error) {
-			matchedList := newChunkMatchResultList(beforeMatchAct, afterMatchAct, beMatchAct, useIndex)
-			return forEachChanByOrder(s, srcChan, func(c *chunk, foundFirstMatch *bool) bool {
-				if !*foundFirstMatch {
-					chunkResult := getChunkMatchResult(c, findMatch, useIndex)
-
-					*foundFirstMatch = matchedList.handleChunk(chunkResult)
-					if *foundFirstMatch {
-						//element = c.chunk.Data[idx]
-						found = true
+		reduceChan := make(chan *chunkMatchResult, option.Degree)
+		fu := parallelHandleChan(s, func(c *chunk) {
+			chunkResult := getChunkMatchResult(c, findMatch, useIndex)
+			func(){
+				defer func() {
+					if e := recover(); e != nil{
 						s.Close()
-						return true
 					}
-				} else {
-					//如果已经找到了正确的块，则此后的块直接跳过
-					found = true
-					return true
-				}
-				return false
-			})
+				}()
+				reduceChan <- chunkResult
+			}()
+		}, option).Done(func(r interface{}) {
+			defer func() {
+				_ = recover()
+			}()
+			reduceChan <- nil
 		})
 
-		if _, err := f.Get(); err != nil {
+		rf := promise.Start(func() (interface{}, error) {
+			defer func() {
+				_ = recover()
+			}()
+
+			matchedList := newChunkMatchResultList(beforeMatchAct, afterMatchAct, beMatchAct, useIndex)
+			for result := range reduceChan {
+				if matchedList.handleChunk(result) {
+					//element = c.chunk.Data[idx]
+					found = true
+					close(reduceChan)
+					break
+				}
+			}
+			return nil, nil
+		})
+
+		if _, err := fu.Get(); err != nil {
 			s.Close()
+			return nil, false, err
+		}
+
+		if _, err := rf.Get(); err != nil {
+			close(reduceChan)
 			return nil, false, err
 		}
 		return
@@ -914,6 +931,7 @@ func forEachChanByOrder(src *chanSource, srcChan chan *chunk, action func(*chunk
 		}
 
 		if shouldBreak = action(c, &foundFirstMatch); shouldBreak {
+			src.Close()
 			break
 		}
 	}
@@ -1188,6 +1206,7 @@ func foundMatchFunc(predicate PredicateFunc, findFirst bool) func(c *chunk, canc
 				i--
 			}
 		}
+		//fmt.Println("search list", c.StartIndex, i, found)
 		return
 	}
 }
@@ -1264,7 +1283,7 @@ func parallelMap(src dataSource, reduceSrcChan chan *chunk,
 			return parallelMapListToChan(s, reduceSrcChan, mapChunk, option), nil
 		}
 	case *chanSource:
-		fmt.Println("parallelMap to chan--------------------")
+		//fmt.Println("parallelMap to chan--------------------")
 		return parallelMapChanToChan(s, reduceSrcChan, mapChunk, option), nil
 	default:
 		panic(ErrUnsupportSource)
@@ -1312,6 +1331,38 @@ func forEachChan(src *chanSource, srcChan chan *chunk,
 	}
 	return
 
+}
+
+//并行处理channel
+func parallelHandleChan(src *chanSource, task func(*chunk), option *ParallelOption) (fu *promise.Future) {
+	srcChan := src.ChunkChan(option.ChunkSize)
+
+	fs := make([]*promise.Future, option.Degree)
+	for i := 0; i < option.Degree; i++ {
+		f := promise.Start(func() (r interface{}, e error) {
+			idx := 0
+			r, e = forEachChan(src, srcChan, func(c *chunk) (result interface{}, beEnded bool, err error) {
+				if option.Degree == 1 && option.ReIndex {
+					c.Order = idx
+					idx++
+				}
+
+				task(c)
+				return nil, false, nil
+			})
+			return
+		})
+		fs[i] = f
+	}
+
+	if option.Degree != 1 {
+		fu = promise.WhenAllFuture(fs...)
+	} else {
+		fu = fs[0]
+	}
+	fu.Fail(func(err interface{}) { src.Close() })
+
+	return fu
 }
 
 //并行映射channel到channel
@@ -1461,7 +1512,6 @@ func parallelMatchListByDirection(src dataSource,
 			if found && r != -1 {
 				r = r + c.StartIndex
 			}
-			//fmt.Println("match list", c.StartIndex, r, found)
 			return r, nil
 		}
 		count++
@@ -1525,6 +1575,8 @@ func parallelMatchListByDirection(src dataSource,
 				}
 				return
 			})
+			//fmt.Println("end for futures", i)
+
 			return true
 		}
 
@@ -1700,6 +1752,7 @@ type chunkMatchResult struct {
 	matchIndex int
 }
 
+/*
 //the ordered list for Skip/SkipWhile/Take/TakeWhile operation----------------------------------------------------
 //用来对乱序的channel数据源进行Skip/Take处理的列表
 //channel输出的数据在排序后是一个连续的块的列表，而Skip/Take必须根据第一个匹配条件的数据位置进行处理，
@@ -1949,4 +2002,298 @@ func newChunkMatchResultList(beforeMatchAct func(*chunkMatchResult) bool,
 	beMatchAct func(*chunkMatchResult),
 	useIndex bool) *chunkMatcheds {
 	return &chunkMatcheds{make([]*chunkMatchResult, 0), 0, 0, nil, beforeMatchAct, afterMatchAct, beMatchAct, useIndex, false, -1}
+}
+*/
+
+//the ordered list for Skip/SkipWhile/Take/TakeWhile operation----------------------------------------------------
+//用来对乱序的channel数据源进行Skip/Take处理的列表
+//channel输出的数据在排序后是一个连续的块的列表，而Skip/Take必须根据第一个匹配条件的数据位置进行处理，
+//关键在于尽快对得到的块进行判断
+//因为数据源可以乱序输出，所以用列表来对得到的块进行排序，chunk.Order就是块在列表中的索引，
+//每当从channel中得到一个块时，都会判断是否列表从头开始的部分是否已经被填充，并对所有已经从头构成连续填充的块进行判断，
+//判断是否块包含有匹配条件的数据，是否是第一个匹配的块，并通过startOrder记录头开始的顺序号
+//如果一个块不在从头开始连续填充的区域中，则判断是否在前面有包含匹配数据的块，如果有的话，则可以执行Skip操作
+//列表中始终记录了一个最靠前的匹配块，其后的块可以直接进行Skip操作，无需插入列表
+//因为使用了chunk.Order来作为列表的索引并且要从第一块开始判断，
+//所以要求所有的linq操作必须返回从0开始的所有的块，即使块不包含有效数据也必须返回空的列表，否则后续Skip/Take的判断会出问题
+type chunkMatcheds struct {
+	avl             *avlTree          //保留了待处理块的avl tree
+	startOrder      int               //下一个头块的顺序号
+	startIndex      int               //下一个头块的起始索引号
+	matchChunk      *chunkMatchResult //当前最靠前的包含匹配数据的块
+	beforeMatchAct  func(*chunkMatchResult) bool
+	afterMatchAct   func(*chunkMatchResult)
+	beMatchAct      func(*chunkMatchResult)
+	useIndex        bool //是否根据索引进行判断，如果是的话，每个块都必须成为头块后才根据StartIndex进行计算。因为某些操作比如Where将导致块内的数据量不等于原始的数据量
+	foundFirstMatch bool //是否已经发现第一个匹配的块
+	//maxOrder        int  //保存最大的Order,以备Order重复时创建新Order
+}
+
+func (this *chunkMatcheds) Insert(node *chunkMatchResult) {
+	/*order := node.chunk.Order
+	//某些情况下Order会重复，比如Union的第二个数据源的Order会和第一个重复
+	if order < len(this.list) && this.list[order] != nil {
+		order = this.maxOrder + 1
+		fmt.Println("order is repeated:", order, "---------------")
+	} else {
+		fmt.Println("order is", order, "---------------")
+	}
+
+	if order > this.maxOrder {
+		this.maxOrder = order
+	}
+
+	if len(this.list) > order {
+		this.list[order] = node
+	} else {
+		newList := make([]*chunkMatchResult, order+1, max(2*len(this.list), order+1))
+		_ = copy(newList[0:len(this.list)], this.list)
+		newList[order] = node
+		this.list = newList
+	}*/
+	//fmt.Println("insert", node.chunk)
+	this.avl.Insert(node)
+	if node.matched {
+		this.matchChunk = node
+	}
+
+}
+
+func (this *chunkMatcheds) getMatchChunk() *chunkMatchResult {
+	return this.matchChunk
+}
+
+func (this *chunkMatcheds) handleChunk(matchResult *chunkMatchResult) (foundFirstMatch bool) {
+	//fmt.Println("check handleChunk=", matchResult, matchResult.chunk.Order)
+	if matchResult.matched {
+		//如果块中发现匹配的数据
+		foundFirstMatch = this.handleMatchChunk(matchResult)
+	} else {
+		foundFirstMatch = this.handleNoMatchChunk(matchResult)
+	}
+	//fmt.Println("after check handleChunk=", foundFirstMatch)
+	return
+}
+
+//处理不符合条件的块，返回true表示该块和后续的连续块中发现了原始序列中第一个符合条件的块
+//在Skip/Take和管道模式中，块是否不符合条件是在块被放置到正确顺序后才能决定的
+func (this *chunkMatcheds) handleNoMatchChunk(chunkResult *chunkMatchResult) bool {
+	//如果不符合条件，则检查当前块order是否等于下一个order，如果是，则进行beforeMatch处理，并更新startOrder
+	if chunkResult.chunk.Order == this.startOrder {
+		chunkResult.chunk.StartIndex = this.startIndex
+		//fmt.Println("call beforeMatchAct=", chunkResult.chunk.Order)
+		if found := this.beforeMatchAct(chunkResult); found {
+			//fmt.Println("call beforeMatchAct get", find)
+			this.foundFirstMatch = true
+			if !this.useIndex {
+				return true
+			}
+		}
+		this.startOrder += 1
+		this.startIndex += chunkResult.chunk.Data.Len()
+		//检查list的后续元素中是否还有符合顺序的块
+		_ = this.handleOrderedChunks()
+
+		if this.foundFirstMatch {
+			return true
+		}
+	} else {
+		//如果不是，则检查是否存在已经匹配的前置块
+		if this.matchChunk != nil && this.matchChunk.chunk.Order < chunkResult.chunk.Order {
+			//如果存在，则当前块是匹配块之后的块，根据take和skip进行处理
+			this.afterMatchAct(chunkResult)
+		} else {
+			//如果不存在，则插入list
+			this.Insert(chunkResult)
+		}
+	}
+	return false
+}
+
+//处理符合条件的块，返回true表示是原始序列中第一个符合条件的块
+func (this *chunkMatcheds) handleMatchChunk(chunkResult *chunkMatchResult) bool {
+	//检查avl是否存在已经满足条件的块
+	if lastWhile := this.getMatchChunk(); lastWhile != nil {
+		//如果存在符合的块，则检查当前块是在之前还是之后
+		if chunkResult.chunk.Order < lastWhile.chunk.Order {
+			//如果是之前，检查avl中所有在当前块之后的块，执行对应的take或while操作
+			this.handleChunksAfterMatch(chunkResult)
+
+			//替换原有的匹配块，检查当前块的order是否等于下一个order，如果是，则找到了第一个匹配块，并进行对应处理
+			if this.putMatchChunk(chunkResult) {
+				return true
+			}
+		} else {
+			//如果是之后，则对当前块执行对应的take或while操作
+			this.afterMatchAct(chunkResult)
+		}
+	} else {
+		//如果avl中不存在匹配的块，则检查当前块order是否等于下一个order，如果是，则找到了第一个匹配块，并进行对应处理
+		//如果不是下一个order，则插入list，以备后面的检查
+		if this.putMatchChunk(chunkResult) {
+			return true
+		}
+	}
+	return false
+}
+
+func (this *chunkMatcheds) handleChunksAfterMatch(c *chunkMatchResult) {
+	result := make([]*chunkMatchResult, 0, 10)
+	pResult := &result
+	this.forEachAfterChunks(c.chunk.Order, this.avl.root, pResult)
+	for _, c := range result {
+		this.afterMatchAct(c)
+	}
+}
+
+func (this *chunkMatcheds) handleOrderedChunks() (foundNotMatch bool) {
+	result := make([]*chunkMatchResult, 0, 10)
+	pResult := &result
+	startOrder := this.startOrder
+	foundNotMatch = this.forEachOrderedChunks(startOrder, this.avl.root, pResult)
+	return
+}
+
+func (this *chunkMatcheds) forEachChunks(currentOrder int, root *avlNode, handler func(*chunkMatchResult) (bool, bool), result *[]*chunkMatchResult) bool {
+	if result == nil {
+		r := make([]*chunkMatchResult, 0, 10)
+		result = &r
+	}
+
+	if root == nil {
+		return false
+	}
+
+	rootResult := root.data.(*chunkMatchResult)
+	rootOrder := rootResult.chunk.Order
+	if rootOrder > currentOrder {
+		//如果当前节点的Order大于要查找的order，则先查找左子树
+		if lc := (root).lchild; lc != nil {
+			l := root.lchild
+			//if this.forEachAfterChunks(currentOrder, l, result) {
+			if this.forEachChunks(currentOrder, l, handler, result) {
+				return true
+			}
+		}
+	}
+
+	//处理节点
+	if found, end := handler(rootResult); end {
+		return found
+	}
+
+	if (root).rchild != nil {
+		// 查找右子树
+		r := (root.rchild)
+		if this.forEachChunks(currentOrder, r, handler, result) {
+			return true
+		}
+	}
+	return false
+	/*for i := currentOrder; i < len(this.list); i++ {
+		current := this.list[i]
+		if current == nil {
+			continue
+		}
+
+		//处理节点
+		if found, end := handler(current); end {
+			return found
+		}
+	}
+	return false*/
+}
+
+//查找list中Order在startOrder之后的块，一直找到发现一个匹配块为止
+func (this *chunkMatcheds) forEachAfterChunks(startOrder int, root *avlNode, result *[]*chunkMatchResult) bool {
+	return this.forEachChunks(startOrder, root, func(current *chunkMatchResult) (bool, bool) {
+		currentOrder := current.chunk.Order
+
+		if currentOrder >= startOrder {
+			*result = append(*result, current)
+			//if current.sameList != nil {
+			//	for _, v := range current.sameList {
+			//		*result = append(*result, v.(*chunkMatchResult))
+			//	}
+			//}
+		}
+		//如果当前节点是匹配节点，则结束查找
+		if current.matched {
+			return true, true
+		}
+		return false, false
+	}, result)
+}
+
+//从currentOrder开始查找已经按元素顺序排好的块，一直找到发现一个空缺的位置为止
+//如果是Skip/Take，会在查找同时计算块的起始索引，判断是否符合条件。因为每块的长度未必等于原始长度，所以必须在得到正确顺序后才能计算
+//如果是SkipWhile/TakeWhile，如果找到第一个符合顺序的匹配块，就会结束查找。因为SkipWhile/TakeWhile的avl中不会有2个匹配的块存在
+func (this *chunkMatcheds) forEachOrderedChunks(currentOrder int, root *avlNode, result *[]*chunkMatchResult) bool {
+	return this.forEachChunks(currentOrder, root, func(current *chunkMatchResult) (bool, bool) {
+		currentOrder := current.chunk.Order
+		if current.chunk.Order < this.startOrder {
+			return false, false
+		}
+		if this.foundFirstMatch && this.useIndex {
+			//前面已经找到了匹配元素，那只有根据index查找才需要判断后面的块,并且所有后面的块都需要返回
+			this.afterMatchAct(current)
+		} else if currentOrder == this.startOrder { //currentOrder {
+			//如果当前节点的order等于指定order，则找到了要遍历的第一个元素
+			*result = append(*result, current)
+			current.chunk.StartIndex = this.startIndex
+
+			if this.useIndex || !current.matched {
+				if find := this.beforeMatchAct(current); find {
+					//fmt.Println("find before no matched-------", current.chunk)
+					this.foundFirstMatch = true
+				}
+			}
+			//if root.sameList != nil {
+			//	panic(errors.New("Order cannot be same as" + strconv.Itoa(rootOrder)))
+			//}
+			this.startOrder += 1
+			this.startIndex += current.chunk.Data.Len()
+		} else if currentOrder > this.startOrder { //currentOrder {
+			//this.startOrder在列表中不存在
+			//fmt.Println("check ordered return", false, true)
+			return false, true
+		}
+		//如果是SkipWhile/TakeWhile，并且当前节点是匹配节点，则结束查找
+		//如果是Skip/Take，则不能结束
+		if current.matched && !this.useIndex {
+			this.foundFirstMatch = true
+			this.beMatchAct(current)
+			return true, true
+		}
+		return false, false
+	}, result)
+}
+
+func (this *chunkMatcheds) putMatchChunk(c *chunkMatchResult) bool {
+	//检查当前块order是否等于下一个order，如果是，则找到了匹配块，并进行对应处理
+	//如果不是下一个order，则插入list，以备后面的检查
+	if c.chunk.Order == this.startOrder {
+		this.beMatchAct(c)
+		return true
+	} else {
+		//fmt.Println("insert2")
+		this.Insert(c)
+		return false
+	}
+}
+
+func newChunkMatchResultList(beforeMatchAct func(*chunkMatchResult) bool,
+	afterMatchAct func(*chunkMatchResult),
+	beMatchAct func(*chunkMatchResult),
+	useIndex bool) *chunkMatcheds {
+	return &chunkMatcheds{newAvlTree(func(a interface{}, b interface{}) int {
+		c1, c2 := a.(*chunkMatchResult), b.(*chunkMatchResult)
+		if c1.chunk.Order < c2.chunk.Order {
+			return -1
+		} else if c1.chunk.Order == c2.chunk.Order {
+			return 0
+		} else {
+			return 1
+		}
+	}), 0, 0, nil, beforeMatchAct, afterMatchAct, beMatchAct, useIndex, false}
 }
