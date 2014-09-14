@@ -320,10 +320,18 @@ func getJoinImpl(inner interface{},
 	return stepAction(func(src dataSource, option *ParallelOption, first bool) (dest dataSource, keep bool, e error) {
 		keep = option.KeepOrder
 		innerKVtask := promise.Start(func() (interface{}, error) {
-			if innerKVsDs, err, _ := From(inner).hGroupBy(innerKeySelector).execute(); err == nil {
+			q := From(inner).hGroupBy(innerKeySelector)
+			if innerKVsDs, err, errChan := q.execute(); err == nil {
+				fmt.Println("Get inner list ", innerKVsDs, q.id)
 				r := innerKVsDs.(*listSource).data.(*mapSlicer).data
+				fmt.Println("Get error from inner list", innerKVsDs, q.id)
+				<-errChan
+				fmt.Println("Get error from inner list is done", innerKVsDs, q.id)
 				return r, nil
 			} else {
+				fmt.Println("Get error from inner list2 ", innerKVsDs, q.id)
+				<-errChan
+				fmt.Println("Get error from inner list2 is done", innerKVsDs, q.id)
 				return nil, err
 			}
 		})
@@ -625,6 +633,7 @@ func getSkipTake(findMatch func(*chunk, promise.Canceller) (int, bool), isTake b
 			if useIndex {
 				i, _ = findMatch(&chunk{s.data, 0, 0}, nil)
 			} else {
+				//fmt.Println("getSkipTake1", useIndex, isTake, src)
 				if i, found, e = getFirstOrLastIndex(s, findMatch, option, true); !found {
 					i = s.data.Len()
 				}
@@ -681,12 +690,13 @@ func getSkipTake(findMatch func(*chunk, promise.Canceller) (int, bool), isTake b
 				sendMatchChunk(c.chunk, c.matchIndex)
 			}
 
+			fmt.Println("getSkipTake2", useIndex, isTake, src)
 			//开始处理channel中的块
 			srcChan := s.ChunkChan(option.ChunkSize)
 			f := promise.Start(func() (interface{}, error) {
 				matchedList := newChunkMatchResultList(beforeMatchAct, afterMatchAct, beMatchAct, useIndex)
 				return forEachChanByOrder(s, srcChan, func(c *chunk, foundFirstMatch *bool) bool {
-					//fmt.Println("forEachChanByOrder", c, c.Data.Len(), "------------------", *foundFirstMatch)
+					fmt.Println("forEach chunk", c, c.Data.Len(), "------------------", *foundFirstMatch)
 					if !*foundFirstMatch {
 						//检查块是否存在匹配的数据，按Index计算的总是返回false，因为必须要等前面所有的块已经排好序后才能得到正确的索引
 						chunkResult := getChunkMatchResult(c, findMatch, useIndex)
@@ -694,7 +704,11 @@ func getSkipTake(findMatch func(*chunk, promise.Canceller) (int, bool), isTake b
 						//判断是否找到了第一个匹配的块
 						if *foundFirstMatch = matchedList.handleChunk(chunkResult); *foundFirstMatch {
 							if isTake {
+								//如果是TakeWhile并且找到了第一个匹配块，则无须再处理后续数据，直接关闭源chan，
+								//并要发送nil给out以表示处理结束
 								s.Close()
+								fmt.Println("Get first match", c)
+								out <- nil
 								return true
 							}
 						}
@@ -702,10 +716,13 @@ func getSkipTake(findMatch func(*chunk, promise.Canceller) (int, bool), isTake b
 						//如果已经找到了第一个匹配的块，则此后的块直接处理即可
 						if !isTake {
 							sendChunk(out, c)
+							fmt.Println("After match, send Chunk", c)
 						} else {
+							fmt.Println("After match, return true", c)
 							return true
 						}
 					}
+					fmt.Println("return false", c)
 					return false
 				})
 			}).Fail(func(err interface{}) {
@@ -725,6 +742,7 @@ func getSkipTake(findMatch func(*chunk, promise.Canceller) (int, bool), isTake b
 func getFirstElement(src dataSource,
 	findMatch func(c *chunk, canceller promise.Canceller) (r int, found bool),
 	useIndex bool, option *ParallelOption) (element interface{}, found bool, err error) {
+	//fmt.Println("getFirstElement", useIndex, src)
 	switch s := src.(type) {
 	case *listSource:
 		rs, i := s.data, -1
@@ -775,19 +793,21 @@ func getFirstElement(src dataSource,
 		reduceChan := make(chan *chunkMatchResult, option.Degree)
 		fu := parallelHandleChan(s, func(c *chunk) {
 			chunkResult := getChunkMatchResult(c, findMatch, useIndex)
-			func(){
+			func() {
 				defer func() {
-					if e := recover(); e != nil{
+					if e := recover(); e != nil {
 						s.Close()
 					}
 				}()
 				reduceChan <- chunkResult
+				fmt.Print("getFirstElement send--", chunkResult, "; ")
 			}()
 		}, option).Done(func(r interface{}) {
 			defer func() {
 				_ = recover()
 			}()
 			reduceChan <- nil
+			fmt.Println("getFirstElement parallelHandleChan done------------------------------")
 		})
 
 		rf := promise.Start(func() (interface{}, error) {
@@ -924,8 +944,10 @@ func forEachChanByOrder(src *chanSource, srcChan chan *chunk, action func(*chunk
 		if isNil(c) {
 			if cap(srcChan) > 0 {
 				src.Close()
+				fmt.Println("forEachChanByOrder close src for nil")
 				break
 			} else {
+				fmt.Println("forEachChanByOrder get nil")
 				continue
 			}
 		}
@@ -938,9 +960,11 @@ func forEachChanByOrder(src *chanSource, srcChan chan *chunk, action func(*chunk
 
 	if src.future != nil {
 		if _, err := src.future.Get(); err != nil {
+			fmt.Println("forEachChanByOrder future return")
 			return nil, err
 		}
 	}
+	fmt.Println("forEachChanByOrder return nil")
 	return nil, nil
 }
 

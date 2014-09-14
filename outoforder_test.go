@@ -63,7 +63,7 @@ func getChunkSrcByOrder(indexs []int, ints []interface{}) chan *chunk {
 		}()
 		//fmt.Println("\nsend----------------")
 		for _, i := range indexs {
-			//fmt.Println("\nsend", getChunkByi(i))
+			fmt.Println("\nsend", i)
 			chunkSrc <- getChunkByi(i, ints)
 		}
 		close(chunkSrc)
@@ -75,9 +75,9 @@ func getChunkSrcByOrder(indexs []int, ints []interface{}) chan *chunk {
 // 1. SkipWhile/TakeWhile after Union operation
 // 2. if the data source includes the count of match item are more than one.
 func TestSkipAndTakeWithOutOfOrder(t *testing.T) {
-	if !runTest {
-		return
-	}
+	//if !runTest {
+	//	return
+	//}
 
 	ints := make([]interface{}, countS)
 	for i := 0; i < countS; i++ {
@@ -109,7 +109,7 @@ func TestSkipAndTakeWithOutOfOrder(t *testing.T) {
 		defaultChunkSize = size
 		//--------------------------------------------------------
 		c.Convey("Test Skip for out of order", func() {
-			c.Convey("Skip nothing", func() {
+			c.Convey("Skip nothing for out order", func() {
 				for _, v := range indexses {
 					r, err := From(getChunkSrcByOrder(v, ints)).Skip(-1).Results()
 					//TODO: need test keep order
@@ -117,7 +117,7 @@ func TestSkipAndTakeWithOutOfOrder(t *testing.T) {
 					c.So(r, shouldSlicesResemble, ints)
 				}
 			})
-			c.Convey("Skip all", func() {
+			c.Convey("Skip all for out order", func() {
 				for _, v := range indexses {
 					r, err := From(getChunkSrcByOrder(v, ints)).Skip(100).Results()
 					//TODO: need test keep order
@@ -125,7 +125,7 @@ func TestSkipAndTakeWithOutOfOrder(t *testing.T) {
 					c.So(r, shouldSlicesResemble, []interface{}{})
 				}
 			})
-			c.Convey("Skip 12", func() {
+			c.Convey("Skip 12 for out order", func() {
 				for _, v := range indexses {
 					r, err := From(getChunkSrcByOrder(v, ints)).Skip(12).Results()
 					c.So(err, c.ShouldBeNil)
@@ -145,7 +145,7 @@ func TestSkipAndTakeWithOutOfOrder(t *testing.T) {
 				c.So(err, c.ShouldNotBeNil)
 			})
 
-			c.Convey("SkipWhile nothing", func() {
+			c.Convey("SkipWhile nothing for out order", func() {
 				for _, v := range indexses {
 					r, err := From(getChunkSrcByOrder(v, ints)).SkipWhile(func(v interface{}) bool {
 						return v.(int) < -1
@@ -155,7 +155,7 @@ func TestSkipAndTakeWithOutOfOrder(t *testing.T) {
 					c.So(r, shouldSlicesResemble, ints)
 				}
 			})
-			c.Convey("SkipWhile all", func() {
+			c.Convey("SkipWhile all for out order", func() {
 				for _, v := range indexses {
 					r, err := From(getChunkSrcByOrder(v, ints)).SkipWhile(func(v interface{}) bool {
 						return v.(int) < 100
@@ -165,7 +165,7 @@ func TestSkipAndTakeWithOutOfOrder(t *testing.T) {
 					c.So(r, shouldSlicesResemble, []interface{}{})
 				}
 			})
-			c.Convey("SkipWhile 12", func() {
+			c.Convey("SkipWhile 12 for out order", func() {
 				for _, v := range indexses {
 					//fmt.Println("\nSkipWhile 12 for", v)
 					r, err := From(getChunkSrcByOrder(v, ints)).SkipWhile(func(v interface{}) bool {
@@ -177,8 +177,8 @@ func TestSkipAndTakeWithOutOfOrder(t *testing.T) {
 			})
 		})
 
-		c.Convey("Test Take in channel", func() {
-			c.Convey("Take nothing", func() {
+		c.Convey("Test Take for out of order", func() {
+			c.Convey("Take nothing for out order", func() {
 				for _, v := range indexses {
 					r, err := From(getChunkSrcByOrder(v, ints)).Take(-1).Results()
 					//TODO: need test keep order
@@ -186,7 +186,7 @@ func TestSkipAndTakeWithOutOfOrder(t *testing.T) {
 					c.So(r, shouldSlicesResemble, []interface{}{})
 				}
 			})
-			c.Convey("Take all", func() {
+			c.Convey("Take all for out order", func() {
 				for _, v := range indexses {
 					r, err := From(getChunkSrcByOrder(v, ints)).Take(100).Results()
 					//TODO: need test keep order
@@ -194,7 +194,7 @@ func TestSkipAndTakeWithOutOfOrder(t *testing.T) {
 					c.So(r, shouldSlicesResemble, ints)
 				}
 			})
-			c.Convey("Take 12", func() {
+			c.Convey("Take 12 for out order", func() {
 				for _, v := range indexses {
 					r, err := From(getChunkSrcByOrder(v, ints)).Take(12).Results()
 					c.So(err, c.ShouldBeNil)
@@ -214,17 +214,22 @@ func TestSkipAndTakeWithOutOfOrder(t *testing.T) {
 				c.So(err, c.ShouldNotBeNil)
 			})
 
-			c.Convey("TakeWhile nothing", func() {
+			c.Convey("TakeWhile nothing for out order", func() {
 				for _, v := range indexses {
+					//c.Convey("TakeWhile nothing for "+fmt.Sprintln(v), func() {
+					fmt.Println(">>>TakeWhile nothing for " + fmt.Sprintln(v))
 					r, err := From(getChunkSrcByOrder(v, ints)).TakeWhile(func(v interface{}) bool {
 						return v.(int) < -1
 					}).Results()
 					//TODO: need test keep order
 					c.So(err, c.ShouldBeNil)
 					c.So(r, shouldSlicesResemble, []interface{}{})
+					fmt.Println(">>>TakeWhile end for " + fmt.Sprintln(v))
+
+					//})
 				}
 			})
-			c.Convey("TakeWhile all", func() {
+			c.Convey("TakeWhile all for out order", func() {
 				for _, v := range indexses {
 					r, err := From(getChunkSrcByOrder(v, ints)).TakeWhile(func(v interface{}) bool {
 						return v.(int) < 100
@@ -234,7 +239,7 @@ func TestSkipAndTakeWithOutOfOrder(t *testing.T) {
 					c.So(r, shouldSlicesResemble, ints)
 				}
 			})
-			c.Convey("TakeWhile 12", func() {
+			c.Convey("TakeWhile 12 for out order", func() {
 				//fmt.Println("\nTakeWhile 12")
 				for _, v := range indexses {
 					r, err := From(getChunkSrcByOrder(v, ints)).TakeWhile(func(v interface{}) bool {
