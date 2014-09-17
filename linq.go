@@ -56,6 +56,7 @@ var (
 	countAggOpr          = getCountByOpr(nil)
 )
 
+var Debug = true
 var numCPU int
 
 func init() {
@@ -853,6 +854,7 @@ func (q *Queryable) execute() (ds dataSource, err error, errChan chan []error) {
 	srcErr := newErrorWithStacks(errors.New("source error"))
 	//create a goroutines to collect the errors for the pipeline mode step
 	stepErrsChan := make(chan error)
+	fmt.Println("\n")
 	go func() {
 		defer func() {
 			if e := recover(); e != nil {
@@ -864,20 +866,20 @@ func (q *Queryable) execute() (ds dataSource, err error, errChan chan []error) {
 		stepFutures := make([]error, 0, len(q.steps))
 
 		i := 0
-		fmt.Println("Begin receive step error", t, q.id)
+		fmt.Printf("Begin receive step error, rand id is %#v & %#v\n", q.id, t)
 		for e := range stepErrsChan {
-			fmt.Println("Receive a step error", t, q.id)
+			fmt.Printf("Receive a step error, rand id is %#v & %#v\n", q.id, t)
 			if e != nil && !reflect.ValueOf(e).IsNil() {
 				stepFutures = append(stepFutures, e)
 			}
 			i++
 			if i < len(q.steps) {
-				fmt.Println("Receive a step error", i, len(q.steps), t)
+				fmt.Printf("Receive a step error, %#v, rand id is %#v & %#v\n", i, q.id, t)
 			}
 			if i >= len(q.steps) {
-				fmt.Println("send to errChan", t, errChan, q.id)
+				fmt.Printf("send to errChan, errchan is %#v, rand id is %#v & %#v\n", errChan, q.id, t)
 				errChan <- stepFutures
-				fmt.Println("send to errChan 2", t, errChan, q.id)
+				fmt.Printf("send to errChan 2, errchan is %#v, rand id is %#v & %#v\n", errChan, q.id, t)
 				return
 			}
 		}
@@ -888,8 +890,10 @@ func (q *Queryable) execute() (ds dataSource, err error, errChan chan []error) {
 
 	for i, step := range q.steps {
 		//var f *promise.Future
+		j := i
 		step1 := step
 
+		fmt.Printf("start step, seq is %#v, rand id is %#v & %#v\n", j, q.id, t)
 		//execute the operation
 		executeStep := func() error {
 			defer func() {
@@ -899,33 +903,33 @@ func (q *Queryable) execute() (ds dataSource, err error, errChan chan []error) {
 				}
 			}()
 			if ds, keepOrder, err = step.Action()(ds, step.POption(pOption), i == 0); err != nil {
-				//fmt.Println("err in step2----------1", i, err)
-				//stepErrsChan <- NewStepError(i, step1.Typ(), err)
+				fmt.Printf("err in step2----------1, seq is %#v, rand id is %#v & %#v\n", j, q.id, t)
+				stepErrsChan <- NewStepError(i, step1.Typ(), err)
 				for j := i + 1; j < len(q.steps); j++ {
 					stepErrsChan <- nil
+					fmt.Printf("send nil err in step2----------2, seq is %#v, rand id is %#v & %#v\n", j, q.id, t)
 				}
-				//fmt.Println("err in step2----------2", i, err)
+				fmt.Printf("after err in step2----------1, seq is %#v, rand id is %#v & %#v\n", j, q.id, t)
 				return err
 			} else if ds.Future() != nil {
-				j := i
 				//add a fail callback to collect the errors in pipeline mode
 				//because the steps will be paralle in piplline mode,
 				//so cannot use return value of the function
 				f := ds.Future()
-				fmt.Println("add callback for future", f, t, q.id)
+				printfln(f, "add callback for future, seq is %#v, rand id is %#v & %#v", j, q.id, t)
 				f.Fail(func(results interface{}) {
 					//fmt.Println("err in step3----------1", j, NewStepError(j, step1.Typ(), results))
 					stepErrsChan <- NewStepError(j, step1.Typ(), results)
-					fmt.Println("err in step3----------2", j, step1.Typ())
+					printfln(f, "err in step3----------2, seq is %#v, rand id is %#v & %#v", j, q.id, t)
 				}).Done(func(results interface{}) {
-					fmt.Println("done step4----------1", j, t, q.id)
+					printfln(f, "done step4----------1, seq is %#v, rand id is %#v & %#v", j, q.id, t)
 					stepErrsChan <- nil
-					fmt.Println("done step4----------2", j, t, q.id)
+					printfln(f, "done step4----------2, seq is %#v, rand id is %#v & %#v", j, q.id, t)
 				})
 			} else {
-				fmt.Println("done step5----------1", i, q.id)
+				fmt.Printf("done step5----------1, seq is %#v, rand id is %#v & %#v\n", j, q.id, t)
 				stepErrsChan <- nil
-				fmt.Println("done step5----------2", i, q.id)
+				fmt.Printf("done step5----------2, seq is %#v, rand id is %#v & %#v\n", j, q.id, t)
 			}
 			return nil
 		}
@@ -972,7 +976,7 @@ func (q *Queryable) singleValue(getVal func(dataSource, *ParallelOption) (result
 
 func (q *Queryable) stepErrs(errChan chan []error) (err *AggregateError) {
 	if errChan != nil {
-		fmt.Println("receive from errChan", errChan, q.id)
+		fmt.Println("before receive from errChan", errChan, q.id)
 		if errs := <-errChan; len(errs) > 0 {
 			err = NewAggregateError("Aggregate errors", errs)
 		}

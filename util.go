@@ -1388,3 +1388,13 @@ func bytesEquals(addr1 uintptr, addr2 uintptr, size uintptr) bool {
 	}
 	return true
 }
+
+func printfln(this *promise.Future, format string, a ...interface{}) (n int, err error) {
+	if Debug {
+		log := fmt.Sprintf(format, a...)
+		log = log + fmt.Sprintf(". promise id = %#v\n", this.Id)
+		return fmt.Print(log)
+	} else {
+		return 0, nil
+	}
+}
