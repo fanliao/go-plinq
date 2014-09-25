@@ -63,7 +63,6 @@ func getChunkSrcByOrder(indexs []int, ints []interface{}) chan *chunk {
 		}()
 		//fmt.Println("\nsend----------------")
 		for _, i := range indexs {
-			fmt.Println("\nsend", i)
 			chunkSrc <- getChunkByi(i, ints)
 		}
 		close(chunkSrc)
@@ -167,7 +166,7 @@ func TestSkipAndTakeWithOutOfOrder(t *testing.T) {
 			})
 			c.Convey("SkipWhile 12 for out order", func() {
 				for _, v := range indexses {
-					//fmt.Println("\nSkipWhile 12 for", v)
+					fmt.Println("\nSkipWhile 12 for", v)
 					r, err := From(getChunkSrcByOrder(v, ints)).SkipWhile(func(v interface{}) bool {
 						return v.(int) < 12
 					}).Results()

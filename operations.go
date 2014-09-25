@@ -322,16 +322,16 @@ func getJoinImpl(inner interface{},
 		innerKVtask := promise.Start(func() (interface{}, error) {
 			q := From(inner).hGroupBy(innerKeySelector)
 			if innerKVsDs, err, errChan := q.execute(); err == nil {
-				fmt.Println("Get inner list ", innerKVsDs, q.id)
+				//fmt.Println("Get inner list ", innerKVsDs, q.id)
 				r := innerKVsDs.(*listSource).data.(*mapSlicer).data
-				fmt.Println("Get error from inner list", innerKVsDs, q.id)
+				//fmt.Println("Get error from inner list", innerKVsDs, q.id)
 				<-errChan
-				fmt.Println("Get error from inner list is done", innerKVsDs, q.id)
+				//fmt.Println("Get error from inner list is done", innerKVsDs, q.id)
 				return r, nil
 			} else {
-				fmt.Println("Get error from inner list2 ", innerKVsDs, q.id)
+				//fmt.Println("Get error from inner list2 ", innerKVsDs, q.id)
 				<-errChan
-				fmt.Println("Get error from inner list2 is done", innerKVsDs, q.id)
+				//fmt.Println("Get error from inner list2 is done", innerKVsDs, q.id)
 				return nil, err
 			}
 		})
@@ -690,13 +690,13 @@ func getSkipTake(findMatch func(*chunk, promise.Canceller) (int, bool), isTake b
 				sendMatchChunk(c.chunk, c.matchIndex)
 			}
 
-			fmt.Println("getSkipTake2", useIndex, isTake, src)
+			//fmt.Println("getSkipTake2", useIndex, isTake, src)
 			//开始处理channel中的块
 			srcChan := s.ChunkChan(option.ChunkSize)
 			f := promise.Start(func() (interface{}, error) {
 				matchedList := newChunkMatchResultList(beforeMatchAct, afterMatchAct, beMatchAct, useIndex)
 				return forEachChanByOrder(s, srcChan, func(c *chunk, foundFirstMatch *bool) bool {
-					fmt.Println("forEach chunk", c, c.Data.Len(), "------------------", *foundFirstMatch)
+					//fmt.Println("forEach chunk", c, c.Data.Len(), "------------------", *foundFirstMatch)
 					if !*foundFirstMatch {
 						//检查块是否存在匹配的数据，按Index计算的总是返回false，因为必须要等前面所有的块已经排好序后才能得到正确的索引
 						chunkResult := getChunkMatchResult(c, findMatch, useIndex)
@@ -707,7 +707,7 @@ func getSkipTake(findMatch func(*chunk, promise.Canceller) (int, bool), isTake b
 								//如果是TakeWhile并且找到了第一个匹配块，则无须再处理后续数据，直接关闭源chan，
 								//并要发送nil给out以表示处理结束
 								s.Close()
-								fmt.Println("Get first match", c)
+								//fmt.Println("Get first match", c)
 								out <- nil
 								return true
 							}
@@ -716,13 +716,13 @@ func getSkipTake(findMatch func(*chunk, promise.Canceller) (int, bool), isTake b
 						//如果已经找到了第一个匹配的块，则此后的块直接处理即可
 						if !isTake {
 							sendChunk(out, c)
-							fmt.Println("After match, send Chunk", c)
+							//fmt.Println("After match, send Chunk", c)
 						} else {
-							fmt.Println("After match, return true", c)
+							//fmt.Println("After match, return true", c)
 							return true
 						}
 					}
-					fmt.Println("return false", c)
+					//fmt.Println("return false", c)
 					return false
 				})
 			}).Fail(func(err interface{}) {
@@ -800,14 +800,12 @@ func getFirstElement(src dataSource,
 					}
 				}()
 				reduceChan <- chunkResult
-				fmt.Print("getFirstElement send--", chunkResult, "; ")
 			}()
 		}, option).Done(func(r interface{}) {
 			defer func() {
 				_ = recover()
 			}()
 			reduceChan <- nil
-			fmt.Println("getFirstElement parallelHandleChan done------------------------------")
 		})
 
 		rf := promise.Start(func() (interface{}, error) {
@@ -944,10 +942,10 @@ func forEachChanByOrder(src *chanSource, srcChan chan *chunk, action func(*chunk
 		if isNil(c) {
 			if cap(srcChan) > 0 {
 				src.Close()
-				fmt.Println("forEachChanByOrder close src for nil")
+				//fmt.Println("forEachChanByOrder close src for nil")
 				break
 			} else {
-				fmt.Println("forEachChanByOrder get nil")
+				//fmt.Println("forEachChanByOrder get nil")
 				continue
 			}
 		}
@@ -960,11 +958,11 @@ func forEachChanByOrder(src *chanSource, srcChan chan *chunk, action func(*chunk
 
 	if src.future != nil {
 		if _, err := src.future.Get(); err != nil {
-			fmt.Println("forEachChanByOrder future return")
+			//fmt.Println("forEachChanByOrder future return")
 			return nil, err
 		}
 	}
-	fmt.Println("forEachChanByOrder return nil")
+	//fmt.Println("forEachChanByOrder return nil")
 	return nil, nil
 }
 
