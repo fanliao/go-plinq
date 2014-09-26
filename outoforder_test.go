@@ -2,7 +2,7 @@ package plinq
 
 import (
 	"errors"
-	"fmt"
+	//"fmt"
 	c "github.com/smartystreets/goconvey/convey"
 	"testing"
 )
@@ -166,7 +166,7 @@ func TestSkipAndTakeWithOutOfOrder(t *testing.T) {
 			})
 			c.Convey("SkipWhile 12 for out order", func() {
 				for _, v := range indexses {
-					fmt.Println("\nSkipWhile 12 for", v)
+					//fmt.Println("\nSkipWhile 12 for", v)
 					r, err := From(getChunkSrcByOrder(v, ints)).SkipWhile(func(v interface{}) bool {
 						return v.(int) < 12
 					}).Results()
@@ -216,14 +216,14 @@ func TestSkipAndTakeWithOutOfOrder(t *testing.T) {
 			c.Convey("TakeWhile nothing for out order", func() {
 				for _, v := range indexses {
 					//c.Convey("TakeWhile nothing for "+fmt.Sprintln(v), func() {
-					fmt.Println(">>>TakeWhile nothing for " + fmt.Sprintln(v))
+					//fmt.Println(">>>TakeWhile nothing for " + fmt.Sprintln(v))
 					r, err := From(getChunkSrcByOrder(v, ints)).TakeWhile(func(v interface{}) bool {
 						return v.(int) < -1
 					}).Results()
 					//TODO: need test keep order
 					c.So(err, c.ShouldBeNil)
 					c.So(r, shouldSlicesResemble, []interface{}{})
-					fmt.Println(">>>TakeWhile end for " + fmt.Sprintln(v))
+					//fmt.Println(">>>TakeWhile end for " + fmt.Sprintln(v))
 
 					//})
 				}
@@ -296,7 +296,7 @@ func TestElementAtWithOutOfOrder(t *testing.T) {
 				c.So(err, c.ShouldBeNil)
 				c.So(r, c.ShouldEqual, 12)
 				if !found {
-					fmt.Println("found is", found, ", r=", r)
+					//fmt.Println("found is", found, ", r=", r)
 				}
 				c.So(found, c.ShouldEqual, true)
 			}

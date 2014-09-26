@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	countForB      int  = 1000000
-	rptCountForB   int  = 1100000
+	countForB      int  = 100000
+	rptCountForB   int  = 110000
 	testGoLinq     bool = true
 	largeChunkSize int  = 1000
 )
