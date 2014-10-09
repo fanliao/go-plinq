@@ -1412,6 +1412,14 @@ func (t *concurrentMap) put(k interface{}, v interface{}) {
 	t.m[k] = v
 }
 
+func (t *concurrentMap) putIfNotExist(k interface{}, v interface{}) (ok bool) {
+	t.rw.Lock()
+	defer t.rw.Unlock()
+	if _, ok = t.m[k]; !ok {
+		t.m[k] = v
+	}
+}
+
 func (t *concurrentMap) get(k interface{}) (v interface{}, ok bool) {
 	t.rw.RLock()
 	defer t.rw.RUnlock()
@@ -1422,3 +1430,141 @@ func (t *concurrentMap) get(k interface{}) (v interface{}, ok bool) {
 func newConcurrentMap() *concurrentMap {
 	return &concurrentMap{make(map[interface{}]interface{}), new(sync.RWMutex)}
 }
+
+//package main
+
+//import(
+//	"fmt"
+//	"sync"
+//	"time"
+//	"strconv"
+//	"runtime"
+//)
+
+////concurrentMap
+//type concurrentMap struct {
+//	m  map[interface{}]interface{}
+//	rw *sync.RWMutex
+//}
+
+//func (t *concurrentMap) put(k interface{}, v interface{}) {
+//	t.rw.Lock()
+//	defer t.rw.Unlock()
+//	t.m[k] = v
+//}
+
+//func (t *concurrentMap) putIfNotExist(k interface{}, v interface{}) (ok bool) {
+//	t.rw.Lock()
+//	defer t.rw.Unlock()
+//	if _, ok = t.m[k]; !ok {
+//		t.m[k] = v
+//	}
+//	return
+//}
+
+//func (t *concurrentMap) get(k interface{}) (v interface{}, ok bool) {
+//	t.rw.RLock()
+//	defer t.rw.RUnlock()
+//	v, ok = t.m[k]
+//	return
+//}
+
+//func (t *concurrentMap) len() int{
+//	t.rw.RLock()
+//	defer t.rw.RUnlock()
+//	return len(t.m)
+
+//}
+
+//func newConcurrentMap() *concurrentMap {
+//	return &concurrentMap{make(map[interface{}]interface{}), new(sync.RWMutex)}
+//}
+
+//func duration(title string, f func()){
+//	s := time.Now()
+//	f()
+//	fmt.Println(title, " spends ", time.Since(s).Nanoseconds() / 1000, " micro s")
+//}
+
+//func main(){
+//	runtime.GOMAXPROCS(4)
+//	listN := 4
+//	n := 100000
+//	list := make([][]interface{}, listN, listN)
+//	for i := 0; i < listN; i++{
+//		list1 := make([]interface{}, 0, n)
+//		for j := 0; j < n; j++{
+//			list1 = append(list1, j + (i - 1) * n/100)
+//		}
+//		list[i] = list1
+//	}
+
+//	l := 0
+//	duration("concurrentMap", func(){
+//		cm := newConcurrentMap()
+
+//		wg := new(sync.WaitGroup)
+//		wg.Add(listN)
+//		for i := 0; i < listN; i++{
+//			k := i
+//			go func(){
+//				for _, j := range list[k]{
+//					cm.putIfNotExist(strconv.Itoa(j.(int)), j)
+//				}
+//				wg.Done()
+//			}()
+//		}
+//		wg.Wait()
+//		l = cm.len()
+//	})
+//	fmt.Println("len=", l)
+
+//	duration("concurrentMap2", func(){
+//		cm := newConcurrentMap()
+
+//		wg := new(sync.WaitGroup)
+//		wg.Add(listN)
+//		for i := 0; i < listN; i++{
+//			k := i
+//			go func(){
+//				for _, j := range list[k]{
+//					cm.put(strconv.Itoa(j.(int)), j)
+//				}
+//				wg.Done()
+//			}()
+//		}
+//		wg.Wait()
+//		l = cm.len()
+//	})
+//	fmt.Println("len=", l)
+
+//	duration("Map", func(){
+//		cm := make(map[interface{}]interface{})
+
+//		for i := 0; i < listN; i++{
+//			for _, j := range list[i]{
+//				k := strconv.Itoa(j.(int))
+//				if _, ok := cm[k]; !ok {
+//					cm[k] = j
+//				}
+//			}
+//		}
+//		l = len(cm)
+//	})
+//	fmt.Println("len=", l)
+
+//	duration("Map2", func(){
+//		cm := make(map[interface{}]interface{})
+
+//		for i := 0; i < listN; i++{
+//			for _, j := range list[i]{
+//				k := strconv.Itoa(j.(int))
+//				cm[k] = j
+//			}
+//		}
+//		l = len(cm)
+//	})
+//	fmt.Println("len=", l)
+
+//	fmt.Println("Hello World")
+//}
