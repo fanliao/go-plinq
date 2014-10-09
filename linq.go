@@ -667,6 +667,7 @@ func (q *Queryable) All(predicate PredicateFunc, chunkSizes ...int) (found bool,
 		}
 		return getAny(ds, invFunc(predicate), &option)
 	})
+
 	return !found, err
 }
 
@@ -917,11 +918,11 @@ func (q *Queryable) execute() (ds dataSource, err error, errChan chan []error) {
 				//so cannot use return value of the function
 				f := ds.Future()
 				printfln(f, "add callback for future, seq is %#v, rand id is %#v & %#v", j, q.id, t)
-				f.Fail(func(results interface{}) {
+				f.OnFailure(func(results interface{}) {
 					//fmt.Println("err in step3----------1", j, NewStepError(j, step1.Typ(), results))
 					stepErrsChan <- NewStepError(j, step1.Typ(), results)
 					printfln(f, "err in step3----------2, seq is %#v, rand id is %#v & %#v", j, q.id, t)
-				}).Done(func(results interface{}) {
+				}).OnSuccess(func(results interface{}) {
 					printfln(f, "done step4----------1, seq is %#v, rand id is %#v & %#v", j, q.id, t)
 					stepErrsChan <- nil
 					printfln(f, "done step4----------2, seq is %#v, rand id is %#v & %#v", j, q.id, t)
@@ -1166,7 +1167,7 @@ func (cs *chanSource) addCallbackToCloseChan() {
 	//fmt.Println("add close callback1")
 	if cs.future != nil {
 		//fmt.Println("add close callback2")
-		cs.future.Always(func(results interface{}) {
+		cs.future.OnComplete(func(results interface{}) {
 			//must use goroutiner, else may deadlock when out is buffer chan
 			//because it maybe called before the chan receiver be started.
 			//if the buffer is full, out <- nil will be holder then deadlock

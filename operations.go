@@ -385,6 +385,47 @@ func getUnion(source2 interface{}) stepAction {
 		reduceSrcChan := make(chan *chunk, 2)
 
 		var useDefHash uint32
+		//----------------------------------------
+		distMap := newConcurrentMap()
+		mapChunk := func(c *chunk) (r *chunk) {
+			valCanAsKey := atomic.LoadUint32(&useDefHash)
+			useSelf := isNil(converter)
+
+			if valCanAsKey == 1 {
+				useValAsKey = true
+			} else if valCanAsKey == 0 {
+				if c.Data.Len() > 0 && testCanAsKey(converter(c.Data.Index(0))) {
+					atomic.StoreUint32(useDefHash, 1)
+					useValAsKey = true
+				} else if c.Data.Len() == 0 {
+					useValAsKey = false
+				} else {
+					atomic.StoreUint32(useDefHash, 1000)
+					useValAsKey = false
+				}
+			} else {
+				useValAsKey = false
+			}
+
+			chunkData := make([]interface{}, 0, chunkSize)
+			forEachSlicer(c.Data, func(i int, v interface{}) {
+				var hashKey interface{}
+				if !useValAsKey {
+					hashKey = hash64(v)
+				} else {
+					hashKey = v
+				}
+				if _, ok := distKVs[hashKey]; !ok {
+					distKVs[hashKey] = 1
+					chunkData = appendToSlice1(chunkData, v)
+				}
+			})
+			return &chunk{NewSlicer(chunkData), c.Order, c.StartIndex}
+		}
+
+		desc := parallelMapToChan(src, reduceSrcChan, mapChunk, option)
+		//----------------------------------------
+
 		mapChunk := getMapChunkToKVChunkFunc(&useDefHash, nil)
 
 		//map the elements of source and source2 to the a KeyValue slice
@@ -725,7 +766,7 @@ func getSkipTake(findMatch func(*chunk, promise.Canceller) (int, bool), isTake b
 					//fmt.Println("return false", c)
 					return false
 				})
-			}).Fail(func(err interface{}) {
+			}).OnFailure(func(err interface{}) {
 				s.Close()
 			})
 
@@ -801,7 +842,7 @@ func getFirstElement(src dataSource,
 				}()
 				reduceChan <- chunkResult
 			}()
-		}, option).Done(func(r interface{}) {
+		}, option).OnSuccess(func(r interface{}) {
 			defer func() {
 				_ = recover()
 			}()
@@ -906,6 +947,7 @@ func getAny(src dataSource, predicate PredicateFunc, option *ParallelOption) (re
 			return false
 		}
 	}
+
 	var f *promise.Future
 	switch s := src.(type) {
 	case *listSource:
@@ -913,9 +955,16 @@ func getAny(src dataSource, predicate PredicateFunc, option *ParallelOption) (re
 	case *chanSource:
 		f = parallelMapChanForAnyTrue(s, getMapChunk, predicateResult, option)
 	}
+
 	r, e := f.Get()
 	if val, ok := r.(bool); ok {
 		return val, val, e
+	} else if noMatchedErr, ok := e.(*promise.NoMatchedError); ok {
+		if noMatchedErr.HasError() {
+			return false, false, NewAggregateError("", noMatchedErr.Results)
+		} else {
+			return false, false, nil
+		}
 	} else {
 		return false, false, e
 	}
@@ -1215,7 +1264,7 @@ func foundMatchFunc(predicate PredicateFunc, findFirst bool) func(c *chunk, canc
 			}
 			v := c.Data.Index(i)
 			if canceller != nil && canceller.IsCancellationRequested() {
-				canceller.SetCancelled()
+				canceller.Cancel()
 				break
 			}
 			if predicate(v) {
@@ -1359,7 +1408,7 @@ func forEachChan(src *chanSource, srcChan chan *chunk,
 func parallelHandleChan(src *chanSource, task func(*chunk), option *ParallelOption) (fu *promise.Future) {
 	srcChan := src.ChunkChan(option.ChunkSize)
 
-	fs := make([]*promise.Future, option.Degree)
+	fs := make([]interface{}, option.Degree)
 	for i := 0; i < option.Degree; i++ {
 		f := promise.Start(func() (r interface{}, e error) {
 			idx := 0
@@ -1378,11 +1427,11 @@ func parallelHandleChan(src *chanSource, task func(*chunk), option *ParallelOpti
 	}
 
 	if option.Degree != 1 {
-		fu = promise.WhenAllFuture(fs...)
+		fu = promise.WhenAll(fs...)
 	} else {
-		fu = fs[0]
+		fu = fs[0].(*promise.Future)
 	}
-	fu.Fail(func(err interface{}) { src.Close() })
+	fu.OnFailure(func(err interface{}) { src.Close() })
 
 	return fu
 }
@@ -1398,7 +1447,7 @@ func parallelMapChanToChan(src *chanSource, out chan *chunk,
 
 	srcChan := src.ChunkChan(option.ChunkSize)
 
-	fs := make([]*promise.Future, option.Degree)
+	fs := make([]interface{}, option.Degree)
 	for i := 0; i < option.Degree; i++ {
 		f := promise.Start(func() (r interface{}, e error) {
 			idx := 0
@@ -1421,11 +1470,11 @@ func parallelMapChanToChan(src *chanSource, out chan *chunk,
 
 	var f *promise.Future
 	if option.Degree != 1 {
-		f = promise.WhenAllFuture(fs...)
+		f = promise.WhenAll(fs...)
 	} else {
-		f = fs[0]
+		f = fs[0].(*promise.Future)
 	}
-	f.Fail(func(err interface{}) { src.Close() })
+	f.OnFailure(func(err interface{}) { src.Close() })
 
 	outCs := &chanSource{chunkChan: out, future: f}
 	if createOutChan {
@@ -1471,7 +1520,7 @@ func parallelMapListToList(src dataSource, task func(*chunk) *chunk, option *Par
 		}
 		i++
 	}, option)
-	f = promise.WaitAll(fs[0:i]...)
+	f = promise.WhenAll(fs[0:i]...)
 	return
 }
 
@@ -1480,12 +1529,12 @@ func parallelMapListToList(src dataSource, task func(*chunk) *chunk, option *Par
 func parallelMapListForAnyTrue(src dataSource,
 	getAction func(*chunk) func(promise.Canceller) (interface{}, error),
 	predicate PredicateFunc, option *ParallelOption) (f *promise.Future) {
-	i, fs := 0, make([]*promise.Future, option.Degree)
+	i, fs := 0, make([]interface{}, option.Degree)
 	splitContinuous(src, func(c *chunk) {
 		fs[i] = promise.Start(getAction(c))
 		i++
 	}, option)
-	f = promise.WhenAnyTrue(predicate, fs[0:i]...)
+	f = promise.WhenAnyMatched(predicate, fs[0:i]...)
 	return
 }
 
@@ -1497,7 +1546,7 @@ func parallelMapChanForAnyTrue(src *chanSource,
 
 	srcChan := src.ChunkChan(option.ChunkSize)
 
-	fs := make([]*promise.Future, option.Degree)
+	fs := make([]interface{}, option.Degree)
 	for i := 0; i < option.Degree; i++ {
 		//k := i
 		f := promise.Start(func(canceller promise.Canceller) (r interface{}, e error) {
@@ -1517,7 +1566,7 @@ func parallelMapChanForAnyTrue(src *chanSource,
 		})
 		fs[i] = f
 	}
-	f := promise.WhenAnyTrue(predicate, fs...).Fail(func(err interface{}) { src.Close() })
+	f := promise.WhenAnyMatched(predicate, fs...).OnFailure(func(err interface{}) { src.Close() })
 
 	return f
 }
@@ -1592,9 +1641,9 @@ func parallelMatchListByDirection(src dataSource,
 		//根据查找顺序，如果有Future出错或者找到了数据，则取消后面的Future
 		if !allOk || hasOk {
 			forFutures(fs, i, func(i int) (beEnd bool) {
-				if c := fs[i].Canceller(); c != nil {
-					fs[i].RequestCancel()
-				}
+				//if c := fs[i].Canceller(); c != nil {
+				fs[i].RequestCancel()
+				//}
 				return
 			})
 			//fmt.Println("end for futures", i)

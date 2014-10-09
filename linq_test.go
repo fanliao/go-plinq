@@ -23,7 +23,7 @@ const (
 )
 
 var (
-	runTest    = false
+	runTest    = true
 	tUserss    = [][]interface{}{make([]interface{}, countS), make([]interface{}, countP)}
 	tRptUserss = [][]interface{}{make([]interface{}, rptCountS), make([]interface{}, rptCountP)}
 	tUserss2   = [][]interface{}{make([]interface{}, countS), make([]interface{}, countP)}
@@ -1141,6 +1141,16 @@ func TestAnyAndAll(t *testing.T) {
 		c.So(found, c.ShouldEqual, false)
 	}
 
+	expectAllMatch := func(found bool, err error) {
+		c.So(err, c.ShouldBeNil)
+		c.So(found, c.ShouldEqual, true)
+	}
+
+	expectNotAllMatch := func(found bool, err error) {
+		c.So(err, c.ShouldBeNil)
+		c.So(found, c.ShouldEqual, false)
+	}
+
 	testImmediateOpr("When error returned in any function", t,
 		tIntss, NewQuery(),
 		func(q *Queryable, n int) {
@@ -1169,7 +1179,7 @@ func TestAnyAndAll(t *testing.T) {
 	testImmediateOpr("All item > 100000? no", t,
 		tIntss, NewQuery(),
 		func(q *Queryable, n int) {
-			expectNotFound(q.All(func(v interface{}) bool {
+			expectNotAllMatch(q.All(func(v interface{}) bool {
 				return v.(int) > 100000
 			}))
 		})
@@ -1185,7 +1195,7 @@ func TestAnyAndAll(t *testing.T) {
 	testImmediateOpr("All int >= 0? yes", t,
 		tIntss, NewQuery(),
 		func(q *Queryable, n int) {
-			expectFound(q.All(func(v interface{}) bool {
+			expectAllMatch(q.All(func(v interface{}) bool {
 				return v.(int) >= 0
 			}))
 		})
@@ -1193,7 +1203,7 @@ func TestAnyAndAll(t *testing.T) {
 	testImmediateOpr("All int >= 2? no", t,
 		tIntss, NewQuery(),
 		func(q *Queryable, n int) {
-			expectNotFound(q.All(func(v interface{}) bool {
+			expectNotAllMatch(q.All(func(v interface{}) bool {
 				return v.(int) >= 2
 			}))
 		})

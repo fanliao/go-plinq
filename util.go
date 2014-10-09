@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 	"unsafe"
@@ -211,15 +212,15 @@ func getMapChunkToKVChunkFunc(useDefHash *uint32, converter OneArgsFunc) func(c 
 	}
 }
 
-func getMapChunkToKVChunk2(useDefHash *uint32, maxOrder *int, converter OneArgsFunc) func(c *chunk) (r *chunk) {
-	return func(c *chunk) (r *chunk) {
-		slicer := getMapChunkToKVs(useDefHash, converter)(c)
-		if c.Order > *maxOrder {
-			*maxOrder = c.Order
-		}
-		return &chunk{slicer, c.Order, c.StartIndex}
-	}
-}
+//func getMapChunkToKVChunk2(useDefHash *uint32, maxOrder *int, converter OneArgsFunc) func(c *chunk) (r *chunk) {
+//	return func(c *chunk) (r *chunk) {
+//		slicer := getMapChunkToKVs(useDefHash, converter)(c)
+//		if c.Order > *maxOrder {
+//			*maxOrder = c.Order
+//		}
+//		return &chunk{slicer, c.Order, c.StartIndex}
+//	}
+//}
 
 //TODO: the code need be restructured
 func aggregateSlice(src Slicer, fs []*AggregateOperation, asSequential bool, asParallel bool) Slicer {
@@ -1397,4 +1398,27 @@ func printfln(this *promise.Future, format string, a ...interface{}) (n int, err
 	} else {
 		return 0, nil
 	}
+}
+
+//concurrentMap
+type concurrentMap struct {
+	m  map[interface{}]interface{}
+	rw *sync.RWMutex
+}
+
+func (t *concurrentMap) put(k interface{}, v interface{}) {
+	t.rw.Lock()
+	defer t.rw.Unlock()
+	t.m[k] = v
+}
+
+func (t *concurrentMap) get(k interface{}) (v interface{}, ok bool) {
+	t.rw.RLock()
+	defer t.rw.RUnlock()
+	v, ok = t.m[k]
+	return
+}
+
+func newConcurrentMap() *concurrentMap {
+	return &concurrentMap{make(map[interface{}]interface{}), new(sync.RWMutex)}
 }
