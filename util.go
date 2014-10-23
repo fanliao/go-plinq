@@ -1417,7 +1417,9 @@ func (t *concurrentMap) putIfNotExist(k interface{}, v interface{}) (ok bool) {
 	defer t.rw.Unlock()
 	if _, ok = t.m[k]; !ok {
 		t.m[k] = v
+		return true
 	}
+	return false
 }
 
 func (t *concurrentMap) get(k interface{}) (v interface{}, ok bool) {

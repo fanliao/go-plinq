@@ -11,6 +11,10 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
+
+	//"github.com/astaxie/beego/orm"
+	"github.com/fanliao/go-promise"
 )
 
 const (
@@ -122,8 +126,97 @@ var (
 	}
 )
 
+type User struct {
+	Id   int
+	Name string `orm:"size(100)"`
+}
+
 // Testing functions----------------------------------------------------------
 func TestFrom(t *testing.T) {
+	//future testing
+	//_ = orm
+	//p := promise.NewPromise()
+	//go func() {
+	//	o := orm.NewOrm()
+	//	u := User{Id: 1}
+	//	if err := o.Read(&u); err != nil {
+	//		p.Reject(err)
+	//	} else {
+	//		p.Resolve(u)
+	//	}
+	//}()
+
+	//p.OnSuccess(func(r interface{}) {
+	//	fmt.Println("Get user", r)
+	//}).OnFailure(func(e interface{}) {
+	//	fmt.Println("Get an error", e.(error))
+	//}).OnComplete(func(e interface{}) {
+	//	fmt.Println("Future completed")
+	//})
+
+	//u, err := p.Get()
+	//_, _ = u, err
+
+	//_ = promise.Start(func() (u interface{}, err error) {
+	//	o := orm.NewOrm()
+	//	u = User{Id: 1}
+	//	err = o.Read(&u)
+	//	return
+	//})
+
+	//task := func(canceller promise.Canceller) (r interface{}, err error) {
+	//	i := 0
+	//	for i < 50 {
+	//		//检测Future是否已经被要求取消
+	//		if canceller.IsCancellationRequested() {
+	//			//如果已经被要求取消，那么设置Future为取消状态，中止任务的执行。
+	//			//根据业务逻辑的要求，也可以直接调用canceller.Cancel()来设置Future为取消状态
+	//			canceller.Cancel()
+	//			return 0, nil
+	//		}
+	//		time.Sleep(100 * time.Millisecond)
+	//	}
+	//	return 1, nil
+	//}
+	//f := promise.Start(task).OnCancel(func() {
+	//	fmt.Println("Future is cancelled")
+	//})
+	////要求取消Future任务的执行
+	//f.RequestCancel()
+
+	//r, err := f.Get() //return nil, promise.CANCELLED
+	//fmt.Println(r, err)
+	//fmt.Println(f.IsCancelled()) //print true
+
+	//task := func(canceller promise.Canceller) (r interface{}, err error) {
+	//	time.Sleep(300 * time.Millisecond)
+	//	fmt.Println("Run done")
+	//	return 0, nil
+	//}
+
+	//f := promise.Start(task).SetTimeout(100).OnCancel(func() {
+	//	fmt.Println("Future is cancelled")
+	//})
+
+	//r, err := f.Get() //return nil, promise.CANCELLED
+	//fmt.Println(r, err)
+	//fmt.Println(f.IsCancelled()) //print true
+	task := func() (r interface{}, err error) {
+		time.Sleep(300 * time.Millisecond)
+		return 0, nil
+	}
+
+	//设置100毫秒后超时，Future将自动被取消
+	f := promise.Start(task)
+
+	//Get将在100毫秒后超时
+	r, _, timeout := f.GetOrTimeout(100) //return nil, promise.CANCELLED
+	fmt.Println(timeout)                 //print true
+
+	//Get将在300毫秒后超时，这次将返回task的结果
+	r, _, timeout = f.GetOrTimeout(300) //return nil, promise.CANCELLED
+	fmt.Println(r, timeout)             //print 0 false
+	//----------------------------------------------------------
 	if !runTest {
 		return
 	}

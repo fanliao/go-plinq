@@ -386,44 +386,44 @@ func getUnion(source2 interface{}) stepAction {
 
 		var useDefHash uint32
 		//----------------------------------------
-		distMap := newConcurrentMap()
-		mapChunk := func(c *chunk) (r *chunk) {
-			valCanAsKey := atomic.LoadUint32(&useDefHash)
-			useSelf := isNil(converter)
+		//distMap := newConcurrentMap()
+		//mapChunk := func(c *chunk) (r *chunk) {
+		//	valCanAsKey := atomic.LoadUint32(&useDefHash)
+		//	useSelf := isNil(converter)
 
-			if valCanAsKey == 1 {
-				useValAsKey = true
-			} else if valCanAsKey == 0 {
-				if c.Data.Len() > 0 && testCanAsKey(converter(c.Data.Index(0))) {
-					atomic.StoreUint32(useDefHash, 1)
-					useValAsKey = true
-				} else if c.Data.Len() == 0 {
-					useValAsKey = false
-				} else {
-					atomic.StoreUint32(useDefHash, 1000)
-					useValAsKey = false
-				}
-			} else {
-				useValAsKey = false
-			}
+		//	if valCanAsKey == 1 {
+		//		useValAsKey = true
+		//	} else if valCanAsKey == 0 {
+		//		if c.Data.Len() > 0 && testCanAsKey(converter(c.Data.Index(0))) {
+		//			atomic.StoreUint32(useDefHash, 1)
+		//			useValAsKey = true
+		//		} else if c.Data.Len() == 0 {
+		//			useValAsKey = false
+		//		} else {
+		//			atomic.StoreUint32(useDefHash, 1000)
+		//			useValAsKey = false
+		//		}
+		//	} else {
+		//		useValAsKey = false
+		//	}
 
-			chunkData := make([]interface{}, 0, chunkSize)
-			forEachSlicer(c.Data, func(i int, v interface{}) {
-				var hashKey interface{}
-				if !useValAsKey {
-					hashKey = hash64(v)
-				} else {
-					hashKey = v
-				}
-				if _, ok := distKVs[hashKey]; !ok {
-					distKVs[hashKey] = 1
-					chunkData = appendToSlice1(chunkData, v)
-				}
-			})
-			return &chunk{NewSlicer(chunkData), c.Order, c.StartIndex}
-		}
+		//	chunkData := make([]interface{}, 0, chunkSize)
+		//	forEachSlicer(c.Data, func(i int, v interface{}) {
+		//		var hashKey interface{}
+		//		if !useValAsKey {
+		//			hashKey = hash64(v)
+		//		} else {
+		//			hashKey = v
+		//		}
+		//		if _, ok := distKVs[hashKey]; !ok {
+		//			distKVs[hashKey] = 1
+		//			chunkData = appendToSlice1(chunkData, v)
+		//		}
+		//	})
+		//	return &chunk{NewSlicer(chunkData), c.Order, c.StartIndex}
+		//}
 
-		desc := parallelMapToChan(src, reduceSrcChan, mapChunk, option)
+		//desc := parallelMapToChan(src, reduceSrcChan, mapChunk, option)
 		//----------------------------------------
 
 		mapChunk := getMapChunkToKVChunkFunc(&useDefHash, nil)
@@ -929,7 +929,7 @@ func getAny(src dataSource, predicate PredicateFunc, option *ParallelOption) (re
 		return func(canceller promise.Canceller) (foundNoMatched interface{}, e error) {
 			size := c.Data.Len()
 			for i := 0; i < size; i++ {
-				if canceller.IsCancellationRequested() {
+				if canceller.IsCancelled() {
 					break
 				}
 				if predicate(c.Data.Index(i)) {
@@ -1263,8 +1263,7 @@ func foundMatchFunc(predicate PredicateFunc, findFirst bool) func(c *chunk, canc
 				break
 			}
 			v := c.Data.Index(i)
-			if canceller != nil && canceller.IsCancellationRequested() {
-				canceller.Cancel()
+			if canceller != nil && canceller.IsCancelled() {
 				break
 			}
 			if predicate(v) {
